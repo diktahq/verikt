@@ -1,0 +1,41 @@
+---
+title: "oauth2 capability"
+description: "Add OAuth2 client credentials and authorization code flow to your Go service with token exchange, callback handler, and session management."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`oauth2` adds OAuth2 flow support to your Go service, handling token exchange and callback routing for both client credentials and authorization code flows.
+
+## What You Get
+
+- OAuth2 provider integration
+- Token exchange
+- Callback handler
+- Session management
+
+## When to Use
+
+Use `oauth2` when your service needs to act as an OAuth2 client (logging users in via Google, GitHub, or an identity provider) or serve as an authorization server for machine-to-machine flows.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+**Suggests:** [`auth-jwt`](/capabilities/auth-jwt/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,oauth2
+# or add to an existing service:
+archway add oauth2
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT validation for tokens issued after OAuth2 exchange.</Card>
+  <Card title="redis" href="/capabilities/redis/">Session storage for OAuth2 state and tokens.</Card>
+  <Card title="cors" href="/capabilities/cors/">CORS headers for browser-based OAuth2 flows.</Card>
+</CardGrid>

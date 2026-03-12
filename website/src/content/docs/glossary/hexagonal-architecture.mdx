@@ -1,0 +1,65 @@
+---
+title: "What is Hexagonal Architecture? — Ports & Adapters for Go Services"
+description: "Hexagonal architecture (ports and adapters) organizes Go services into concentric layers with strict dependency direction, keeping business logic independent of transport, database, and external systems."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Hexagonal architecture — also called ports and adapters — is a structural pattern introduced by Alistair Cockburn in 2005. The central idea is that your application's business logic sits at the core, completely isolated from the outside world. Everything external (HTTP, databases, message queues, third-party APIs) connects to that core through well-defined interfaces called ports, and the concrete implementations of those interfaces are called adapters.
+
+The name "hexagonal" is incidental — the hexagon in Cockburn's diagrams was just a convenient shape with multiple sides to hang adapters from. What matters is the topology: a strict inside-out dependency direction where inner layers never import from outer layers.
+
+This pattern solves the common problem of business logic that has leaked into HTTP handlers, database queries scattered across service methods, and test suites that require a running database to exercise core rules. When the domain is isolated, you can swap the HTTP framework for gRPC, replace Postgres with DynamoDB, or run your entire test suite in memory.
+
+## How It Works
+
+The structure divides into concentric zones:
+
+```
+domain/     → Pure business logic. No imports from other layers.
+port/       → Interfaces: inbound (use cases) and outbound (repositories, gateways)
+service/    → Use case implementations. Orchestrates domain objects via port interfaces.
+adapter/    → Concrete implementations: HTTP handlers, database repos, message producers
+```
+
+An inbound port is an interface your service implements — the HTTP handler calls it. An outbound port is an interface the service depends on — the Postgres repository implements it. The service layer never knows whether data comes from HTTP or CLI, or whether it's stored in Postgres or Redis.
+
+The dependency rule is absolute: `domain` imports nothing, `port` imports `domain`, `service` imports `domain` and `port`, `adapter` imports `port` and `domain`. No arrows point inward from outer layers.
+
+## In Go
+
+Go's interface system is a natural fit. You define outbound ports as interfaces in the `port/` package:
+
+```go
+// port/outbound.go
+type OrderRepository interface {
+    FindByID(ctx context.Context, id uuid.UUID) (*domain.Order, error)
+    Save(ctx context.Context, order *domain.Order) error
+}
+```
+
+The service depends on that interface, not on the Postgres implementation. The adapter wires everything together at startup via the bootstrap pattern. This makes the service layer fully testable with an in-memory fake — no database required.
+
+## How archway Supports It
+
+archway scaffolds the full hexagonal layout — `domain/`, `port/`, `service/`, `adapter/` directories with dependency rules defined in `archway.yaml`. The `archway check` command enforces those rules continuously, catching import violations before they reach code review. See [Architectures](/concepts/architectures/) for the full structure.
+
+<Aside type="tip">
+Start with the outbound port interface before writing the adapter. Designing what the service needs from storage — not what Postgres can provide — keeps the domain clean.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Ports and Adapters" icon="right-arrow">
+    The alternative name for hexagonal architecture, often used interchangeably. [Ports and Adapters](/glossary/ports-and-adapters/)
+  </Card>
+  <Card title="Architectures" icon="right-arrow">
+    Compare hexagonal with layered, clean, and flat architectures in archway. [Architectures](/concepts/architectures/)
+  </Card>
+  <Card title="Repository Pattern" icon="right-arrow">
+    The outbound port for data access — the standard way hexagonal services talk to storage. [Repository Pattern](/glossary/repository-pattern/)
+  </Card>
+</CardGrid>

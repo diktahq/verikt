@@ -1,0 +1,26 @@
+---
+title: Go Architecture Comparisons
+description: Side-by-side comparisons of hexagonal, clean, layered, and flat Go service architectures — choose the right structure for your project.
+---
+
+import { CardGrid, Card } from '@astrojs/starlight/components';
+
+Archway supports four architecture patterns. Choosing between them depends on your team's experience, the complexity of your business logic, and how strictly you want to enforce dependency boundaries.
+
+| Pair | Best when... |
+|------|-------------|
+| [Hexagonal vs Clean](/compare/hexagonal-vs-clean/) | You want strict layering but need to decide between ports/adapters or entities/use-cases |
+| [Hexagonal vs Layered](/compare/hexagonal-vs-layered/) | You need dependency rules but want to evaluate how much structure is right |
+| [Hexagonal vs Flat](/compare/hexagonal-vs-flat/) | You're deciding between a full production service and a simple tool |
+| [Clean vs Layered](/compare/clean-vs-layered/) | You want layered architecture and are choosing between strict DDD and the classic three-tier |
+| [Clean vs Flat](/compare/clean-vs-flat/) | You're evaluating whether your project needs any layering at all |
+| [Layered vs Flat](/compare/layered-vs-flat/) | You need a simple structure and are deciding how much to formalize it |
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures explained](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

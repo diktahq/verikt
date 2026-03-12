@@ -1,0 +1,38 @@
+---
+title: "timeout capability"
+description: "Add context-based timeout middleware to your Go service with configurable per-route timeouts and context cancellation propagation."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`timeout` adds context-based timeout middleware to your Go service, preventing hung handlers from exhausting your goroutine pool.
+
+## What You Get
+
+- Timeout middleware
+- Configurable per-route timeouts
+- Context cancellation propagation
+
+## When to Use
+
+Without explicit timeouts, a hung external call blocks a goroutine indefinitely. Under load, this exhausts your connection pool and cascades failure to all callers. Add `timeout` to any service that calls external systems or runs non-trivial processing in HTTP handlers.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,timeout
+# or add to an existing service:
+archway add timeout
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="circuit-breaker" href="/capabilities/circuit-breaker/">Circuit breaker for when timeouts aren't enough to stop cascades.</Card>
+  <Card title="retry" href="/capabilities/retry/">Retry with backoff after a timeout.</Card>
+  <Card title="http-client" href="/capabilities/http-client/">Resilient HTTP client with built-in timeout handling.</Card>
+</CardGrid>

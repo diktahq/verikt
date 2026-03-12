@@ -1,0 +1,136 @@
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config holds all configuration for the application.
+type Config struct {
+	App    AppConfig    `yaml:"app"`
+	Logger LoggerConfig `yaml:"logger"`
+	{{- if .HasHTTP}}
+	HTTP   HTTPConfig   `yaml:"http"`
+	{{- end}}
+	{{- if .HasGRPC}}
+	GRPC   GRPCConfig   `yaml:"grpc"`
+	{{- end}}
+	{{- if .HasKafka}}
+	Kafka  KafkaConfig  `yaml:"kafka"`
+	{{- end}}
+	{{- if .HasMySQL}}
+	MySQL  MySQLConfig  `yaml:"mysql"`
+	{{- end}}
+	{{- if .HasPostgreSQL}}
+	Postgres PostgresConfig `yaml:"postgres"`
+	{{- end}}
+	{{- if .HasRedis}}
+	Redis  RedisConfig  `yaml:"redis"`
+	{{- end}}
+	{{- if .HasMailpit}}
+	Mailpit MailpitConfig `yaml:"mailpit"`
+	{{- end}}
+}
+
+
+// AppConfig holds general application configuration.
+type AppConfig struct {
+	Name        string `yaml:"name"`
+	Version     string `yaml:"version"`
+	Environment string `yaml:"environment"`
+	{{- if .HasI18n}}
+	DefaultLocale string `yaml:"default_locale"`
+	{{- end}}
+}
+
+// LoggerConfig holds logging configuration.
+type LoggerConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+}
+
+{{- if .HasHTTP}}
+
+// HTTPConfig holds HTTP server configuration.
+type HTTPConfig struct {
+	Port         int `yaml:"port"`
+	ReadTimeout  int `yaml:"read_timeout"`
+	WriteTimeout int `yaml:"write_timeout"`
+}
+{{- end}}
+
+{{- if .HasGRPC}}
+
+// GRPCConfig holds gRPC server configuration.
+type GRPCConfig struct {
+	Port       int  `yaml:"port"`
+	Reflection bool `yaml:"reflection"`
+}
+{{- end}}
+
+{{- if .HasKafka}}
+
+// KafkaConfig holds Kafka consumer configuration.
+type KafkaConfig struct {
+	Brokers       []string `yaml:"brokers"`
+	ConsumerGroup string   `yaml:"consumer_group"`
+	Topics        []string `yaml:"topics"`
+}
+{{- end}}
+
+{{- if .HasMySQL}}
+
+// MySQLConfig holds MySQL connection configuration.
+type MySQLConfig struct {
+	DSN             string `yaml:"dsn"`
+	MaxOpenConns    int    `yaml:"max_open_conns"`
+	MaxIdleConns    int    `yaml:"max_idle_conns"`
+	ConnMaxLifetime int    `yaml:"conn_max_lifetime"`
+}
+{{- end}}
+
+{{- if .HasPostgreSQL}}
+
+// PostgresConfig holds PostgreSQL connection configuration.
+type PostgresConfig struct {
+	URL      string `yaml:"url"`
+	MaxConns int32  `yaml:"max_conns"`
+	MinConns int32  `yaml:"min_conns"`
+}
+{{- end}}
+
+{{- if .HasRedis}}
+
+// RedisConfig holds Redis connection configuration.
+type RedisConfig struct {
+	Addr     string `yaml:"addr"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
+}
+{{- end}}
+{{- if .HasMailpit}}
+
+// MailpitConfig holds Mailpit SMTP configuration for local email testing.
+type MailpitConfig struct {
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+	From string `yaml:"from"`
+}
+{{- end}}
+
+// Load reads configuration from a YAML file.
+func Load(configPath string) (*Config, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config file: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	return &cfg, nil
+}

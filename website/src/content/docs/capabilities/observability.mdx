@@ -1,0 +1,34 @@
+---
+title: "observability capability"
+description: "Add OpenTelemetry distributed tracing and metrics to your Go service with OTLP/gRPC export and trace propagation."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`observability` adds OpenTelemetry traces and metrics to your Go service with OTLP export ready for Jaeger, Grafana, or any OTel-compatible backend.
+
+## What You Get
+
+- OTLP/gRPC export
+- Trace propagation
+- Metric collection
+
+## When to Use
+
+You cannot debug production without distributed tracing. Add `observability` to any service that handles requests or processes events — it gives you the data to answer "why is this slow?" and "where did this request fail?".
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap observability
+# or add to an existing service:
+archway add observability
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="request-id" href="/capabilities/request-id/">Request IDs for log correlation alongside traces.</Card>
+  <Card title="health" href="/capabilities/health/">Health endpoints alongside observability metrics.</Card>
+  <Card title="platform" href="/capabilities/platform/">Platform lifecycle and structured logging.</Card>
+</CardGrid>

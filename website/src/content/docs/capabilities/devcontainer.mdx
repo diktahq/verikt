@@ -1,0 +1,38 @@
+---
+title: "devcontainer capability"
+description: "Add a VS Code Dev Container to your Go service for reproducible development environments with Docker configuration and extension recommendations."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`devcontainer` adds a VS Code Dev Container configuration to your Go service for consistent, reproducible development environments across the team.
+
+## What You Get
+
+- `.devcontainer/devcontainer.json`
+- Docker configuration
+- Extension recommendations
+
+## When to Use
+
+Use `devcontainer` when you want every developer on your team to work in an identical environment without manual Go toolchain or dependency setup. Eliminates "works on my machine" problems and onboards new contributors in minutes.
+
+## Requirements & Suggestions
+
+**Suggests:** [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap devcontainer
+# or add to an existing service:
+archway add devcontainer
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="docker" href="/capabilities/docker/">Docker Compose stack that the devcontainer uses.</Card>
+  <Card title="linting" href="/capabilities/linting/">golangci-lint installed and configured in the devcontainer.</Card>
+  <Card title="pre-commit" href="/capabilities/pre-commit/">Pre-commit hooks set up inside the devcontainer.</Card>
+</CardGrid>

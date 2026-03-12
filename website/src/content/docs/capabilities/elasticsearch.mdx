@@ -1,0 +1,39 @@
+---
+title: "elasticsearch capability"
+description: "Add Elasticsearch to your Go service with client setup, index lifecycle management, search query builders, and bulk operations."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`elasticsearch` wires an Elasticsearch client into your Go service with index management and search query builders.
+
+## What You Get
+
+- Client setup
+- Index lifecycle management
+- Search query builders
+- Bulk operations
+
+## When to Use
+
+Use `elasticsearch` for full-text search, log analytics, or document indexing where SQL LIKE queries fall short. Commonly used alongside a primary database — write to Postgres, sync to Elasticsearch for search.
+
+## Requirements & Suggestions
+
+**Suggests:** [`observability`](/capabilities/observability/), [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap elasticsearch
+# or add to an existing service:
+archway add elasticsearch
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="docker" href="/capabilities/docker/">Local Elasticsearch instance via Docker Compose.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace search queries with OpenTelemetry.</Card>
+  <Card title="outbox" href="/capabilities/outbox/">Reliable sync from your primary database to Elasticsearch.</Card>
+</CardGrid>

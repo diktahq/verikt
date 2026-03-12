@@ -1,0 +1,69 @@
+---
+title: "What is Event-Driven Architecture? — Async Messaging in Go Services"
+description: "Event-driven architecture decouples Go services by having components communicate through events rather than direct calls — enabling async processing, independent scaling, and loose coupling."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Event-driven architecture (EDA) is a design approach where services communicate by producing and consuming events rather than making direct synchronous calls. An event is a record of something that happened — `OrderPlaced`, `PaymentReceived`, `InventoryReserved` — published to a shared channel (message broker, event bus, or stream) that interested consumers can subscribe to.
+
+The fundamental shift from request/response to event-based communication changes the coupling model. In a direct call, Service A needs to know Service B exists, where it runs, and that it's available right now. With events, Service A publishes `OrderPlaced` and its responsibility ends. Service B, C, and D each subscribe independently, process at their own pace, and Service A knows nothing about them. Adding a new consumer requires no change to the producer.
+
+EDA is particularly well-suited to workflows that don't require an immediate response, operations that should be retried on failure, and cross-service propagation of domain state changes. It introduces complexity around eventual consistency and message ordering that synchronous systems don't have.
+
+## How It Works
+
+```
+Producer:   OrderService publishes OrderPlaced{orderID, customerID, items, total}
+            → to message broker (Kafka topic, NATS subject, in-process event bus)
+
+Consumer A: InventoryService subscribes → reserves stock
+Consumer B: NotificationService subscribes → sends order confirmation email
+Consumer C: AnalyticsService subscribes → updates metrics
+```
+
+Each consumer processes independently and at its own pace. If AnalyticsService is down, orders still process — it catches up when it restarts. Consumers need to handle duplicate messages (at-least-once delivery is the norm).
+
+## In Go
+
+archway provides two event mechanisms: `event-bus` for in-process events within a single service, and `kafka-consumer` or `nats` for cross-service async messaging. The in-process event bus is the right tool when you want to decouple components within a service without a network hop:
+
+```go
+// Publishing
+bus.Publish(ctx, events.OrderPlaced{
+    OrderID:    order.ID,
+    CustomerID: order.CustomerID,
+    Total:      order.Total,
+})
+
+// Subscribing
+bus.Subscribe(events.OrderPlaced{}, func(ctx context.Context, e events.OrderPlaced) error {
+    return notifier.SendOrderConfirmation(ctx, e.CustomerID, e.OrderID)
+})
+```
+
+For cross-service events, Kafka or NATS provide durable, ordered, scalable message delivery.
+
+## How archway Supports It
+
+The `event-bus` capability scaffolds the in-process event publisher and subscriber. For cross-service async, `kafka-consumer` and `nats` are available. archway warns when `event-bus` is used without `outbox` — without the outbox, events can be lost if the process crashes between committing to the database and publishing. See the [Capabilities Matrix](/reference/capabilities-matrix/).
+
+<Aside type="tip">
+Design events as immutable facts in the past tense (`OrderPlaced`, not `PlaceOrder`). Include all the data consumers need so they don't have to call back for more — but don't include everything just in case.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Outbox Pattern" icon="right-arrow">
+    Guarantees events are published reliably, even if the service crashes mid-transaction. [Outbox Pattern](/glossary/outbox-pattern/)
+  </Card>
+  <Card title="Saga Pattern" icon="right-arrow">
+    Sagas use domain events to coordinate distributed multi-step workflows. [Saga Pattern](/glossary/saga-pattern/)
+  </Card>
+  <Card title="Domain-Driven Design" icon="right-arrow">
+    Domain events are a core DDD building block — EDA is often the infrastructure that carries them. [Domain-Driven Design](/glossary/domain-driven-design/)
+  </Card>
+</CardGrid>

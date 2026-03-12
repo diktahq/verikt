@@ -1,0 +1,41 @@
+---
+title: "ci-github capability"
+description: "Add GitHub workflow templates to your Go service including issue templates for bug reports and feature requests, and a pull request template."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`ci-github` adds GitHub repository templates to your Go service for structured issue and PR workflows.
+
+## What You Get
+
+- Issue templates (bug report, feature request)
+- Pull request template
+
+## When to Use
+
+Use `ci-github` on any service hosted on GitHub to standardize how contributors report bugs, request features, and submit pull requests. Consistent templates reduce back-and-forth on incomplete reports.
+
+<Aside type="caution">
+`ci-github` conflicts with `ci-gitlab` — use one CI system per project.
+</Aside>
+
+## Requirements & Suggestions
+
+**Conflicts with:** [`ci-gitlab`](/capabilities/ci-gitlab/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap ci-github
+# or add to an existing service:
+archway add ci-github
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="linting" href="/capabilities/linting/">golangci-lint to run in CI alongside GitHub Actions.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test utilities for running tests in CI.</Card>
+  <Card title="pre-commit" href="/capabilities/pre-commit/">Local pre-commit hooks that mirror CI checks.</Card>
+</CardGrid>

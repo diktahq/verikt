@@ -1,0 +1,111 @@
+---
+title: "Hexagonal vs Clean Architecture: Which Go Architecture Should You Use?"
+description: "Compare Hexagonal (Ports & Adapters) and Clean Architecture for Go services — dependency rules, directory structure, and when to choose each."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Both Hexagonal and Clean Architecture are supported by archway. They share the same core principle — strict inward dependency direction — but differ in vocabulary, directory structure, and how they handle the boundary between business logic and infrastructure.
+
+## At a Glance
+
+| | Hexagonal | Clean |
+|---|---|---|
+| Complexity | High | High |
+| Best for | Ports & adapters isolation | Entity-centric domain modeling |
+| Dependency rules | Strict | Strict |
+| Team size | Medium / Large | Medium / Large |
+| Directory structure | Complex | Complex |
+
+## Hexagonal Architecture
+
+Hexagonal architecture, also called Ports & Adapters, structures a Go service around the idea that your application is a hexagon — business logic at the core, and everything external (HTTP, databases, message queues) plugged in as adapters through explicitly defined ports.
+
+```
+domain/              → Pure business logic, no external dependencies
+port/                → Interfaces (inbound use cases, outbound repositories)
+service/             → Use case implementations
+adapter/             → External integrations (HTTP, DB, messaging)
+config/              → Configuration loading
+platform/            → Cross-cutting concerns
+internal/bootstrap/  → Dependency wiring
+cmd/<name>/          → Entry point
+```
+
+The dependency rules are enforced by `archway check`:
+
+| Component | May Depend On |
+|-----------|--------------|
+| domain | nothing |
+| ports | domain |
+| service | domain, ports |
+| adapters | ports, domain |
+
+Adapters never talk to each other. Your domain never knows whether it's being called from HTTP or a Kafka consumer. That isolation is the whole point.
+
+## Clean Architecture
+
+Clean Architecture, from Uncle Bob's book of the same name, places entities — core business objects — at the innermost ring. Use cases orchestrate those entities. Interface adapters translate between use cases and delivery mechanisms. Infrastructure sits at the outermost ring.
+
+```
+cmd/<name>/                  → Entry point
+internal/entity/             → Core business entities (no dependencies)
+internal/usecase/            → Application use cases
+internal/interface/handler/  → HTTP handlers, adapters
+internal/infrastructure/     → Database, external services, config
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| entity | nothing |
+| usecase | entity |
+| interface | usecase, entity |
+| infrastructure | interface, usecase, entity |
+
+The key difference from hexagonal is that `infrastructure` is explicitly allowed to depend on `interface` and `usecase` — it's the outermost ring that wires everything together, rather than adapters that plug into ports.
+
+## Key Differences
+
+- **Vocabulary**: Hexagonal uses ports and adapters; Clean uses entities, use cases, and interface adapters. Same concept, different names.
+- **Infrastructure placement**: In Clean Architecture, `infrastructure` is an explicit outermost layer that wires the whole system. In hexagonal, wiring lives in a `bootstrap` package.
+- **Interface location**: Hexagonal puts all interfaces in `port/`, making them easy to find. Clean Architecture distributes them more naturally across layers.
+- **Structural explicitness**: Hexagonal's `adapter/` directory makes it obvious what external integrations exist. Clean Architecture's `infrastructure/` is broader and less prescriptive about what goes where.
+
+## When to Choose Hexagonal
+
+- Your service has multiple inbound transports (HTTP + gRPC, or HTTP + Kafka consumer) that should share the same core logic
+- You want the list of external integrations to be immediately visible in the directory structure
+- Your team thinks in terms of "what does the domain need from the outside world" (ports) and "how is that satisfied" (adapters)
+- You're building an event-driven service where the boundary between triggering and processing is important to make explicit
+
+## When to Choose Clean Architecture
+
+- Your team is already familiar with Uncle Bob's Clean Architecture conventions
+- Your domain modeling centers on entities and their lifecycle, more than on external integration points
+- You want use cases to be the primary organizing concept — each use case is a discrete file or type
+- You're working on a large codebase where enforcing the entity → usecase → interface → infrastructure ring model provides meaningful guardrails
+
+## Scaffold Either with archway
+
+```bash
+# Hexagonal
+archway new my-service --arch hexagonal
+
+# Clean Architecture
+archway new my-service --arch clean
+```
+
+<Aside type="tip">
+When in doubt between the two, choose hexagonal if your team talks about "what adapters the service has" and clean if they talk about "what use cases the service exposes." Both enforce identical dependency discipline — the difference is framing.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures compared](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

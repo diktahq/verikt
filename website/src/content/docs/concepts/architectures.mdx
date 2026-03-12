@@ -1,0 +1,128 @@
+---
+title: Architectures
+description: Compare Archway's four architecture patterns — hexagonal, layered, clean, and flat — with dependency rules and usage guidance
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+An architecture defines your project's structure, dependency rules, and base files.
+
+## Hexagonal (Ports & Adapters)
+
+The hexagonal architecture separates your application into layers with strict dependency direction — inner layers never import from outer layers.
+
+```
+domain/              → Pure business logic, no external dependencies
+port/                → Interfaces (inbound use cases, outbound repositories)
+service/             → Use case implementations
+adapter/             → External integrations (HTTP, DB, messaging)
+config/              → Configuration loading (via platform capability)
+platform/            → Cross-cutting concerns (via platform capability)
+internal/bootstrap/  → Dependency wiring (via bootstrap capability)
+cmd/<name>/          → Entry point
+```
+
+### Dependency Rules
+
+| Component | May Depend On |
+|-----------|--------------|
+| domain | nothing |
+| ports | domain |
+| service | domain, ports |
+| adapters | ports, domain |
+
+These rules are enforced by `archway check`. If your adapter code imports from another adapter, or your domain imports from service — it's caught immediately.
+
+<Aside type="tip">
+Every scaffolded project includes an `archway.yaml` with these rules defined. You can customize the rules, add required directories, or set function complexity limits.
+</Aside>
+
+### When to Use
+
+- Production APIs and microservices
+- Services with complex business logic
+- Projects where you want strict separation of concerns
+- Teams that need consistent structure across services
+
+## Flat
+
+A single-package structure with just `main.go` and `go.mod`.
+
+```
+main.go
+go.mod
+```
+
+### When to Use
+
+- CLI tools
+- Simple scripts
+- Quick prototypes
+- Projects that don't need layered architecture
+
+<Aside type="note">
+You can still add capabilities to a flat architecture (e.g., `http-api` for a simple API server), but the project won't have the layered structure of other architectures.
+</Aside>
+
+## Layered
+
+The most common architecture pattern — handler, service, and repository layers with a shared model package.
+
+```
+cmd/<name>/             → Entry point
+internal/handler/       → HTTP handlers (request/response)
+internal/service/       → Business logic
+internal/repository/    → Data access
+internal/model/         → Shared types and domain models
+```
+
+### Dependency Rules
+
+| Component | May Depend On |
+|-----------|--------------|
+| model | nothing |
+| repository | model |
+| service | repository, model |
+| handler | service, model |
+
+### When to Use
+
+- Services where hexagonal feels like overkill
+- Standard CRUD APIs with straightforward business logic
+- Teams familiar with the traditional three-tier pattern
+- Projects that prioritize simplicity over strict isolation
+
+## Clean Architecture
+
+Uncle Bob's Clean Architecture — entities at the core, use cases orchestrate, interfaces adapt.
+
+```
+cmd/<name>/                  → Entry point
+internal/entity/             → Core business entities (no dependencies)
+internal/usecase/            → Application use cases
+internal/interface/handler/  → HTTP handlers, adapters
+internal/infrastructure/     → Database, external services, config
+```
+
+### Dependency Rules
+
+| Component | May Depend On |
+|-----------|--------------|
+| entity | nothing |
+| usecase | entity |
+| interface | usecase, entity |
+| infrastructure | interface, usecase, entity |
+
+### When to Use
+
+- Complex business logic that benefits from strict layering
+- Teams following Uncle Bob's conventions
+- Projects where use cases are the central organizing concept
+- Large codebases where dependency discipline is critical
+
+<Aside type="tip">
+All four architectures work with any capability. The architecture defines *where* code goes; capabilities define *what* code gets generated. To monitor whether your codebase stays true to its declared architecture, see [Detecting Architecture Drift](/guides/architecture-drift/).
+</Aside>

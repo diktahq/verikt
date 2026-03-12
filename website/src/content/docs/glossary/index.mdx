@@ -1,0 +1,27 @@
+---
+title: Architecture & Patterns Glossary
+description: Definitions of software architecture patterns, resilience techniques, and design concepts used in Go service development — hexagonal, clean, DDD, CQRS, and more.
+---
+
+A reference for architecture patterns and design concepts used in Go service development.
+
+| Term | Definition |
+|------|-----------|
+| [Bulkhead Pattern](/glossary/bulkhead-pattern/) | Isolates failure domains by capping concurrent resource consumption per dependency, preventing one slow service from exhausting goroutines across the entire application. |
+| [Circuit Breaker](/glossary/circuit-breaker/) | Monitors calls to external services and stops sending requests when failure rates exceed a threshold, giving the downstream system time to recover and preventing cascade failures. |
+| [Clean Architecture](/glossary/clean-architecture/) | Four-layer design (entities, use cases, interfaces, infrastructure) where all dependencies point inward toward business rules, enabling full replacement of database or framework without touching domain logic. |
+| [CQRS](/glossary/cqrs/) | Separates the write model (commands applied to aggregates) from the read model (denormalized projections optimized for queries), decoupling read and write scaling requirements. |
+| [Dependency Injection](/glossary/dependency-injection/) | Supplies a component with its dependencies from the outside rather than creating them internally — making Go services testable, flexible, and architecturally clean. |
+| [Domain-Driven Design](/glossary/domain-driven-design/) | A software development approach that centers code structure on the business domain using building blocks — entities, value objects, aggregates, and domain events — to make domain rules explicit in code. |
+| [Event-Driven Architecture](/glossary/event-driven-architecture/) | Services communicate by producing and consuming events rather than making direct synchronous calls, enabling async processing, loose coupling, and independent scaling. |
+| [Hexagonal Architecture](/glossary/hexagonal-architecture/) | Organizes services into concentric layers (domain, port, service, adapter) where inner layers never import outer layers, keeping business logic independent of HTTP, database, and external systems. |
+| [Idempotency](/glossary/idempotency/) | An operation that produces the same result regardless of how many times it's executed — essential for safe retries in payment processing, webhook handling, and distributed workflows. |
+| [JWT Authentication](/glossary/jwt-authentication/) | Stateless identity verification using cryptographically signed tokens, enabling Go APIs to authenticate requests without a database lookup on every call. |
+| [Layered Architecture](/glossary/layered-architecture/) | The most common Go service pattern — handler, service, and repository layers with strict downward dependency direction, suited for standard CRUD APIs and straightforward business logic. |
+| [OpenTelemetry](/glossary/opentelemetry/) | The open standard for distributed tracing, metrics, and logs in Go services — instrument once, export to any observability backend without vendor lock-in. |
+| [Outbox Pattern](/glossary/outbox-pattern/) | Guarantees reliable event publishing by writing events to an outbox table in the same database transaction as the business operation, then relaying them asynchronously. |
+| [Ports and Adapters](/glossary/ports-and-adapters/) | The original name for hexagonal architecture — ports are domain-owned interfaces defining what the application needs; adapters are infrastructure implementations that plug into those ports. |
+| [Rate Limiting](/glossary/rate-limiting/) | Controls request throughput per client identity using token bucket or leaky bucket algorithms — protecting Go APIs from abuse and ensuring fair resource allocation. |
+| [Repository Pattern](/glossary/repository-pattern/) | Abstracts data access behind a domain-oriented interface, decoupling business logic from storage technology and enabling in-memory test doubles without a running database. |
+| [Saga Pattern](/glossary/saga-pattern/) | Manages distributed transactions across microservices using a sequence of local transactions with compensating actions — maintaining data consistency without two-phase commit. |
+| [Service Mesh](/glossary/service-mesh/) | An infrastructure layer that handles service-to-service communication (mTLS, retries, observability) via sidecar proxies, without requiring changes to Go application code. |

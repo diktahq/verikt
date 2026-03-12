@@ -1,0 +1,7 @@
+name: event-bus
+description: "In-process domain event bus with publish/subscribe pattern"
+requires: []
+suggests:
+  - outbox
+  - observability
+conflicts: []

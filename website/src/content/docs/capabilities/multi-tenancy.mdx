@@ -1,0 +1,40 @@
+---
+title: "multi-tenancy capability"
+description: "Add row-level tenant isolation to your Go service with tenant middleware, context-based propagation, and query scoping helpers."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`multi-tenancy` adds row-level tenant isolation to your Go service, ensuring every request is scoped to the authenticated tenant.
+
+## What You Get
+
+- Tenant middleware
+- Context-based tenant propagation
+- Query scoping helpers
+
+## When to Use
+
+Use `multi-tenancy` for SaaS applications serving multiple organizations. Every query must be scoped by tenant — missing a scope is a data leak. The middleware extracts tenant identity from authenticated JWT claims, not raw headers (which any caller can spoof).
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/), [`platform`](/capabilities/platform/) (config)
+
+**Suggests:** [`auth-jwt`](/capabilities/auth-jwt/), [`observability`](/capabilities/observability/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,platform,multi-tenancy
+# or add to an existing service:
+archway add multi-tenancy
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication for verified tenant identity.</Card>
+  <Card title="audit-log" href="/capabilities/audit-log/">Audit trail scoped per tenant for compliance.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace requests with tenant context for debugging.</Card>
+</CardGrid>

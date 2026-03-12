@@ -1,0 +1,40 @@
+---
+title: "idempotency capability"
+description: "Add idempotency key support to your Go service so retried requests are safe — duplicate detection prevents duplicate side effects."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`idempotency` adds idempotency key middleware to your Go service, making retried requests safe by detecting and short-circuiting duplicates.
+
+## What You Get
+
+- Idempotency middleware
+- Key storage
+- Duplicate detection
+
+## When to Use
+
+Use `idempotency` on any endpoint where duplicate execution causes problems — payments, order creation, webhook processing. When paired with `retry`, idempotency keys ensure retries don't produce duplicate side effects.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+**Suggests:** [`redis`](/capabilities/redis/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,idempotency
+# or add to an existing service:
+archway add idempotency
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="retry" href="/capabilities/retry/">Retry with backoff — always pair with idempotency for mutations.</Card>
+  <Card title="redis" href="/capabilities/redis/">Redis as fast storage for idempotency keys.</Card>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+</CardGrid>

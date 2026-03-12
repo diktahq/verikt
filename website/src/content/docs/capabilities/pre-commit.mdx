@@ -1,0 +1,32 @@
+---
+title: "pre-commit capability"
+description: "Add pre-commit hook configuration to your Go service for automated formatting, linting, and test execution before every commit."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`pre-commit` adds pre-commit hook configuration to your Go service, running code quality checks locally before every commit reaches CI.
+
+## What You Get
+
+- Pre-commit hooks for formatting, linting, and test execution
+
+## When to Use
+
+Use `pre-commit` to catch issues before they reach the pull request. Fast local feedback is cheaper than CI feedback — pre-commit runs in seconds and blocks commits that would fail CI anyway.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap pre-commit
+# or add to an existing service:
+archway add pre-commit
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="linting" href="/capabilities/linting/">golangci-lint run as a pre-commit hook.</Card>
+  <Card title="testing" href="/capabilities/testing/">Tests run as a pre-commit hook.</Card>
+  <Card title="ci-github" href="/capabilities/ci-github/">CI checks that mirror the pre-commit hooks.</Card>
+</CardGrid>

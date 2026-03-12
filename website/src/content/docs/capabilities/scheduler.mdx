@@ -1,0 +1,34 @@
+---
+title: "scheduler capability"
+description: "Add cron-style periodic task scheduling to your Go service with job registration and configurable intervals."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`scheduler` adds cron-style periodic task scheduling to your Go service for recurring background jobs.
+
+## What You Get
+
+- Cron-like scheduler
+- Job registration
+- Configurable intervals
+
+## When to Use
+
+Use `scheduler` for periodic tasks — cleanup jobs, report generation, polling external APIs, or triggering the `outbox` relay worker. Simpler than deploying a separate cron container when the job is tightly coupled to your service's dependencies.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap scheduler
+# or add to an existing service:
+archway add scheduler
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="outbox" href="/capabilities/outbox/">Scheduler triggers the outbox relay worker periodically.</Card>
+  <Card title="worker" href="/capabilities/worker/">Background worker pool for executing scheduled jobs.</Card>
+  <Card title="graceful" href="/capabilities/graceful/">Graceful shutdown to let in-progress scheduled jobs complete.</Card>
+</CardGrid>

@@ -1,0 +1,77 @@
+---
+title: "What is CQRS? — Command Query Responsibility Segregation in Go"
+description: "CQRS separates read and write models in Go services — commands mutate state through the domain model, queries return optimized read projections — reducing coupling and enabling independent scaling."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Command Query Responsibility Segregation (CQRS) is a pattern that separates the model used to update information from the model used to read information. The term was coined by Greg Young, building on Bertrand Meyer's Command Query Separation (CQS) principle which states that a method should either change state (a command) or return data (a query), but never both.
+
+In a traditional layered service, the same data model serves both reads and writes. You define an `Order` struct, save it on creation, fetch it on reads, and return it from query endpoints. This works until your read requirements diverge from your write structure — analytics queries that join multiple tables, list views that need denormalized data, or reporting endpoints that aggregate across thousands of records. The write model, optimized for consistency and invariant enforcement, is often a poor fit for read workloads.
+
+CQRS solves this by letting the read side have its own model, potentially its own datastore, optimized purely for query performance. The write side maintains the canonical state and emits events; the read side subscribes to those events and builds projections tailored to specific query needs.
+
+## How It Works
+
+```
+Write side:
+  Command → validate → apply to aggregate → persist → emit domain event
+
+Read side:
+  Domain event → update read projection (denormalized, query-optimized)
+  Query → read from projection store → return view model
+```
+
+The simplest CQRS implementation uses a single database: the write side uses normalized tables with strong consistency guarantees, and the read side uses separate denormalized tables (or materialized views) populated by event handlers.
+
+## In Go
+
+archway's `cqrs` capability scaffolds a command/query bus with handler interfaces:
+
+```go
+// Command — mutates state
+type PlaceOrderCommand struct {
+    CustomerID uuid.UUID
+    Items      []OrderItem
+}
+
+// Query — returns data, no side effects
+type GetOrderQuery struct {
+    OrderID uuid.UUID
+}
+
+// Separate read model — not the domain aggregate
+type OrderView struct {
+    ID           uuid.UUID
+    CustomerName string
+    ItemCount    int
+    Total        string // formatted for display
+    Status       string
+}
+```
+
+The command handler validates and applies the command to the domain aggregate. The query handler reads directly from a denormalized projection, often bypassing the domain layer entirely for performance.
+
+## How archway Supports It
+
+The `cqrs` capability provides the command/query bus, handler interfaces, and separation scaffolding. It pairs naturally with `ddd` (for aggregates on the write side) and `event-bus` (for propagating events to the read side). See [Capabilities](/concepts/capabilities/) for configuration details.
+
+<Aside type="tip">
+Start with logical CQRS — separate command and query handlers in the same service, same database. Only introduce separate read stores (and eventual consistency) when query performance genuinely requires it.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Domain-Driven Design" icon="right-arrow">
+    DDD aggregates are the natural write-side model in CQRS — commands validate and apply to aggregates. [Domain-Driven Design](/glossary/domain-driven-design/)
+  </Card>
+  <Card title="Event-Driven Architecture" icon="right-arrow">
+    Events propagate write-side changes to read-side projections in full CQRS implementations. [Event-Driven Architecture](/glossary/event-driven-architecture/)
+  </Card>
+  <Card title="Saga Pattern" icon="right-arrow">
+    Sagas coordinate multi-step workflows that span multiple command handlers. [Saga Pattern](/glossary/saga-pattern/)
+  </Card>
+</CardGrid>

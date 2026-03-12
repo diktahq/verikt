@@ -1,0 +1,42 @@
+---
+title: "ci-gitlab capability"
+description: "Add a GitLab CI/CD pipeline to your Go service with build, test, lint, and deploy stages in .gitlab-ci.yml."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`ci-gitlab` adds a GitLab CI/CD pipeline to your Go service with build, test, lint, and deploy stages.
+
+## What You Get
+
+- `.gitlab-ci.yml` with build, test, lint, and deploy stages
+
+## When to Use
+
+Use `ci-gitlab` for services hosted on GitLab. The pipeline covers the standard Go CI workflow from the start — no need to write YAML from scratch.
+
+<Aside type="caution">
+`ci-gitlab` conflicts with `ci-github` — use one CI system per project.
+</Aside>
+
+## Requirements & Suggestions
+
+**Suggests:** [`docker`](/capabilities/docker/), [`linting`](/capabilities/linting/), [`testing`](/capabilities/testing/)
+
+**Conflicts with:** [`ci-github`](/capabilities/ci-github/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap ci-gitlab
+# or add to an existing service:
+archway add ci-gitlab
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="linting" href="/capabilities/linting/">golangci-lint running in the lint stage.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test utilities for the test stage.</Card>
+  <Card title="docker" href="/capabilities/docker/">Docker build step in the pipeline.</Card>
+</CardGrid>

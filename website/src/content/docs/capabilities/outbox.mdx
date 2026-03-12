@@ -1,0 +1,38 @@
+---
+title: "outbox capability"
+description: "Add the transactional outbox pattern to your Go service for reliable at-least-once event delivery that survives process crashes."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`outbox` adds the transactional outbox pattern to your Go service, guaranteeing events are published even when the process crashes between a database write and a message broker publish.
+
+## What You Get
+
+- Outbox table
+- Publisher
+- Relay worker for at-least-once delivery
+
+## When to Use
+
+Without the outbox pattern, a crash between committing to the database and publishing to a message broker means the event is silently lost. Use `outbox` whenever events must be reliable — order placed, payment received, shipment dispatched.
+
+## Requirements & Suggestions
+
+**Suggests:** [`postgres`](/capabilities/postgres/), [`event-bus`](/capabilities/event-bus/), [`scheduler`](/capabilities/scheduler/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap postgres,event-bus,outbox
+# or add to an existing service:
+archway add outbox
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="event-bus" href="/capabilities/event-bus/">In-process event bus that the outbox relay publishes to.</Card>
+  <Card title="postgres" href="/capabilities/postgres/">PostgreSQL for the outbox table.</Card>
+  <Card title="scheduler" href="/capabilities/scheduler/">Periodic scheduler to run the relay worker.</Card>
+</CardGrid>

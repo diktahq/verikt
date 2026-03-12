@@ -1,0 +1,42 @@
+---
+title: "graceful capability"
+description: "Add standalone graceful shutdown to your Go service with OS signal handling, ordered component shutdown, and configurable timeouts."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`graceful` adds a standalone graceful shutdown manager to your Go service for clean process exits that don't drop in-flight requests.
+
+## What You Get
+
+- Signal handling
+- Ordered shutdown with timeouts
+- Component registration
+
+## When to Use
+
+Use `graceful` when you need controlled shutdown without the full `platform` capability. Graceful shutdown is essential for HTTP servers (drain in-flight requests), Kafka consumers (prevent rebalancing storms), and background workers (complete in-flight jobs).
+
+<Aside type="caution">
+`graceful` conflicts with `platform` — platform includes its own shutdown manager. Use one or the other.
+</Aside>
+
+## Requirements & Suggestions
+
+**Conflicts with:** [`platform`](/capabilities/platform/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap graceful
+# or add to an existing service:
+archway add graceful
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="platform" href="/capabilities/platform/">Full application platform that includes graceful shutdown.</Card>
+  <Card title="worker" href="/capabilities/worker/">Background workers that need graceful drain on shutdown.</Card>
+  <Card title="kafka-consumer" href="/capabilities/kafka-consumer/">Kafka consumer with graceful shutdown to prevent rebalancing.</Card>
+</CardGrid>

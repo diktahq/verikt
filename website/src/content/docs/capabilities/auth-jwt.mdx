@@ -1,0 +1,38 @@
+---
+title: "auth-jwt capability"
+description: "Add JWT authentication middleware to your Go service with token validation, claims extraction into request context, and route-level auth."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`auth-jwt` adds JWT authentication middleware to your Go service, validating tokens and extracting claims into the request context.
+
+## What You Get
+
+- Middleware that validates JWT tokens
+- Claims extraction into request context
+- Route-level authentication
+
+## When to Use
+
+Use `auth-jwt` for stateless API authentication where you don't need server-side session storage. JWTs carry claims directly in the token, making them well-suited for microservices where every service needs to verify identity independently.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,auth-jwt
+# or add to an existing service:
+archway add auth-jwt
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="oauth2" href="/capabilities/oauth2/">OAuth2 flows that issue JWT tokens.</Card>
+  <Card title="cors" href="/capabilities/cors/">CORS headers for browser clients authenticating with JWT.</Card>
+  <Card title="multi-tenancy" href="/capabilities/multi-tenancy/">Tenant isolation using authenticated identity from JWT claims.</Card>
+</CardGrid>

@@ -1,0 +1,101 @@
+---
+title: "Clean vs Flat Architecture: Which Go Architecture Should You Use?"
+description: "Compare Clean Architecture and Flat architecture for Go services — when the entity and use case ring model is justified, and when a single package is enough."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Both Clean and Flat architecture are supported by archway. Clean Architecture imposes Uncle Bob's ring model — entities, use cases, interface adapters, infrastructure. Flat imposes nothing. The choice is whether your project needs any formal structure at all.
+
+## At a Glance
+
+| | Clean | Flat |
+|---|---|---|
+| Complexity | High | Low |
+| Best for | Complex domain, production services | CLI tools, scripts, prototypes |
+| Dependency rules | Strict (ring model) | None |
+| Team size | Medium / Large | Any |
+| Directory structure | Complex | Simple |
+
+## Clean Architecture
+
+Clean Architecture organizes a Go service into concentric rings. Entities at the core have no dependencies. Use cases orchestrate entities. Interface adapters handle translation between use cases and transports. Infrastructure — databases, external APIs, config — sits at the outermost ring and is the only layer allowed to depend on everything.
+
+```
+cmd/<name>/                  → Entry point
+internal/entity/             → Core business entities (no dependencies)
+internal/usecase/            → Application use cases
+internal/interface/handler/  → HTTP handlers, adapters
+internal/infrastructure/     → Database, external services, config
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| entity | nothing |
+| usecase | entity |
+| interface | usecase, entity |
+| infrastructure | interface, usecase, entity |
+
+`archway check` enforces these rules in CI. If an entity imports from infrastructure, it's caught immediately. The structure is designed to keep business logic testable and infrastructure-independent regardless of how the service grows.
+
+## Flat Architecture
+
+Flat is `main.go` and `go.mod`. No prescribed layers, no dependency rules, no directory conventions.
+
+```
+main.go
+go.mod
+```
+
+Capabilities still work with flat — adding `http-api` generates HTTP handling code, `postgres` generates database code — but there's no ring model to place them in. Everything lives in one place.
+
+The lack of structure is a deliberate feature for the use cases flat is designed for: tools, scripts, and prototypes where layering adds overhead without adding value.
+
+## Key Differences
+
+- **Structure overhead**: Clean has 4 defined layers with strict rules. Flat has none.
+- **Dependency enforcement**: Clean enforces import boundaries via `archway check`. Flat has no rules to enforce.
+- **Testability**: Clean Architecture isolates entities and use cases from infrastructure, making them trivially testable. Flat mixes everything, which is fine for small programs and a problem for larger ones.
+- **Growth**: Clean Architecture holds up as the codebase grows. Flat accumulates coupling quickly and becomes difficult to restructure.
+- **Entry point**: Clean Architecture has a meaningful distinction between what the system does (entity/usecase) and how it does it (infrastructure). Flat has no such distinction.
+
+## When to Choose Clean
+
+- You're building a production service with non-trivial business logic
+- Your team reasons about the system in terms of entities and use cases
+- You want your domain logic to be testable without database or HTTP setup
+- The service will grow — more developers, more features, more infrastructure integrations
+- You're applying Domain-Driven Design and want a structure that reflects that approach
+
+## When to Choose Flat
+
+- You're building a CLI tool, utility script, or internal tool
+- It's a proof of concept that may never reach production
+- The code will stay small — a few hundred lines at most
+- There's no meaningful domain logic to isolate from infrastructure
+- You need to ship something quickly without structural decisions slowing you down
+
+## Scaffold Either with archway
+
+```bash
+# Clean Architecture
+archway new my-service --arch clean
+
+# Flat
+archway new my-tool --arch flat
+```
+
+<Aside type="tip">
+Clean Architecture's ring model pays off when your business logic is complex enough that you want to test it without any infrastructure. If you can't imagine a test for your domain logic that doesn't touch a database or HTTP client, flat is probably sufficient for what you're building.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures compared](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

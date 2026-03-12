@@ -1,0 +1,77 @@
+---
+title: "What is the Repository Pattern? — Data Access Abstraction in Go"
+description: "The repository pattern abstracts data access in Go services behind an interface — decoupling business logic from storage technology and enabling in-memory test doubles without a running database."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+The repository pattern mediates between the domain and data mapping layers, acting as an in-memory collection of domain objects. The term comes from Eric Evans' Domain-Driven Design: a repository provides an interface for accessing domain objects (aggregates, in DDD terms) that hides the underlying storage mechanism behind a domain-oriented API.
+
+From the service layer's perspective, a repository looks like a collection: you can find objects by ID, save new objects, and query for objects matching certain criteria. Whether that collection is backed by Postgres, MongoDB, Redis, or an in-memory map is an implementation detail the service doesn't need to know. The interface is defined in terms of domain concepts (`FindByID`, `FindByCustomer`, `Save`), not database operations (`SELECT`, `INSERT`, `UPDATE`).
+
+The practical benefit in Go services is testability. When the service depends on a `Repository` interface rather than a concrete `*pgx.Pool`, you can write tests that run without a database. A test can instantiate a `fakeOrderRepository` backed by a map, run the service logic, and assert on outcomes — in milliseconds, with no infrastructure required.
+
+## How It Works
+
+```go
+// Interface in domain or port layer — owned by the domain, not the database
+type OrderRepository interface {
+    FindByID(ctx context.Context, id uuid.UUID) (*Order, error)
+    FindByCustomer(ctx context.Context, customerID uuid.UUID) ([]*Order, error)
+    Save(ctx context.Context, order *Order) error
+    Delete(ctx context.Context, id uuid.UUID) error
+}
+
+// Production implementation in adapter/infrastructure layer
+type PostgresOrderRepository struct {
+    db *pgxpool.Pool
+}
+
+// Test double — no database, no setup, no teardown
+type fakeOrderRepository struct {
+    orders map[uuid.UUID]*Order
+}
+```
+
+The service is constructed with the interface — the production binary gets the Postgres implementation, tests get the fake.
+
+## In Go
+
+archway's `repository` capability scaffolds a generic repository using Go generics:
+
+```go
+type Repository[T any, ID comparable] interface {
+    FindByID(ctx context.Context, id ID) (*T, error)
+    Save(ctx context.Context, entity *T) error
+    Delete(ctx context.Context, id ID) error
+    FindAll(ctx context.Context) ([]*T, error)
+}
+```
+
+The generic interface covers the common CRUD operations. Domain-specific query methods (like `FindByCustomer`) are added to a domain-specific interface that embeds or extends the generic one.
+
+The `postgres` and `mysql` capabilities both suggest `repository` — the scaffolded database connections include a repository pattern example.
+
+## How archway Supports It
+
+The `repository` capability scaffolds a generic repository interface and base implementation using Go generics. It pairs with `postgres`, `mysql`, and `mongodb` capabilities. In the hexagonal architecture, repositories are the canonical outbound ports. See [Capabilities](/concepts/capabilities/).
+
+<Aside type="tip">
+Keep repository interfaces in the domain or port layer, not in the infrastructure layer. The domain defines what it needs from storage; the infrastructure provides it. Putting the interface next to the implementation defeats the purpose.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Hexagonal Architecture" icon="right-arrow">
+    Repository interfaces are the outbound ports in hexagonal architecture — the domain's data access contract. [Hexagonal Architecture](/glossary/hexagonal-architecture/)
+  </Card>
+  <Card title="Domain-Driven Design" icon="right-arrow">
+    DDD defines repositories as the persistence abstraction for aggregate roots. [Domain-Driven Design](/glossary/domain-driven-design/)
+  </Card>
+  <Card title="Dependency Injection" icon="right-arrow">
+    Repository implementations are injected into services at the composition root. [Dependency Injection](/glossary/dependency-injection/)
+  </Card>
+</CardGrid>

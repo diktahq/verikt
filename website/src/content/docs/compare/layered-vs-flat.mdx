@@ -1,0 +1,99 @@
+---
+title: "Layered vs Flat Architecture: Which Go Architecture Should You Use?"
+description: "Compare Layered and Flat architecture for Go services — when the handler-service-repository pattern is worth it, and when a single package is the right call."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Both Layered and Flat architecture are supported by archway. Layered is the classic Go web service structure — handler, service, repository — with enforced dependency direction. Flat is a single package with no imposed organization. The question is whether your project warrants any formal layering at all.
+
+## At a Glance
+
+| | Layered | Flat |
+|---|---|---|
+| Complexity | Medium | Low |
+| Best for | Standard CRUD APIs | CLI tools, scripts, prototypes |
+| Dependency rules | Strict (top-down) | None |
+| Team size | Any | Any |
+| Directory structure | Moderate | Simple |
+
+## Layered Architecture
+
+Layered organizes a Go service into four packages with a strict top-down dependency direction. Handlers at the top handle HTTP concerns. Services contain business logic. Repositories handle data access. Model is the shared foundation.
+
+```
+cmd/<name>/             → Entry point
+internal/handler/       → HTTP handlers (request/response)
+internal/service/       → Business logic
+internal/repository/    → Data access
+internal/model/         → Shared types and domain models
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| model | nothing |
+| repository | model |
+| service | repository, model |
+| handler | service, model |
+
+Dependencies only flow downward. Handlers can't import from each other. Repositories can't import from services. `archway check` catches violations in CI. The structure maps closely to how most Go developers already think about web services, which makes it easy to navigate and easy to explain.
+
+## Flat Architecture
+
+Flat is `main.go` and `go.mod`. No layers, no packages, no prescribed conventions.
+
+```
+main.go
+go.mod
+```
+
+You can still add capabilities — `http-api` works, `postgres` works — but there's no layered structure to receive them. Everything coexists in a single package. For small programs, that's fine. For anything that grows, it becomes the reason you wish you'd used a different architecture.
+
+## Key Differences
+
+- **Structure**: Layered has four packages with defined responsibilities. Flat has one.
+- **Dependency enforcement**: Layered prevents handlers from importing repositories, services from importing handlers, etc. Flat has no rules.
+- **Testability**: Layered's service layer can be tested without HTTP setup. Layered's repository layer can be swapped for a fake in service tests. Flat mixes everything.
+- **Navigability**: Layered's directory structure tells you where to look for any given piece of code. Flat requires reading all of `main.go`.
+- **Growth**: Layered scales reasonably well to 10,000+ lines across multiple handlers and services. Flat does not.
+
+## When to Choose Layered
+
+- You're building an HTTP API backed by a database
+- The service has multiple handlers and some business logic worth separating from data access
+- You want to be able to test service logic independently from HTTP and database
+- Multiple developers will work on the codebase and you need consistent conventions
+- You expect the service to live in production for more than a few months
+
+## When to Choose Flat
+
+- You're building a CLI tool, internal script, or one-off utility
+- The entire program is conceptually one thing — no meaningful separation between "handling" and "logic"
+- It's a prototype that may be thrown away
+- You want to move fast without structural decisions
+- The codebase will stay small enough that a single `main.go` is readable
+
+## Scaffold Either with archway
+
+```bash
+# Layered
+archway new my-service --arch layered
+
+# Flat
+archway new my-tool --arch flat
+```
+
+<Aside type="tip">
+If you're building something that talks to a database and serves HTTP, start with layered. The overhead is one directory per concern and you get testability and separation for free. Flat is the right default for tools, not services.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures compared](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

@@ -1,0 +1,37 @@
+---
+title: "repository capability"
+description: "Add a generic repository pattern to your Go service using Go generics with a common CRUD interface and base implementation."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`repository` adds a generic repository pattern to your Go service using Go generics, providing a consistent data access abstraction.
+
+## What You Get
+
+- Repository interface
+- Base implementation with common CRUD operations
+
+## When to Use
+
+Use `repository` to keep data access logic separate from business logic. The generic implementation reduces boilerplate across entities. Pairs naturally with `postgres` or `mysql` as the backing store.
+
+## Requirements & Suggestions
+
+**Suggests:** [`postgres`](/capabilities/postgres/), [`mysql`](/capabilities/mysql/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap postgres,repository
+# or add to an existing service:
+archway add repository
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="postgres" href="/capabilities/postgres/">PostgreSQL as the backing store for repositories.</Card>
+  <Card title="mysql" href="/capabilities/mysql/">MySQL as the backing store for repositories.</Card>
+  <Card title="ddd" href="/capabilities/ddd/">DDD building blocks that pair naturally with the repository pattern.</Card>
+</CardGrid>

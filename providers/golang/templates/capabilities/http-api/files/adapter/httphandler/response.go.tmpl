@@ -1,0 +1,126 @@
+package {{index .ArchPaths "HTTPHandlerPkg"}}
+
+import (
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+
+	domain "{{.ModulePath}}/{{index .ArchPaths "Domain"}}"
+)
+
+// ProblemDetail implements RFC 7807 with an additional machine-readable Code field.
+type ProblemDetail struct {
+	Type     string       `json:"type"`
+	Title    string       `json:"title"`
+	Status   int          `json:"status"`
+	Detail   string       `json:"detail,omitempty"`
+	Instance string       `json:"instance,omitempty"`
+	Code     string       `json:"code"`
+	Errors   []FieldError `json:"errors,omitempty"`
+}
+
+// FieldError represents a single field validation error.
+type FieldError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// JSON writes a JSON response with the given status code.
+func JSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if data != nil {
+		_ = json.NewEncoder(w).Encode(data)
+	}
+}
+
+// NoContent writes a 204 No Content response.
+func NoContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MapError maps a domain error to an RFC 7807 ProblemDetail and writes it.
+func MapError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
+	status, problem := toProblemDetail(r, err)
+
+	if status >= http.StatusInternalServerError {
+		logger.ErrorContext(r.Context(), "internal error", "error", err)
+	}
+
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(problem)
+}
+
+func toProblemDetail(r *http.Request, err error) (int, ProblemDetail) {
+	instance := r.URL.Path
+
+	if p, ok := toValidationProblem(err, instance); ok {
+		return http.StatusBadRequest, p
+	}
+
+	return toSentinelProblem(err, instance)
+}
+
+func toValidationProblem(err error, instance string) (ProblemDetail, bool) {
+	var valErr *domain.ValidationError
+	if errors.As(err, &valErr) {
+		return ProblemDetail{
+			Type: "/errors/validation", Title: "Validation Error",
+			Status: http.StatusBadRequest, Detail: valErr.Error(),
+			Instance: instance, Code: "VALIDATION_ERROR",
+			Errors: []FieldError{
+				{Field: valErr.Field, Message: valErr.Message},
+			},
+		}, true
+	}
+
+	var multiValErr *domain.MultiValidationError
+	if errors.As(err, &multiValErr) {
+		fields := make([]FieldError, len(multiValErr.Errors))
+		for i, ve := range multiValErr.Errors {
+			fields[i] = FieldError{Field: ve.Field, Message: ve.Message}
+		}
+		return ProblemDetail{
+			Type: "/errors/validation", Title: "Validation Error",
+			Status: http.StatusBadRequest, Detail: multiValErr.Error(),
+			Instance: instance, Code: "VALIDATION_ERROR", Errors: fields,
+		}, true
+	}
+
+	return ProblemDetail{}, false
+}
+
+func toSentinelProblem(err error, instance string) (int, ProblemDetail) {
+	type mapping struct {
+		sentinel error
+		status   int
+		typ      string
+		title    string
+		code     string
+	}
+
+	mappings := []mapping{
+		{domain.ErrNotFound, http.StatusNotFound, "/errors/not-found", "Not Found", "NOT_FOUND"},
+		{domain.ErrConflict, http.StatusConflict, "/errors/conflict", "Conflict", "CONFLICT"},
+		{domain.ErrUnauthorized, http.StatusUnauthorized, "/errors/unauthorized", "Unauthorized", "UNAUTHORIZED"},
+		{domain.ErrForbidden, http.StatusForbidden, "/errors/forbidden", "Forbidden", "FORBIDDEN"},
+		{domain.ErrRateLimited, http.StatusTooManyRequests, "/errors/rate-limited", "Rate Limited", "RATE_LIMITED"},
+	}
+
+	for _, m := range mappings {
+		if errors.Is(err, m.sentinel) {
+			return m.status, ProblemDetail{
+				Type: m.typ, Title: m.title, Status: m.status,
+				Instance: instance, Code: m.code,
+			}
+		}
+	}
+
+	return http.StatusInternalServerError, ProblemDetail{
+		Type: "/errors/internal", Title: "Internal Server Error",
+		Status: http.StatusInternalServerError, Instance: instance,
+		Code: "INTERNAL_ERROR",
+	}
+}

@@ -1,0 +1,89 @@
+---
+title: "What is the Saga Pattern? — Distributed Transactions in Go Microservices"
+description: "The saga pattern manages distributed transactions across Go microservices using a sequence of local transactions with compensating actions — avoiding two-phase commit while maintaining data consistency."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+The saga pattern is a way to maintain data consistency across multiple microservices without using distributed transactions (two-phase commit). Originally described in a 1987 paper by Hector Garcia-Molina and Kenneth Salem for long-lived database transactions, it was adapted for microservices by Chris Richardson and others in the mid-2010s.
+
+The core idea: instead of a single distributed transaction spanning multiple services, a saga is a sequence of local transactions, each updating a single service and publishing an event or message. If a step fails, the saga executes compensating transactions to undo the completed steps. The pattern acknowledges that distributed systems cannot provide the same atomicity guarantees as local transactions, and designs explicitly for failure.
+
+There are two implementation styles. Choreography: each service subscribes to events and decides locally whether to proceed or compensate. Orchestration: a central saga orchestrator sends commands to services and reacts to their responses. Orchestration is generally easier to reason about, debug, and monitor in complex workflows.
+
+## How It Works
+
+An order placement saga with orchestration:
+
+```
+Saga orchestrator receives: PlaceOrder(customerID, items)
+
+Step 1: ReserveInventory(items)
+  → Success: proceed
+  → Failure: saga ends (nothing to compensate yet)
+
+Step 2: ChargePayment(customerID, total)
+  → Success: proceed
+  → Failure: compensate → ReleaseInventory(items)
+
+Step 3: ConfirmOrder(orderID)
+  → Success: saga complete
+  → Failure: compensate → RefundPayment(...), ReleaseInventory(items)
+```
+
+Each step is a local transaction. Compensation actions are designed to be idempotent — they may be called more than once if the orchestrator retries.
+
+## In Go
+
+archway's `saga` capability scaffolds the saga definition, step executor, and compensation logic:
+
+```go
+type PlaceOrderSaga struct {
+    inventory  InventoryService
+    payment    PaymentService
+    orders     OrderService
+}
+
+func (s *PlaceOrderSaga) Steps() []saga.Step {
+    return []saga.Step{
+        {
+            Action:      s.reserveInventory,
+            Compensate:  s.releaseInventory,
+        },
+        {
+            Action:      s.chargePayment,
+            Compensate:  s.refundPayment,
+        },
+        {
+            Action:      s.confirmOrder,
+            Compensate:  nil, // terminal step
+        },
+    }
+}
+```
+
+State is persisted between steps so the saga can resume after a process crash.
+
+## How archway Supports It
+
+The `saga` capability scaffolds the orchestrator, step executor, and compensation logic. It requires `event-bus` and suggests `outbox` for reliable event delivery and `observability` for tracing saga execution across services. See the [Capabilities Matrix](/reference/capabilities-matrix/).
+
+<Aside type="tip">
+Design compensation actions before writing the happy path. If you can't define a clear compensation for a step, reconsider whether that step belongs in a saga or should use a different consistency strategy.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Outbox Pattern" icon="right-arrow">
+    Reliable event publishing from saga steps — ensures compensation events aren't lost. [Outbox Pattern](/glossary/outbox-pattern/)
+  </Card>
+  <Card title="Idempotency" icon="right-arrow">
+    Saga steps are retried on failure — idempotency prevents duplicate side effects from retries. [Idempotency](/glossary/idempotency/)
+  </Card>
+  <Card title="Event-Driven Architecture" icon="right-arrow">
+    Choreography-based sagas use domain events as the coordination mechanism. [Event-Driven Architecture](/glossary/event-driven-architecture/)
+  </Card>
+</CardGrid>

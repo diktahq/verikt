@@ -1,0 +1,81 @@
+---
+title: "What is Domain-Driven Design? — DDD Concepts for Go Services"
+description: "Domain-driven design (DDD) is a software development approach that centers code structure around the business domain — entities, value objects, aggregates, and domain events implemented idiomatically in Go."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Domain-driven design is an approach to software development introduced by Eric Evans in his 2003 book of the same name. DDD argues that the most important aspect of a complex software project is a deep understanding of the business domain, and that this understanding should be reflected directly in the code's structure, naming, and behavior.
+
+At its core, DDD provides a vocabulary and set of building blocks for modeling business concepts: entities (objects with identity and lifecycle), value objects (objects defined entirely by their attributes), aggregates (clusters of entities treated as a unit), domain events (significant things that happened), repositories (interfaces for persisting aggregates), and services (operations that don't belong on any single entity).
+
+The tactical patterns of DDD — the building blocks — are applicable even without the full strategic context of bounded contexts and context mapping. Most Go teams adopt DDD tactically: using value objects instead of primitive types, defining explicit aggregate boundaries, and publishing domain events when something significant happens.
+
+## How It Works
+
+The DDD building blocks in practice:
+
+```
+Entity:       Has identity (ID). Two orders with different IDs are different orders,
+              even if their contents are identical.
+
+Value Object: No identity. Two Money{amount: 100, currency: "USD"} values are equal.
+              Immutable — you don't modify a value object, you replace it.
+
+Aggregate:    An Order plus its OrderItems is an aggregate. OrderItem cannot exist
+              outside an Order. All changes go through the Order aggregate root.
+
+Domain Event: OrderPlaced{orderID, customerID, total, placedAt}
+              Signals something happened. Past tense. Immutable fact.
+```
+
+## In Go
+
+Go's struct embedding, interfaces, and lack of inheritance make DDD building blocks lightweight:
+
+```go
+// Value object — comparable by value
+type Money struct {
+    Amount   int64  // cents
+    Currency string
+}
+
+// Aggregate root — controls its own state
+type Order struct {
+    id     uuid.UUID
+    items  []OrderItem
+    status OrderStatus
+    total  Money
+}
+
+// Only method on aggregate root — no direct field mutation from outside
+func (o *Order) AddItem(product ProductID, qty int, price Money) error {
+    // business rule enforcement here
+}
+```
+
+The `ddd` capability in archway scaffolds `AggregateRoot`, `ValueObject`, and `DomainEvent` base types you can embed or implement.
+
+## How archway Supports It
+
+The `ddd` capability scaffolds the foundational DDD building blocks — `AggregateRoot`, `ValueObject`, and `DomainEvent` interfaces and base types. It pairs with `event-bus` for publishing domain events and `repository` for data access. See the [Capabilities](/concepts/capabilities/) page for the full list.
+
+<Aside type="tip">
+Start with value objects. Replacing `string` email and `float64` price with `EmailAddress` and `Money` types eliminates an entire class of bugs and makes business rules expressible in code, not comments.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="CQRS" icon="right-arrow">
+    Separating read and write models — a natural complement to DDD aggregates. [CQRS](/glossary/cqrs/)
+  </Card>
+  <Card title="Event-Driven Architecture" icon="right-arrow">
+    Domain events are the backbone of event-driven systems — DDD defines what those events should be. [Event-Driven Architecture](/glossary/event-driven-architecture/)
+  </Card>
+  <Card title="Repository Pattern" icon="right-arrow">
+    DDD repositories abstract aggregate persistence behind domain-owned interfaces. [Repository Pattern](/glossary/repository-pattern/)
+  </Card>
+</CardGrid>

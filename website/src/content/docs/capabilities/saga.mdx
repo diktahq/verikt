@@ -1,0 +1,41 @@
+---
+title: "saga capability"
+description: "Add a saga orchestrator to your Go service for distributed transactions with step execution, compensation logic, and state persistence."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`saga` adds a saga orchestrator to your Go service for coordinating multi-service transactions with rollback compensation.
+
+## What You Get
+
+- Saga definition
+- Step executor
+- Compensation logic
+- State persistence
+
+## When to Use
+
+Use `saga` when you need distributed transactions that span multiple services and must be reversible. Common in order processing (reserve inventory → charge payment → ship) where any step failure should trigger compensation steps.
+
+## Requirements & Suggestions
+
+**Requires:** [`event-bus`](/capabilities/event-bus/)
+
+**Suggests:** [`observability`](/capabilities/observability/), [`outbox`](/capabilities/outbox/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap event-bus,saga
+# or add to an existing service:
+archway add saga
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="event-bus" href="/capabilities/event-bus/">Required event bus for saga coordination.</Card>
+  <Card title="outbox" href="/capabilities/outbox/">Ensure saga events are reliably published.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace saga execution steps across services.</Card>
+</CardGrid>

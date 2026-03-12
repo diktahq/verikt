@@ -1,0 +1,39 @@
+---
+title: "graphql capability"
+description: "Scaffold a GraphQL API in Go using gqlgen code generation, with schema definition, resolver scaffolding, and a development playground."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`graphql` adds a gqlgen-powered GraphQL API to your Go service, including schema, resolvers, and a development playground.
+
+## What You Get
+
+- gqlgen configuration
+- Schema definition
+- Resolver scaffolding
+- Playground for development
+
+## When to Use
+
+Use `graphql` for client-facing APIs where clients need flexible querying — common in mobile apps and complex frontends where over-fetching from REST would be costly.
+
+## Requirements & Suggestions
+
+**Suggests:** [`auth-jwt`](/capabilities/auth-jwt/), [`observability`](/capabilities/observability/), [`health`](/capabilities/health/), [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap graphql
+# or add to an existing service:
+archway add graphql
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication for securing GraphQL resolvers.</Card>
+  <Card title="observability" href="/capabilities/observability/">Distributed tracing and metrics for production debugging.</Card>
+  <Card title="docker" href="/capabilities/docker/">Local development environment with Docker Compose.</Card>
+</CardGrid>

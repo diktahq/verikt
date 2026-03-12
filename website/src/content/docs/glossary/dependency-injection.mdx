@@ -1,0 +1,85 @@
+---
+title: "What is Dependency Injection? — Wiring Go Services at the Composition Root"
+description: "Dependency injection supplies Go structs with their dependencies from the outside rather than creating them internally — enabling testability, flexibility, and clean architecture boundaries."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Dependency injection (DI) is the practice of providing a component with its dependencies rather than having the component create them. Instead of a service instantiating its database connection, logger, and HTTP client internally, those dependencies are passed in — as constructor parameters, function arguments, or struct fields.
+
+The concept follows directly from the Dependency Inversion Principle (the D in SOLID): high-level modules should not depend on low-level modules; both should depend on abstractions. In practice, this means a `PaymentService` should depend on a `PaymentGateway` interface, not on a concrete `StripeClient`. Whatever implements `PaymentGateway` — Stripe, a mock, a test double — is injected at the point where the service is created.
+
+Dependency injection is not a framework feature. It's a coding discipline. In Go, it's often done manually through constructors. Frameworks like wire (Google) or fx (Uber) automate the wiring for large applications, but the principle is the same: dependencies flow in from the outside, not up from within.
+
+## How It Works
+
+```go
+// BAD — dependency created internally
+type OrderService struct{}
+
+func (s *OrderService) PlaceOrder(ctx context.Context, cmd PlaceOrderCommand) error {
+    db, _ := pgx.Connect(ctx, os.Getenv("DATABASE_URL")) // created internally
+    // ...
+}
+
+// GOOD — dependency injected
+type OrderService struct {
+    repo   OrderRepository  // interface, not concrete
+    events EventPublisher
+}
+
+func NewOrderService(repo OrderRepository, events EventPublisher) *OrderService {
+    return &OrderService{repo: repo, events: events}
+}
+```
+
+The constructor makes dependencies explicit, visible, and swappable.
+
+## In Go
+
+Manual DI through constructors is idiomatic Go. For large services with many components, a composition root pattern centralizes all wiring:
+
+```go
+// internal/bootstrap/bootstrap.go
+func Run(version string) error {
+    cfg := config.Load()
+
+    db, err := postgres.NewConnection(cfg.Database)
+    if err != nil {
+        return fmt.Errorf("database: %w", err)
+    }
+
+    repo := postgres.NewOrderRepository(db)
+    events := eventbus.New()
+    svc := order.NewOrderService(repo, events)
+    handler := httphandler.NewOrderHandler(svc)
+
+    // wire everything into the HTTP server
+}
+```
+
+The entire dependency graph is constructed in one place. This is the bootstrap pattern archway scaffolds.
+
+## How archway Supports It
+
+The `bootstrap` capability generates a thin `main.go` and `internal/bootstrap/bootstrap.go` where all dependency wiring lives. Each capability adds its initialization code to this composition root via partial injection. See [How It Works](/concepts/how-it-works/) for how partials are injected.
+
+<Aside type="tip">
+Inject interfaces, not concrete types. If you inject `*PostgresOrderRepository` instead of `OrderRepository`, you've traded one hard dependency for another. The interface is what enables testing and replaceability.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Hexagonal Architecture" icon="right-arrow">
+    Hexagonal architecture relies on DI to wire ports to their adapters at the composition root. [Hexagonal Architecture](/glossary/hexagonal-architecture/)
+  </Card>
+  <Card title="Repository Pattern" icon="right-arrow">
+    Repositories are injected into services as interfaces — a canonical DI use case. [Repository Pattern](/glossary/repository-pattern/)
+  </Card>
+  <Card title="How It Works" icon="right-arrow">
+    How archway's bootstrap pattern and partial injection implement DI automatically. [How It Works](/concepts/how-it-works/)
+  </Card>
+</CardGrid>

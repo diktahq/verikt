@@ -1,0 +1,84 @@
+---
+title: "What is Rate Limiting? — Protecting Go APIs from Abuse and Overload"
+description: "Rate limiting controls how many requests a Go API accepts per time window — protecting services from abuse, preventing overload, and ensuring fair resource allocation across clients."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Rate limiting is a technique for controlling the rate at which requests are processed — typically measured as requests per second, per minute, or per hour, scoped to a client identity (IP address, API key, user ID, or tenant). When a client exceeds its allocated rate, the server returns a 429 Too Many Requests response immediately rather than processing the request.
+
+Rate limiting serves several purposes. It protects against abuse: a single client cannot overwhelm the service with requests. It ensures fairness: no single client consumes a disproportionate share of server capacity. It provides a mechanism for tiered access: free tier clients get lower limits than paid tier clients. And it defends against inadvertent overload from misbehaving clients who retry without backoff.
+
+The two most common algorithm choices are the token bucket (a bucket fills at a constant rate; each request consumes a token; requests are rejected when the bucket is empty) and the leaky bucket (requests queue and drain at a constant rate). The token bucket allows short bursts while maintaining an average rate; the leaky bucket enforces a strictly uniform output rate.
+
+## How It Works
+
+Token bucket example:
+
+```
+Config: 100 requests/minute per API key
+
+Client sends requests:
+  Request 1-100 in minute 1 → allowed (bucket has tokens)
+  Request 101 in minute 1   → rejected (429 Too Many Requests)
+  Request 102 at minute 1:01 → allowed if bucket has refilled a token
+```
+
+The response includes headers that tell the client their current rate limit status:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1709251260
+Retry-After: 58
+```
+
+## In Go
+
+archway's `rate-limiting` capability requires `http-api` and scaffolds token bucket middleware:
+
+```go
+func RateLimitMiddleware(store RateLimitStore) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            key := extractClientKey(r) // IP, API key, or user ID
+            allowed, remaining, reset := store.Allow(r.Context(), key)
+
+            w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+            w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+
+            if !allowed {
+                w.WriteHeader(http.StatusTooManyRequests)
+                return
+            }
+            next.ServeHTTP(w, r)
+        })
+    }
+}
+```
+
+Redis is the typical backing store for distributed rate limiting — its `INCR` and expiry operations implement the token bucket efficiently across multiple service instances.
+
+## How archway Supports It
+
+The `rate-limiting` capability requires `http-api` and scaffolds per-endpoint token bucket middleware with configurable limits. archway's smart suggestions recommend `rate-limiting` whenever `http-api` is selected. See [Capabilities](/concepts/capabilities/).
+
+<Aside type="tip">
+Scope rate limits to authenticated identity, not just IP address. IP-based limits break for clients behind NAT, and they're trivially bypassed by rotating IPs. API key or user ID limits are more accurate and harder to circumvent.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Bulkhead Pattern" icon="right-arrow">
+    Bulkhead limits concurrent in-flight requests; rate limiting controls the arrival rate. [Bulkhead Pattern](/glossary/bulkhead-pattern/)
+  </Card>
+  <Card title="JWT Authentication" icon="right-arrow">
+    JWT authentication provides the client identity that rate limiting scopes its limits to. [JWT Authentication](/glossary/jwt-authentication/)
+  </Card>
+  <Card title="Circuit Breaker" icon="right-arrow">
+    Rate limiting protects your service from inbound overload; circuit breaker protects it from outbound failures. [Circuit Breaker](/glossary/circuit-breaker/)
+  </Card>
+</CardGrid>

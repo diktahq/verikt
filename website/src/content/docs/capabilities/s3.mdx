@@ -1,0 +1,41 @@
+---
+title: "s3 capability"
+description: "Add AWS S3 object storage to your Go service with client setup, upload/download operations, presigned URLs, and multipart upload support."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`s3` wires an AWS S3 client into your Go service with upload, download, and presigned URL support out of the box.
+
+## What You Get
+
+- S3 client setup
+- Upload/download operations
+- Presigned URLs
+- Multipart upload support
+
+## When to Use
+
+Use `s3` for file uploads, static asset hosting, or any workload that needs durable object storage. The presigned URL support lets clients upload directly to S3 without routing bytes through your service.
+
+## Requirements & Suggestions
+
+**Requires:** [`platform`](/capabilities/platform/) (config)
+
+**Suggests:** [`docker`](/capabilities/docker/), [`observability`](/capabilities/observability/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap platform,s3
+# or add to an existing service:
+archway add s3
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="platform" href="/capabilities/platform/">Required for configuration management.</Card>
+  <Card title="docker" href="/capabilities/docker/">Local S3-compatible storage (e.g., MinIO) via Docker Compose.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace S3 operations with OpenTelemetry.</Card>
+</CardGrid>

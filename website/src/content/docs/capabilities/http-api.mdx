@@ -1,0 +1,40 @@
+---
+title: "http-api capability"
+description: "Scaffold a production-ready REST API in Go using Chi v5, with middleware chain, RFC 7807 error responses, pagination helpers, and OpenAPI spec."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`http-api` adds a Chi-based REST API layer to your Go service, wired with production middleware from day one.
+
+## What You Get
+
+- Chi router with full middleware chain (RequestID, RealIP, Recoverer, OTel)
+- RFC 7807 Problem Detail error responses
+- Pagination helpers
+- OpenAPI spec
+- Handler patterns with typed request/response structs
+
+## When to Use
+
+Reach for `http-api` whenever you need to expose a REST API or webhook endpoint. It's the foundation most other transport capabilities build on — `cors`, `auth-jwt`, `rate-limiting`, `health`, and `websocket` all require it.
+
+## Requirements & Suggestions
+
+**Suggests:** [`rate-limiting`](/capabilities/rate-limiting/), [`auth-jwt`](/capabilities/auth-jwt/), [`cors`](/capabilities/cors/), [`health`](/capabilities/health/), [`request-id`](/capabilities/request-id/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api
+# or add to an existing service:
+archway add http-api
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication middleware for securing routes.</Card>
+  <Card title="health" href="/capabilities/health/">Health and readiness endpoints for orchestrators.</Card>
+  <Card title="rate-limiting" href="/capabilities/rate-limiting/">Token bucket rate limiter for abuse prevention.</Card>
+</CardGrid>

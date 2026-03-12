@@ -1,0 +1,39 @@
+---
+title: "sse capability"
+description: "Add Server-Sent Events to your Go service for real-time streaming from server to client, with heartbeat support and connection management."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`sse` adds Server-Sent Events to your Go service for one-way real-time streaming from server to connected clients.
+
+## What You Get
+
+- SSE handler
+- Event formatting
+- Client connection management
+- Heartbeat support
+
+## When to Use
+
+Use `sse` for server-to-client streaming where you don't need bidirectional communication: live feeds, notifications, progress updates. SSE is simpler than WebSockets for this pattern and works over plain HTTP.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,sse
+# or add to an existing service:
+archway add sse
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="websocket" href="/capabilities/websocket/">Bidirectional real-time communication.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication to secure SSE endpoints.</Card>
+</CardGrid>

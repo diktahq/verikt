@@ -1,0 +1,10 @@
+name: conditional-test
+language: go
+variables:
+  - name: ServiceName
+    type: string
+    required: true
+conditional:
+  os_root:
+    include: ["internal/safepath/root.go.tmpl"]
+    exclude: ["internal/safepath/fallback.go.tmpl"]

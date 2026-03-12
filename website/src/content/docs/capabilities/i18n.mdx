@@ -1,0 +1,39 @@
+---
+title: "i18n capability"
+description: "Add internationalization to your Go service with YAML message catalogs, locale middleware, Accept-Language detection, and context-based locale propagation."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`i18n` adds internationalization to your Go service with message catalogs and locale middleware for multi-language support.
+
+## What You Get
+
+- Message catalog system (YAML per locale)
+- Locale middleware (Accept-Language + query param)
+- Context-based locale propagation
+- Fallback to default locale
+
+## When to Use
+
+Use `i18n` when your service needs to serve users in multiple languages — API error messages, email content, or server-rendered UI copy. YAML catalogs per locale make translations easy to manage without recompiling.
+
+## Requirements & Suggestions
+
+**Suggests:** [`http-api`](/capabilities/http-api/), [`email-gateway`](/capabilities/email-gateway/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap i18n
+# or add to an existing service:
+archway add i18n
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="email-gateway" href="/capabilities/email-gateway/">Localized transactional emails using i18n message catalogs.</Card>
+  <Card title="templ" href="/capabilities/templ/">Server-rendered templates with localized copy.</Card>
+  <Card title="http-api" href="/capabilities/http-api/">HTTP API where locale middleware runs.</Card>
+</CardGrid>

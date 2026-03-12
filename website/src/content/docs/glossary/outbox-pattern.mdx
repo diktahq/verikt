@@ -1,0 +1,80 @@
+---
+title: "What is the Outbox Pattern? — Reliable Event Publishing in Go"
+description: "The transactional outbox pattern guarantees reliable event publishing in Go services by writing events to a database table in the same transaction as the business operation, then relaying them asynchronously."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+The transactional outbox pattern solves a fundamental distributed systems problem: how do you atomically commit a database change and publish an event, when the database and message broker are separate systems? If you write to Postgres and then publish to Kafka, a process crash between those two operations leaves your database updated but the event never published. Consumers never learn the order was placed.
+
+The outbox pattern resolves this by treating the event as part of the database transaction. Instead of publishing directly to the message broker, you write the event to an `outbox` table in the same transaction as the business operation. A separate relay worker reads unpublished events from the outbox table and publishes them to the message broker, marking them as published once confirmed.
+
+The key insight is that the outbox write and the business write are atomic — they either both commit or both roll back. The relay worker provides at-least-once delivery: if it crashes mid-relay, it will re-process the event on restart. Consumers need to handle duplicate events, which is addressed by the idempotency pattern.
+
+## How It Works
+
+```
+Transaction:
+  1. UPDATE orders SET status = 'placed' WHERE id = $1
+  2. INSERT INTO outbox (id, event_type, payload, published_at)
+     VALUES ($2, 'OrderPlaced', $3, NULL)
+  -- COMMIT
+
+Relay worker (runs continuously):
+  3. SELECT * FROM outbox WHERE published_at IS NULL ORDER BY created_at LIMIT 10
+  4. Publish each event to Kafka/NATS/SNS
+  5. UPDATE outbox SET published_at = NOW() WHERE id = $id
+```
+
+The relay is a simple polling loop or a Postgres LISTEN/NOTIFY-triggered worker. The outbox table becomes an audit log of all events published by the service.
+
+## In Go
+
+The outbox relay worker is a long-running goroutine that polls the outbox table on a configurable interval. archway's `outbox` capability scaffolds the table definition, the relay worker, and the publisher interface:
+
+```go
+type OutboxRelay struct {
+    db        *pgx.Pool
+    publisher EventPublisher
+    interval  time.Duration
+}
+
+func (r *OutboxRelay) Run(ctx context.Context) error {
+    ticker := time.NewTicker(r.interval)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-ticker.C:
+            r.processOutbox(ctx)
+        case <-ctx.Done():
+            return nil
+        }
+    }
+}
+```
+
+Graceful shutdown ensures in-flight relay operations complete before the process exits.
+
+## How archway Supports It
+
+The `outbox` capability scaffolds the outbox table schema, relay worker, and publisher interface. It suggests `postgres`, `event-bus`, and `scheduler` as natural companions. archway also warns when `event-bus` is used without `outbox` — a production incident waiting to happen. See the [Capabilities Matrix](/reference/capabilities-matrix/) for the full context.
+
+<Aside type="tip">
+The relay worker's polling interval is a trade-off between event latency and database load. Start at 1 second — you can reduce it later with LISTEN/NOTIFY if sub-second latency matters.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Event-Driven Architecture" icon="right-arrow">
+    The outbox pattern ensures reliable delivery in event-driven systems. [Event-Driven Architecture](/glossary/event-driven-architecture/)
+  </Card>
+  <Card title="Idempotency" icon="right-arrow">
+    At-least-once delivery from the outbox means consumers need idempotency to handle duplicates safely. [Idempotency](/glossary/idempotency/)
+  </Card>
+  <Card title="Saga Pattern" icon="right-arrow">
+    Sagas use domain events to coordinate distributed transactions — the outbox makes those events reliable. [Saga Pattern](/glossary/saga-pattern/)
+  </Card>
+</CardGrid>

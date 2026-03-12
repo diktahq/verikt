@@ -1,0 +1,77 @@
+---
+title: "What is the Bulkhead Pattern? — Concurrency Isolation in Go Services"
+description: "The bulkhead pattern isolates Go service components with concurrency limits — preventing one slow dependency from exhausting goroutines and cascading failures to unrelated functionality."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+The bulkhead pattern takes its name from the watertight compartments in a ship's hull — if one compartment floods, the others remain intact and the ship stays afloat. In software, a bulkhead isolates one component's resource consumption so that its failure or slowdown cannot exhaust shared resources and cascade to unrelated parts of the system.
+
+The most common implementation uses concurrency limits (semaphores) to cap how many concurrent requests or goroutines can be active for a given operation. If payment processing slows down and its bulkhead is full, new payment requests are rejected immediately — they do not block goroutines that could be handling unrelated requests. The order listing endpoint keeps working even as the payment system degrades.
+
+Michael Nygard introduced the pattern in "Release It!" (2007) alongside circuit breakers and timeouts as a set of stability patterns for distributed systems. Bulkheads address the failure mode of resource exhaustion — where a slow dependency ties up goroutines, connection pool slots, or file descriptors until the service is unable to handle any request.
+
+## How It Works
+
+A semaphore-based bulkhead in concept:
+
+```
+Bulkhead(maxConcurrent=10):
+  Request arrives → try to acquire semaphore slot
+    Slot available → proceed, release on completion
+    No slot available → reject immediately (return 503) or queue with timeout
+```
+
+The rejection is intentional and fast. A rejected request returns a clear error; a blocked goroutine wastes a resource. Under load, fast rejection preserves capacity for requests that can succeed.
+
+## In Go
+
+Go's `sync.Semaphore` (or a buffered channel used as one) is the natural implementation. archway's `bulkhead` capability scaffolds a reusable semaphore-based limiter:
+
+```go
+type Bulkhead struct {
+    sem chan struct{}
+}
+
+func New(maxConcurrent int) *Bulkhead {
+    return &Bulkhead{sem: make(chan struct{}, maxConcurrent)}
+}
+
+func (b *Bulkhead) Do(ctx context.Context, fn func() error) error {
+    select {
+    case b.sem <- struct{}{}:
+        defer func() { <-b.sem }()
+        return fn()
+    case <-ctx.Done():
+        return ctx.Err()
+    default:
+        return ErrBulkheadFull
+    }
+}
+```
+
+The `default` case provides immediate rejection when all slots are occupied.
+
+## How archway Supports It
+
+The `bulkhead` capability scaffolds the semaphore concurrency limiter with timeout support. It suggests `observability` (to track bulkhead saturation metrics) and `circuit-breaker` (to stop calls entirely when the downstream is known to be failing). See the [Capabilities Matrix](/reference/capabilities-matrix/).
+
+<Aside type="tip">
+Set bulkhead limits per dependency, not globally. A single global limit protects nothing — a slow payment service will still consume all global slots. Separate bulkheads for payment, inventory, and notifications give you independent protection.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Circuit Breaker" icon="right-arrow">
+    Stops calls when a dependency is failing — bulkhead limits concurrent calls regardless of health. [Circuit Breaker](/glossary/circuit-breaker/)
+  </Card>
+  <Card title="Rate Limiting" icon="right-arrow">
+    Rate limiting controls request throughput; bulkhead controls concurrent resource consumption. [Rate Limiting](/glossary/rate-limiting/)
+  </Card>
+  <Card title="OpenTelemetry" icon="right-arrow">
+    Metrics on bulkhead saturation are critical — you need visibility to tune limits correctly. [OpenTelemetry](/glossary/opentelemetry/)
+  </Card>
+</CardGrid>

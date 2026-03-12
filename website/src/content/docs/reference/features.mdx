@@ -1,0 +1,82 @@
+---
+title: Feature Matrix
+description: "Version-gated language features that control template output. Each feature maps to a Go version and enables modern API usage in scaffolded code."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Archway uses a **feature matrix** to generate version-appropriate code. Instead of targeting the lowest common denominator, templates use feature flags to emit modern APIs when the target Go version supports them.
+
+## How It Works
+
+1. **Detect version** — archway runs `go env GOVERSION` (or uses `--set GoVersion=X.XX`)
+2. **Resolve features** — the detected version is compared against `features.yaml`, producing a boolean map
+3. **Inject into templates** — templates access features via `{{if .Features.<name>}}...{{end}}`
+
+## Go Feature Matrix
+
+Each feature maps to the minimum Go version that introduced it. If your detected version is >= the `since` version, the feature is enabled.
+
+| Feature | Description | Since |
+|---------|-------------|-------|
+| `slices_package` | stdlib slices package (`slices.SortFunc`, `slices.Contains`) | 1.21 |
+| `log_slog` | stdlib structured logging (`log/slog`) | 1.21 |
+| `maps_package` | stdlib maps package | 1.21 |
+| `range_over_int` | `for i := range n` syntax | 1.22 |
+| `range_over_func` | `for x := range func` syntax (iterators) | 1.23 |
+| `os_root` | `os.Root`/`os.OpenRoot` for kernel-level path safety | 1.24 |
+| `weak_pointers` | `weak` package for weak pointers | 1.24 |
+| `os_root_fs` | `os.Root` implements `fs.FS` interface | 1.25 |
+| `synctest` | `testing/synctest` for concurrent test control | 1.25 |
+| `generic_type_aliases` | Fully generic type aliases | 1.25 |
+
+<Aside type="note">
+The source of truth is `providers/golang/templates/features.yaml`. The matrix is evaluated at scaffold time, not at build time.
+</Aside>
+
+## Template Usage
+
+Templates use the `.Features` map to conditionally emit code:
+
+```go
+{{if .Features.os_root}}
+root, err := os.OpenRoot(dir)
+{{else}}
+f, err := os.Open(filepath.Join(dir, name))
+{{end}}
+```
+
+```go
+{{if .Features.log_slog}}
+import "log/slog"
+{{else}}
+import "log"
+{{end}}
+```
+
+## features.yaml Format
+
+The feature matrix is a YAML file with a single `features` list:
+
+```yaml
+features:
+  - name: slices_package
+    description: "stdlib slices package (slices.SortFunc, slices.Contains)"
+    since: "1.21"
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Identifier used in templates as `.Features.<name>` |
+| `description` | string | Human-readable explanation of the feature |
+| `since` | string | Minimum Go version (`major.minor`) that supports this feature |
+
+## Adding Features for New Go Versions
+
+When a new Go version ships with relevant stdlib or language changes:
+
+1. Add an entry to `providers/golang/templates/features.yaml`
+2. Update any templates that should use the new feature with `{{if .Features.<name>}}`
+3. Optionally add `conditional` rules in capability manifests for file-level gating (see [archway.yaml reference](/reference/archway-yaml/#conditional-file-inclusion))
+
+No changes to the feature resolver are needed — it reads features.yaml dynamically.

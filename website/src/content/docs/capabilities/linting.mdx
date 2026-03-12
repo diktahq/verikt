@@ -1,0 +1,32 @@
+---
+title: "linting capability"
+description: "Add golangci-lint configuration to your Go service with a curated linter set including errcheck, govet, staticcheck, bodyclose, and noctx."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`linting` adds a `golangci-lint` configuration to your Go service with a curated set of linters for production-grade code quality.
+
+## What You Get
+
+- `.golangci.yaml` with curated linter set (errcheck, govet, staticcheck, bodyclose, noctx, and more)
+
+## When to Use
+
+Add `linting` to every Go service. The curated linter set catches real bugs — unchecked errors, nil pointer risks, HTTP body leaks — not just style issues. Run it in CI and locally via the pre-commit hook.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap linting
+# or add to an existing service:
+archway add linting
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="pre-commit" href="/capabilities/pre-commit/">Pre-commit hooks that run golangci-lint before every commit.</Card>
+  <Card title="ci-github" href="/capabilities/ci-github/">GitHub Actions CI that runs linting on every PR.</Card>
+  <Card title="makefile" href="/capabilities/makefile/">make lint target wired to golangci-lint.</Card>
+</CardGrid>

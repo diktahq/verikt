@@ -1,0 +1,33 @@
+---
+title: "circuit-breaker capability"
+description: "Add a circuit breaker pattern to your Go service to prevent cascading failures from flaky or slow external service calls."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`circuit-breaker` adds a circuit breaker wrapper to your Go service that stops cascading failures when external services degrade.
+
+## What You Get
+
+- Circuit breaker wrapper with open/half-open/closed states
+- Configurable thresholds and timeouts
+
+## When to Use
+
+Any service calling external HTTP APIs, databases, or third-party services should use a circuit breaker. A slow external service will exhaust your connection pool and cascade failure to your callers — the circuit breaker trips open and fast-fails until the dependency recovers.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap circuit-breaker
+# or add to an existing service:
+archway add circuit-breaker
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="retry" href="/capabilities/retry/">Retry with backoff before the circuit trips.</Card>
+  <Card title="http-client" href="/capabilities/http-client/">Resilient HTTP client that pairs with circuit breaker.</Card>
+  <Card title="bulkhead" href="/capabilities/bulkhead/">Concurrency limiter to complement circuit breaking.</Card>
+</CardGrid>

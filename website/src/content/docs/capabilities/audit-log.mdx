@@ -1,0 +1,34 @@
+---
+title: "audit-log capability"
+description: "Add structured audit logging to your Go service for compliance, change tracking, and security forensics with configurable retention."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`audit-log` adds structured audit logging to your Go service for tracking sensitive operations with append-only audit events.
+
+## What You Get
+
+- Audit log writer
+- Structured audit events
+- Configurable retention
+
+## When to Use
+
+Use `audit-log` for compliance, financial operations, and security-sensitive actions. Payments, refunds, permission changes, and data access in regulated industries all require an append-only audit trail. Without it, you have no answer to "who changed this and when?".
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap audit-log
+# or add to an existing service:
+archway add audit-log
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">Enrich audit events with authenticated user identity.</Card>
+  <Card title="multi-tenancy" href="/capabilities/multi-tenancy/">Per-tenant audit trails for SaaS compliance.</Card>
+  <Card title="postgres" href="/capabilities/postgres/">PostgreSQL for durable audit log storage.</Card>
+</CardGrid>

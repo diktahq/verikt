@@ -1,0 +1,133 @@
+---
+title: archway.yaml
+description: Full reference for the archway.yaml configuration file — define architecture components, dependency rules, and function complexity limits for Go services
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every archway project has an `archway.yaml` at its root. This file defines the architecture rules that `archway check` enforces.
+
+## Full Example
+
+```yaml
+language: go
+architecture: hexagonal
+
+capabilities:
+  - platform
+  - bootstrap
+  - http-api
+  - mysql
+  - migrations
+  - health
+
+components:
+  - name: domain
+    in: ["domain/**"]
+    may_depend_on: []
+
+  - name: ports
+    in: ["port/**"]
+    may_depend_on: [domain]
+
+  - name: service
+    in: ["service/**"]
+    may_depend_on: [domain, ports]
+
+  - name: adapters
+    in: ["adapter/**"]
+    may_depend_on: [ports, domain]
+
+rules:
+  max_function_lines: 80
+  max_function_params: 5
+  max_function_returns: 3
+  required_dirs: []
+  forbidden_dirs: []
+```
+
+## Fields
+
+### `language`
+
+The project's programming language. Currently `go` is supported, with `typescript` planned.
+
+### `architecture`
+
+The architecture pattern used to scaffold the project (`hexagonal`, `flat`).
+
+### `capabilities`
+
+List of capabilities composed into the project. Used for documentation and future `archway update` support.
+
+### `components`
+
+The core of architecture enforcement. Each component defines:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Component identifier |
+| `in` | string[] | Glob patterns matching this component's packages |
+| `may_depend_on` | string[] | Other components this one is allowed to import from |
+
+<Aside type="caution">
+**Dependency rules are enforced transitively.** If `service` may depend on `domain` and `ports`, but not `adapters`, then any import from a `service/` package into an `adapter/` package is a violation.
+</Aside>
+
+### `rules`
+
+Optional rules for function complexity and project structure:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_function_lines` | int | 80 | Maximum lines per function |
+| `max_function_params` | int | 5 | Maximum parameters per function |
+| `max_function_returns` | int | 3 | Maximum return values per function |
+| `required_dirs` | string[] | [] | Directories that must exist |
+| `forbidden_dirs` | string[] | [] | Directories that must not exist |
+
+## Feature-Gated Manifests
+
+Architecture and capability manifests support two fields for integrating with the [feature matrix](/reference/features/).
+
+### `requires_features`
+
+A list of feature names that must be enabled for the manifest to apply. If any required feature is disabled (because the target Go version is too old), archway skips or warns about the capability.
+
+```yaml
+# capability.yaml
+name: safepath
+description: Kernel-level path traversal safety
+requires_features:
+  - os_root
+```
+
+### `conditional`
+
+A map of feature names to file inclusion/exclusion rules. This controls which template files are rendered based on resolved features — allowing a single capability to ship both modern and fallback implementations.
+
+```yaml
+# capability.yaml
+name: platform
+conditional:
+  os_root:
+    include:
+      - internal/safepath/root.go.tmpl
+    exclude:
+      - internal/safepath/fallback.go.tmpl
+```
+
+When `os_root` is true (Go >= 1.24): `root.go.tmpl` is rendered, `fallback.go.tmpl` is skipped. When false: the opposite. Files not mentioned in any conditional rule are always included. If a file appears in conflicting rules from different features, exclude wins.
+
+## Validation
+
+The configuration is validated when running `archway check`:
+
+- Component names must be unique
+- Components cannot depend on themselves
+- Dependencies must reference existing components
+- `in` patterns must be valid globs
+
+<Aside type="tip">
+You can add `archway check` to your CI pipeline to catch dependency violations before merge.
+</Aside>

@@ -1,0 +1,38 @@
+---
+title: "bulkhead capability"
+description: "Add a semaphore-based concurrency limiter to your Go service to isolate load and prevent one slow dependency from consuming all resources."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`bulkhead` adds a semaphore-based concurrency limiter to your Go service for load isolation between components.
+
+## What You Get
+
+- Semaphore-based concurrency limiter
+- Configurable max concurrent operations
+- Timeout support
+
+## When to Use
+
+Use `bulkhead` to prevent a slow or overloaded dependency from consuming all available goroutines or connections in your service. By capping concurrency per dependency, other operations remain unaffected when one backend degrades.
+
+## Requirements & Suggestions
+
+**Suggests:** [`observability`](/capabilities/observability/), [`circuit-breaker`](/capabilities/circuit-breaker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap bulkhead
+# or add to an existing service:
+archway add bulkhead
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="circuit-breaker" href="/capabilities/circuit-breaker/">Circuit breaker for fast-failing when dependencies are down.</Card>
+  <Card title="observability" href="/capabilities/observability/">Track concurrency usage and saturation metrics.</Card>
+  <Card title="timeout" href="/capabilities/timeout/">Context timeouts to bound how long bulkhead slots are held.</Card>
+</CardGrid>

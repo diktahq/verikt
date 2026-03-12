@@ -1,0 +1,68 @@
+---
+title: "What is Ports and Adapters? — Hexagonal Architecture Explained"
+description: "Ports and adapters is the structural pattern behind hexagonal architecture — Go services define interface ports for all external interactions, with adapters providing the concrete implementations."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Ports and adapters is the original name Alistair Cockburn gave to what is now commonly called hexagonal architecture. The terminology is intentionally mechanical: a port is a defined interface through which the application communicates with the outside world, and an adapter is any concrete implementation that plugs into that port.
+
+The distinction matters because it names the two sides of the pattern explicitly. Ports are owned by the application — they define what the application needs, in the application's language. Adapters are owned by the infrastructure layer — they translate between the application's language and whatever the external system speaks (SQL, HTTP, JSON, Kafka messages).
+
+This vocabulary also distinguishes the two directions of communication: inbound ports handle requests coming into the application (an HTTP handler calls a use case interface), while outbound ports handle requests the application makes to external systems (a repository interface calls a database).
+
+## How It Works
+
+Consider an order service:
+
+```
+Inbound port:  OrderService interface { PlaceOrder(cmd PlaceOrderCommand) error }
+Inbound adapter:  HTTP handler → calls OrderService.PlaceOrder(...)
+
+Outbound port:  OrderRepository interface { Save(order *Order) error }
+Outbound adapter:  PostgresOrderRepository → implements OrderRepository
+```
+
+The service implementation depends only on outbound port interfaces — it never references `*sql.DB` or any Postgres-specific type. The HTTP handler depends only on inbound port interfaces — it never calls service methods directly, only through the interface. Swapping either side requires no changes to the business logic.
+
+## In Go
+
+Go is particularly well-suited to this pattern because interfaces are implicitly satisfied — there is no `implements` keyword. Any struct with the right method set satisfies a port interface, which makes creating test doubles trivial:
+
+```go
+// Test double for the outbound port — no mock framework needed
+type fakeOrderRepo struct {
+    orders map[uuid.UUID]*domain.Order
+}
+
+func (r *fakeOrderRepo) Save(_ context.Context, o *domain.Order) error {
+    r.orders[o.ID] = o
+    return nil
+}
+```
+
+Dependency injection at the composition root connects real adapters in production and fakes in tests.
+
+## How archway Supports It
+
+archway's hexagonal architecture scaffold generates `port/inbound.go` and `port/outbound.go` as the interface layer, with `adapter/` for concrete implementations. The `archway.yaml` dependency rules prevent adapters from importing other adapters and enforce the inward-only direction. See [Hexagonal Architecture](/glossary/hexagonal-architecture/) for the full layer breakdown.
+
+<Aside type="tip">
+Name port interfaces after what the application needs, not after the technology that implements them. `OrderRepository` is a port name; `PostgresOrderRepository` is an adapter name.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Hexagonal Architecture" icon="right-arrow">
+    The full pattern that ports and adapters define — structure, dependency rules, and usage guidance. [Hexagonal Architecture](/glossary/hexagonal-architecture/)
+  </Card>
+  <Card title="Dependency Injection" icon="right-arrow">
+    The mechanism that wires ports to their adapters at startup. [Dependency Injection](/glossary/dependency-injection/)
+  </Card>
+  <Card title="Repository Pattern" icon="right-arrow">
+    The canonical outbound port — data access abstracted behind an interface. [Repository Pattern](/glossary/repository-pattern/)
+  </Card>
+</CardGrid>

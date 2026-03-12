@@ -1,0 +1,44 @@
+---
+title: "platform capability"
+description: "Add the production infrastructure layer to your Go service — YAML config loading, lifecycle management, structured slog logging, PII redaction, and live reload."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`platform` adds the production infrastructure layer to your Go service: config, lifecycle, and structured logging in one capability.
+
+## What You Get
+
+- YAML config loading with capability-aware struct fields
+- `lifecycle.App` with ordered startup/shutdown
+- Structured logging via `slog`
+- PII redaction log handler
+- Live reload with `.air.toml`
+
+## When to Use
+
+Add `platform` to any production service — it's the foundation everything else depends on. Transport capabilities (http-api, grpc, kafka-consumer) all need config, logging, and lifecycle management to be production-ready.
+
+## Requirements & Suggestions
+
+**Suggests:** [`docker`](/capabilities/docker/), [`bootstrap`](/capabilities/bootstrap/)
+
+<Aside type="caution">
+`platform` conflicts with `graceful` — platform includes its own shutdown manager.
+</Aside>
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap platform
+# or add to an existing service:
+archway add platform
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="bootstrap" href="/capabilities/bootstrap/">Composition Root pattern for testable dependency wiring.</Card>
+  <Card title="observability" href="/capabilities/observability/">OpenTelemetry tracing and metrics alongside platform logging.</Card>
+  <Card title="health" href="/capabilities/health/">Health endpoints integrated with the platform lifecycle.</Card>
+</CardGrid>

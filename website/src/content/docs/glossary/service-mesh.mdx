@@ -1,0 +1,62 @@
+---
+title: "What is a Service Mesh? — Infrastructure Layer for Go Microservices"
+description: "A service mesh is an infrastructure layer that handles service-to-service communication for Go microservices — providing observability, traffic management, and mutual TLS without application code changes."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+A service mesh is a dedicated infrastructure layer for managing service-to-service communication in a microservices deployment. Rather than implementing concerns like retries, circuit breaking, mutual TLS, and distributed tracing in each service's application code, a service mesh handles these at the infrastructure level using sidecar proxies deployed alongside each service instance.
+
+The term was popularized by Buoyant's Linkerd (2016) and later by Istio (2017). The sidecar model means each service pod (in Kubernetes terminology) has a proxy container that intercepts all inbound and outbound network traffic. The proxy handles mTLS, load balancing, retries, timeouts, and telemetry collection — the service code itself remains unaware of these mechanisms.
+
+Service meshes operate at the infrastructure level, below the application. They solve networking and security problems across a fleet of services without requiring code changes or language-specific libraries. The trade-off is operational complexity: running a service mesh adds components to manage, latency from proxy hops, and a new set of failure modes to understand.
+
+## How It Works
+
+Without a service mesh, Service A calling Service B:
+
+```
+Service A → Service B (plain HTTP/gRPC, no mTLS, no automatic retry)
+```
+
+With a service mesh (Istio/Envoy):
+
+```
+Service A → Envoy sidecar A → (mTLS, retry, tracing) → Envoy sidecar B → Service B
+```
+
+The application code in Service A makes a plain HTTP call. The sidecar intercepts it, adds mTLS, enforces traffic policies, records telemetry, and forwards it. Service B's sidecar receives the request, verifies the mTLS certificate, and delivers it to the service.
+
+Traffic policies (retry counts, timeouts, circuit breaking) are configured in mesh control plane resources (Istio VirtualService, DestinationRule), not in application code.
+
+## In Go
+
+Service meshes are deliberately transparent to application code. A Go service running behind Envoy makes normal HTTP or gRPC calls — the mesh handles the rest. This means the service mesh and in-process resilience patterns (circuit breaker, retry) can overlap.
+
+The common guidance: use in-process circuit breakers and retry logic (which archway scaffolds) for immediate, application-aware error handling, and rely on the mesh for cluster-level traffic management, mTLS, and observability. They serve different granularities.
+
+Go services benefit from the mesh's telemetry when combined with OpenTelemetry: the mesh captures network-level spans, while the application captures business logic spans, and they compose in the same trace.
+
+## How archway Supports It
+
+archway doesn't scaffold service mesh configuration (that's infrastructure territory), but its `observability` capability generates OpenTelemetry instrumentation that integrates naturally with mesh-level telemetry. The `circuit-breaker` and `retry` capabilities provide in-process resilience that complements mesh-level policies. See [Capabilities](/concepts/capabilities/).
+
+<Aside type="tip">
+Don't replace all in-process resilience with mesh policies. The mesh handles network-level concerns; your application code still needs to handle business-level failures that the mesh cannot see — like a downstream service returning 200 with an error payload.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Circuit Breaker" icon="right-arrow">
+    In-process resilience that complements mesh-level traffic management. [Circuit Breaker](/glossary/circuit-breaker/)
+  </Card>
+  <Card title="OpenTelemetry" icon="right-arrow">
+    Application-level tracing that integrates with mesh telemetry for end-to-end visibility. [OpenTelemetry](/glossary/opentelemetry/)
+  </Card>
+  <Card title="JWT Authentication" icon="right-arrow">
+    Application-level auth complements mesh mTLS — the mesh authenticates services, JWT authenticates users. [JWT Authentication](/glossary/jwt-authentication/)
+  </Card>
+</CardGrid>

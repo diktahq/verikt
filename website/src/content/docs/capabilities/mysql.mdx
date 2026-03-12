@@ -1,0 +1,38 @@
+---
+title: "mysql capability"
+description: "Add MySQL to your Go service with connection pooling, health checks, and a repository pattern scaffold."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`mysql` wires MySQL into your Go service with a configured connection pool and repository pattern scaffold.
+
+## What You Get
+
+- Connection setup with pool configuration
+- Health checks
+- Repository pattern scaffold
+
+## When to Use
+
+Use `mysql` for relational workloads on MySQL or MariaDB. Pair with `migrations` for versioned schema changes and `uuid` to avoid auto-increment IDs that leak business data.
+
+## Requirements & Suggestions
+
+**Suggests:** [`migrations`](/capabilities/migrations/), [`docker`](/capabilities/docker/), [`uuid`](/capabilities/uuid/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap mysql
+# or add to an existing service:
+archway add mysql
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="migrations" href="/capabilities/migrations/">Versioned schema migrations with golang-migrate.</Card>
+  <Card title="uuid" href="/capabilities/uuid/">UUIDv7 primary keys for index-friendly IDs.</Card>
+  <Card title="docker" href="/capabilities/docker/">Local MySQL instance via Docker Compose.</Card>
+</CardGrid>

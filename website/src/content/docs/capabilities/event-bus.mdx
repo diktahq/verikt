@@ -1,0 +1,34 @@
+---
+title: "event-bus capability"
+description: "Add an in-process domain event bus to your Go service with publish/subscribe pattern and async event dispatch."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`event-bus` adds an in-process domain event bus to your Go service for decoupled communication between components.
+
+## What You Get
+
+- Event publisher
+- Subscriber interface
+- Async event dispatch
+
+## When to Use
+
+Use `event-bus` when you want domain components to communicate without direct coupling. A `OrderPlaced` event lets the billing, notification, and inventory components react independently without the order service knowing about them. Pair with `outbox` if events must survive process crashes.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap event-bus
+# or add to an existing service:
+archway add event-bus
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="outbox" href="/capabilities/outbox/">Transactional outbox to guarantee event delivery on crash.</Card>
+  <Card title="saga" href="/capabilities/saga/">Saga orchestrator built on top of the event bus.</Card>
+  <Card title="ddd" href="/capabilities/ddd/">DDD building blocks including DomainEvent base types.</Card>
+</CardGrid>

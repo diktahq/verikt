@@ -1,0 +1,34 @@
+---
+title: "worker capability"
+description: "Add a background worker pool to your Go service with a job interface and graceful shutdown support for async task processing."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`worker` adds a background worker pool to your Go service for async job processing with graceful shutdown.
+
+## What You Get
+
+- Worker pool
+- Job interface
+- Graceful shutdown support
+
+## When to Use
+
+Use `worker` for background job processing — sending emails, processing uploads, generating reports, or any task that shouldn't block an HTTP response. The graceful shutdown support ensures in-flight jobs complete before the process exits.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap worker
+# or add to an existing service:
+archway add worker
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="graceful" href="/capabilities/graceful/">Ordered shutdown to let in-flight jobs complete.</Card>
+  <Card title="scheduler" href="/capabilities/scheduler/">Periodic scheduler for cron-style job triggering.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace background job execution with OpenTelemetry.</Card>
+</CardGrid>
