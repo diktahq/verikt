@@ -1,0 +1,37 @@
+---
+title: "health capability"
+description: "Add health and readiness endpoints to your Go service for Kubernetes and load balancer orchestration with component-level health registration."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`health` adds `/health` and `/ready` endpoints to your Go service so orchestrators know when to route traffic.
+
+## What You Get
+
+- `/health` and `/ready` endpoints
+- Component health registration
+
+## When to Use
+
+Any production service behind a load balancer or in Kubernetes needs health endpoints. Without them, traffic is routed to unhealthy instances. The component registration pattern lets you signal readiness based on database connectivity, cache warmup, or any custom check.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,health
+# or add to an existing service:
+archway add health
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="observability" href="/capabilities/observability/">OpenTelemetry metrics alongside health endpoints.</Card>
+  <Card title="platform" href="/capabilities/platform/">Platform lifecycle that integrates with health checks.</Card>
+</CardGrid>

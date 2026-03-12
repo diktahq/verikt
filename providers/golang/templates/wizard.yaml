@@ -1,0 +1,54 @@
+steps:
+  - id: intent
+    questions:
+      - variable: ProjectCapabilities
+        prompt: "What kind of service are you building?"
+        type: multiselect
+        options:
+          - label: "HTTP API (REST endpoints, middleware, OpenAPI)"
+            value: api
+          - label: "gRPC service (Protocol Buffers, interceptors)"
+            value: grpc
+          - label: "Event consumer (Kafka, message processing)"
+            value: worker
+          - label: "CLI tool (command-line interface)"
+            value: cli
+
+  - id: structure
+    questions:
+      - variable: ProjectStructure
+        prompt: "Project structure?"
+        type: select
+        options:
+          - label: "Single service — One service, one repository"
+            value: single
+          - label: "Monorepo — Multiple services sharing a repository (coming soon)"
+            value: monorepo
+
+  - id: maturity
+    questions:
+      - variable: ProjectStage
+        prompt: "What stage is this project?"
+        type: select
+        options:
+          - label: "Quick prototype — Simple structure, get started fast"
+            value: prototype
+          - label: "Production-ready — Structured architecture, observability, lifecycle management"
+            value: production
+        when: "HasAPIOrWorker"
+
+routing:
+  - template: cli
+    when: "CLIOnly"
+  - template: cli
+    when: 'ProjectStage == "prototype"'
+  - template: api
+    when: 'ProjectStage == "production"'
+
+fast_paths:
+  - when: "CLIOnly"
+    skip_steps: [transports, datastores, features]
+  - when: 'ProjectStage == "prototype"'
+    skip_steps: [transports, datastores, features]
+    defaults:
+      HasHTTP: true

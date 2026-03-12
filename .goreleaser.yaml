@@ -1,0 +1,82 @@
+version: 2
+
+project_name: archway
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: archway
+    main: ./cmd/archway
+    binary: archway
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/dcsg/archway/internal/cli.version={{.Version}}
+      - -X github.com/dcsg/archway/internal/cli.commit={{.Commit}}
+      - -X github.com/dcsg/archway/internal/cli.date={{.Date}}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix'
+      order: 1
+    - title: Refactoring
+      regexp: '^refactor'
+      order: 2
+    - title: Performance
+      regexp: '^perf'
+      order: 3
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+
+brews:
+  - repository:
+      owner: dcsg
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/dcsg/archway
+    description: Architecture-aware service composer and enforcer
+    license: Elastic-2.0
+    install: |
+      bin.install "archway"
+    test: |
+      system "#{bin}/archway", "version"

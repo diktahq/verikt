@@ -1,0 +1,34 @@
+---
+title: "testing capability"
+description: "Add test utilities and example tests to your Go service with helper functions, table-driven test patterns, and test fixtures scaffolding."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`testing` adds test utilities and example tests to your Go service to establish good testing patterns from the start.
+
+## What You Get
+
+- Test helper functions
+- Example table-driven tests
+- Test fixtures pattern
+
+## When to Use
+
+Add `testing` to any service that needs a consistent test infrastructure. The example table-driven tests and helper patterns give the team a template to follow — reducing the inconsistency that accumulates when each developer writes tests their own way.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap testing
+# or add to an existing service:
+archway add testing
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="linting" href="/capabilities/linting/">Linting to enforce code quality alongside tests.</Card>
+  <Card title="pre-commit" href="/capabilities/pre-commit/">Pre-commit hooks that run tests before every commit.</Card>
+  <Card title="ci-github" href="/capabilities/ci-github/">GitHub Actions that runs tests on every PR.</Card>
+</CardGrid>

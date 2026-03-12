@@ -1,0 +1,37 @@
+---
+title: "mailpit capability"
+description: "Add local email testing to your Go service using Mailpit — a local SMTP server with a web UI for inspecting sent emails during development."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`mailpit` adds a local SMTP email testing provider to your Go service, implementing the `email-gateway` interface with Mailpit for development.
+
+## What You Get
+
+- SMTP provider implementing email gateway interface
+- Docker Compose service (SMTP :1025, Web UI :8025)
+
+## When to Use
+
+Use `mailpit` to catch and inspect emails sent by your service during local development without a real SMTP provider. All emails land in the Mailpit inbox, viewable in a browser — no real emails sent, no credentials needed.
+
+## Requirements & Suggestions
+
+**Suggests:** [`email-gateway`](/capabilities/email-gateway/), [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap email-gateway,mailpit,docker
+# or add to an existing service:
+archway add mailpit
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="email-gateway" href="/capabilities/email-gateway/">The email interface that mailpit implements.</Card>
+  <Card title="docker" href="/capabilities/docker/">Docker Compose service definition for the Mailpit container.</Card>
+  <Card title="i18n" href="/capabilities/i18n/">Test localized email templates with Mailpit.</Card>
+</CardGrid>

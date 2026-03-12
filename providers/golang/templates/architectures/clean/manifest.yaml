@@ -1,0 +1,45 @@
+name: clean
+description: "Clean Architecture (Uncle Bob) — entity, usecase, interface, infrastructure"
+variables:
+  - name: ServiceName
+    type: string
+    required: true
+    description: "Name of the service"
+  - name: ModulePath
+    type: string
+    required: true
+    description: "Go module path"
+  - name: GoVersion
+    type: string
+    default: "1.22"
+    description: "Go version for go.mod"
+path_mappings:
+  adapter/httphandler: internal/interface/handler
+  adapter/pgxrepo: internal/infrastructure/postgres
+  adapter/grpchandler: internal/interface/grpc
+  adapter/mysqlrepo: internal/infrastructure/mysql
+  adapter/redisrepo: internal/infrastructure/redis
+  adapter/esrepo: internal/infrastructure/elasticsearch
+  adapter/kafkahandler: internal/interface/kafka
+  adapter/natshandler: internal/interface/nats
+  adapter/bffgateway: internal/interface/bff
+  adapter/mailpit: internal/infrastructure/mailpit
+  domain: internal/entity
+  port: internal/usecase
+  service: internal/usecase
+components:
+  - name: entity
+    in: ["internal/entity/**"]
+    may_depend_on: []
+  - name: usecase
+    in: ["internal/usecase/**"]
+    may_depend_on: [entity]
+  - name: interface
+    in: ["internal/interface/**"]
+    may_depend_on: [usecase, entity]
+  - name: infrastructure
+    in: ["internal/infrastructure/**"]
+    may_depend_on: [interface, usecase, entity]
+hooks:
+  - "go mod tidy"
+  - "gofmt -w ."

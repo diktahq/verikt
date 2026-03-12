@@ -1,0 +1,37 @@
+---
+title: "api-versioning capability"
+description: "Add API versioning support to your Go service with header-based and path-based versioning strategies."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`api-versioning` adds version routing to your Go service, letting you evolve your API without breaking existing clients.
+
+## What You Get
+
+- Version routing
+- Header/path-based versioning strategies
+
+## When to Use
+
+Add `api-versioning` when you need to maintain backward compatibility while evolving your API contract. Useful for public APIs, mobile-facing backends (where clients can't be force-upgraded), and any service with external consumers.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,api-versioning
+# or add to an existing service:
+archway add api-versioning
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="cors" href="/capabilities/cors/">CORS support for browser clients across API versions.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication applied consistently across versions.</Card>
+</CardGrid>

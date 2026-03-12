@@ -1,0 +1,39 @@
+---
+title: "nats capability"
+description: "Add NATS messaging to your Go service with JetStream for pub/sub, request-reply, and durable consumers."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`nats` adds NATS messaging to your Go service with JetStream support for durable pub/sub and request-reply patterns.
+
+## What You Get
+
+- NATS connection
+- JetStream setup
+- Publisher/subscriber abstractions
+- Durable consumers
+
+## When to Use
+
+Use `nats` for lightweight pub/sub, request-reply, or persistent messaging with JetStream. NATS is simpler to operate than Kafka and well-suited for internal service communication and event streaming at moderate scale.
+
+## Requirements & Suggestions
+
+**Suggests:** [`health`](/capabilities/health/), [`observability`](/capabilities/observability/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap nats
+# or add to an existing service:
+archway add nats
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="health" href="/capabilities/health/">Health checks that include NATS connectivity.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace NATS message flows with OpenTelemetry.</Card>
+  <Card title="event-bus" href="/capabilities/event-bus/">In-process event bus for domain events.</Card>
+</CardGrid>

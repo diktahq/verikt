@@ -1,0 +1,104 @@
+---
+title: "Hexagonal vs Flat Architecture: Which Go Architecture Should You Use?"
+description: "Compare Hexagonal (Ports & Adapters) and Flat architecture for Go services — when strict layering is worth the overhead and when a single package is enough."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Both Hexagonal and Flat are supported by archway. They represent opposite ends of the spectrum: flat is a single package with no imposed structure, hexagonal is a fully layered service with strict dependency rules. The choice comes down to whether the thing you're building is a service or a tool.
+
+## At a Glance
+
+| | Hexagonal | Flat |
+|---|---|---|
+| Complexity | High | Low |
+| Best for | Production APIs, microservices | CLI tools, scripts, prototypes |
+| Dependency rules | Strict | None |
+| Team size | Medium / Large | Any |
+| Directory structure | Complex | Simple |
+
+## Hexagonal Architecture
+
+Hexagonal architecture is designed for services that need to last — production APIs, microservices, anything with non-trivial domain logic and multiple integration points. The structure enforces that business logic stays clean, isolated, and testable regardless of what's wired to it.
+
+```
+domain/              → Pure business logic, no external dependencies
+port/                → Interfaces (inbound use cases, outbound repositories)
+service/             → Use case implementations
+adapter/             → External integrations (HTTP, DB, messaging)
+config/              → Configuration loading
+platform/            → Cross-cutting concerns
+internal/bootstrap/  → Dependency wiring
+cmd/<name>/          → Entry point
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| domain | nothing |
+| ports | domain |
+| service | domain, ports |
+| adapters | ports, domain |
+
+Every external integration is an adapter. Every domain boundary is a port. `archway check` enforces the rules in CI — if your domain starts importing from an adapter, it fails immediately.
+
+## Flat Architecture
+
+Flat is a single-package structure: `main.go` and `go.mod`. No layers, no enforced dependencies, no prescribed organization.
+
+```
+main.go
+go.mod
+```
+
+You can still add archway capabilities to a flat project — `http-api` will add the HTTP handler code, `postgres` will add database code — but there's no layered structure to place them in. Everything lives together.
+
+Flat is intentionally minimal. It's the right choice when the overhead of a layered structure would add friction without adding value.
+
+## Key Differences
+
+- **Structure**: Hexagonal has 7+ directories with defined responsibilities. Flat has two files.
+- **Dependency enforcement**: Hexagonal enforces strict import rules via `archway check`. Flat has none.
+- **Capability integration**: Hexagonal places capabilities in their correct layer (adapters, platform, etc.). Flat places everything alongside `main.go`.
+- **Growth path**: Hexagonal is designed to stay maintainable as the codebase grows. Flat is not — it accumulates coupling over time.
+- **Onboarding**: Flat is immediately understandable. Hexagonal requires understanding the port/adapter model first.
+
+## When to Choose Hexagonal
+
+- You're building a production API or microservice
+- The service has business logic beyond simple request routing
+- You expect the codebase to grow — more developers, more capabilities, more integrations
+- You want `archway check` to enforce architecture boundaries in CI
+- Multiple inbound transports (HTTP + gRPC, HTTP + Kafka) sharing the same domain logic
+
+## When to Choose Flat
+
+- You're building a CLI tool, script, or one-off utility
+- It's a prototype or proof of concept that may never reach production
+- The entire codebase will fit in a few hundred lines
+- You need to move fast without any structural overhead
+- There's no meaningful separation between "domain logic" and "infrastructure" in what you're building
+
+## Scaffold Either with archway
+
+```bash
+# Hexagonal
+archway new my-service --arch hexagonal
+
+# Flat
+archway new my-tool --arch flat
+```
+
+<Aside type="tip">
+If you're starting a service and unsure whether it'll grow, start with flat and migrate to hexagonal when you have 3–4 domain concepts and the code starts to feel tangled. Archway makes both scaffolding and the eventual migration explicit.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures compared](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

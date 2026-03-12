@@ -1,0 +1,38 @@
+---
+title: "websocket capability"
+description: "Add WebSocket support to your Go service with an upgrader, connection management, and message handling patterns on top of http-api."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`websocket` adds real-time bidirectional communication to your Go service, built on top of `http-api`.
+
+## What You Get
+
+- WebSocket upgrader
+- Connection management
+- Message handling patterns
+
+## When to Use
+
+Use `websocket` for features that need persistent bidirectional connections: chat, live dashboards, collaborative editing, or any scenario where the server must push updates without client polling.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,websocket
+# or add to an existing service:
+archway add websocket
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="sse" href="/capabilities/sse/">Server-Sent Events for server-to-client streaming.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication to secure WebSocket connections.</Card>
+</CardGrid>

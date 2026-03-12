@@ -1,0 +1,34 @@
+---
+title: "cqrs capability"
+description: "Add Command Query Responsibility Segregation to your Go service with a command/query bus, handler interfaces, and separated read/write models."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`cqrs` adds CQRS scaffolding to your Go service with a command/query bus and separated read and write models.
+
+## What You Get
+
+- Command/query bus
+- Handler interfaces
+- Separation of read and write models
+
+## When to Use
+
+Use `cqrs` when read and write patterns diverge significantly — complex query needs that don't fit your write model, or performance optimization that requires separate read stores. Pairs naturally with `ddd` for domain-driven design.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap cqrs
+# or add to an existing service:
+archway add cqrs
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="ddd" href="/capabilities/ddd/">DDD building blocks that pair naturally with CQRS.</Card>
+  <Card title="event-bus" href="/capabilities/event-bus/">Domain events to propagate write model changes to read models.</Card>
+  <Card title="repository" href="/capabilities/repository/">Repository pattern for the write side of CQRS.</Card>
+</CardGrid>

@@ -1,0 +1,7 @@
+name: email-gateway
+description: "Email gateway adapter with locale-aware templates"
+requires: []
+suggests:
+  - i18n
+  - mailpit
+conflicts: []

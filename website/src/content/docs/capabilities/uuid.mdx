@@ -1,0 +1,33 @@
+---
+title: "uuid capability"
+description: "Add UUIDv7 time-sortable primary key generation to your Go service with type-safe ID wrappers that are index-friendly in PostgreSQL and MySQL."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`uuid` adds UUIDv7 primary key generation to your Go service — time-sortable, index-friendly, and wrapped in type-safe ID types.
+
+## What You Get
+
+- UUID generation
+- Type-safe ID wrappers
+
+## When to Use
+
+Use `uuid` with any relational database. Auto-increment integers leak business data (your competitor can enumerate your orders). Random UUIDs (v4) fragment B-tree indexes and hurt write performance at scale. UUIDv7 is time-sortable, so inserts are sequential and indexes stay healthy.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap uuid
+# or add to an existing service:
+archway add uuid
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="postgres" href="/capabilities/postgres/">PostgreSQL — the primary pairing for UUIDv7 primary keys.</Card>
+  <Card title="mysql" href="/capabilities/mysql/">MySQL with UUIDv7 for index-friendly primary keys.</Card>
+  <Card title="repository" href="/capabilities/repository/">Repository pattern using type-safe UUID ID wrappers.</Card>
+</CardGrid>

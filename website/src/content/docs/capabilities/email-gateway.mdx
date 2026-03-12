@@ -1,0 +1,38 @@
+---
+title: "email-gateway capability"
+description: "Add a provider-agnostic email sending interface to your Go service with template support and easy provider swapping."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`email-gateway` adds a provider-agnostic email sending interface to your Go service, making it easy to swap email providers without changing application code.
+
+## What You Get
+
+- Email gateway interface
+- Provider implementation
+- Template support
+
+## When to Use
+
+Use `email-gateway` for transactional emails — welcome emails, password resets, order confirmations. The interface abstraction lets you test with `mailpit` locally and swap to SendGrid, SES, or Postmark in production without touching your application logic.
+
+## Requirements & Suggestions
+
+**Suggests:** [`i18n`](/capabilities/i18n/), [`mailpit`](/capabilities/mailpit/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap email-gateway
+# or add to an existing service:
+archway add email-gateway
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="mailpit" href="/capabilities/mailpit/">Local SMTP testing for email-gateway during development.</Card>
+  <Card title="i18n" href="/capabilities/i18n/">Localized email content using message catalogs.</Card>
+  <Card title="worker" href="/capabilities/worker/">Send emails asynchronously via a background worker.</Card>
+</CardGrid>

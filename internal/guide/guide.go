@@ -1,0 +1,663 @@
+package guide
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/dcsg/archway/internal/config"
+	"github.com/dcsg/archway/internal/rules"
+)
+
+// GenerateOptions holds the inputs for guide generation.
+type GenerateOptions struct {
+	ProjectDir      string
+	Target          string
+	Architecture    string
+	Capabilities    []string
+	Components      []config.Component
+	TemplateFS      fs.FS // optional: embedded FS for pattern extraction
+	CatalogOnly     bool  // when true, only output catalog-related sections
+	Decisions       []config.Decision
+	LanguageVersion string          // e.g., "Go 1.26"
+	Features        map[string]bool // detected language features; only true entries are shown
+	GuideMode       string          // "passive" | "audit" | "prompted" (default: "passive")
+}
+
+// Generate produces guide files for the specified target(s).
+func Generate(opts GenerateOptions) error {
+	targets, err := resolveTargets(opts.Target)
+	if err != nil {
+		return err
+	}
+
+	// Monolithic content for non-Claude targets (built lazily).
+	var monolithic string
+	monolithicBuilt := false
+
+	for _, t := range targets {
+		if ct, ok := t.(*claudeTarget); ok && !opts.CatalogOnly {
+			sc := buildSplitContent(opts)
+			if err := ct.WriteSplit(opts.ProjectDir, sc); err != nil {
+				return fmt.Errorf("write split guide: %w", err)
+			}
+		} else {
+			if !monolithicBuilt {
+				monolithic = buildContent(opts)
+				monolithicBuilt = true
+			}
+			if err := t.Write(opts.ProjectDir, monolithic); err != nil {
+				return fmt.Errorf("write guide for %s: %w", t.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// GenerateFromConfig reads an ArchwayConfig and generates guides.
+// An optional fs.FS can be passed to enable template pattern extraction.
+func GenerateFromConfig(projectDir string, cfg *config.ArchwayConfig, target string, templateFS ...fs.FS) error {
+	opts := GenerateOptions{
+		ProjectDir:   projectDir,
+		Target:       target,
+		Architecture: cfg.Architecture,
+		Capabilities: cfg.Capabilities,
+		Components:   cfg.Components,
+		Decisions:    cfg.Decisions,
+		GuideMode:    cfg.Guide.GuideMode(),
+	}
+	if len(templateFS) > 0 {
+		opts.TemplateFS = templateFS[0]
+	}
+	return Generate(opts)
+}
+
+// buildContent generates the full markdown guide content.
+func buildContent(opts GenerateOptions) string {
+	var b strings.Builder
+
+	writeHeader(&b)
+	writeAgentInstructions(&b, opts.GuideMode)
+
+	if !opts.CatalogOnly {
+		writeArchitecture(&b, opts.Architecture)
+		writeLanguageVersion(&b, opts.LanguageVersion, opts.Features)
+		writeLayerRules(&b, opts.Architecture, opts.Components)
+		writeDependencyDirection(&b, opts.Architecture, opts.Components)
+		writeAddingCode(&b, opts.Architecture)
+		writeCapabilities(&b, opts.Capabilities)
+		if patterns := ExtractPatterns(opts.TemplateFS, opts.Capabilities); patterns != "" {
+			b.WriteString(patterns)
+		}
+	}
+
+	if catalog, err := BuildCatalog(opts.TemplateFS, opts.Capabilities); err == nil && len(catalog) > 0 {
+		writeCatalog(&b, catalog, opts.Capabilities)
+	}
+
+	// Always write the high-value design guidance sections.
+	// These are what transform agent output from "list gaps" to "implement fixes."
+	writeSmartSuggestions(&b)
+	writeCriticalInteractionWarnings(&b)
+	writeDesignQuestions(&b)
+
+	// Write context-specific warnings and suggestions (based on installed caps).
+	writeWarnings(&b, opts.Capabilities)
+	writeSuggestions(&b, opts.Capabilities)
+
+	if len(opts.Decisions) > 0 {
+		writeDecisionStatus(&b, opts.Decisions)
+	}
+
+	if !opts.CatalogOnly {
+		writeAntiPatterns(&b, opts.Architecture)
+	}
+
+	writeRuleSummaries(&b, opts.ProjectDir)
+	writeVerificationChecklist(&b, opts.Capabilities)
+
+	writeInterviewProtocol(&b)
+
+	if opts.GuideMode == "prompted" {
+		writeSuggestedPrompts(&b)
+	}
+
+	return b.String()
+}
+
+// writeVerificationChecklist writes a checklist the agent must confirm before
+// finishing. Generic items always appear; capability-specific items appear when
+// relevant capabilities are installed.
+func writeVerificationChecklist(b *strings.Builder, caps []string) {
+	b.WriteString("## Verification Checklist\n\n")
+	b.WriteString("Before you finish, confirm each item. For any item you have NOT implemented, state why.\n\n")
+
+	// Universal checks — always apply.
+	b.WriteString("### Always\n\n")
+	b.WriteString("- [ ] All external HTTP calls have a context deadline or timeout\n")
+	b.WriteString("- [ ] Multi-tenant: tenant identity comes from verified auth, not a trusted header\n")
+	b.WriteString("- [ ] Errors are mapped to specific HTTP status codes (not all-500)\n")
+	b.WriteString("- [ ] No secrets or sensitive data in logs\n\n")
+
+	// Capability-specific checks.
+	capSet := make(map[string]bool, len(caps))
+	for _, c := range caps {
+		capSet[c] = true
+	}
+
+	var specific []string
+	if capSet["http-client"] {
+		specific = append(specific, "- [ ] **http-client** — circuit breaker implemented on the payment/external HTTP client")
+	}
+	if capSet["http-api"] || capSet["grpc"] {
+		specific = append(specific, "- [ ] **transport** — /healthz and /readyz endpoints registered")
+		specific = append(specific, "- [ ] **transport** — graceful shutdown handles SIGTERM/SIGINT")
+		specific = append(specific, "- [ ] **transport** — request-id middleware propagates correlation ID")
+	}
+	if capSet["multi-tenancy"] {
+		specific = append(specific, "- [ ] **multi-tenancy** — JWT/auth middleware validates tenant identity before trusting tenant context")
+	}
+	if capSet["event-bus"] {
+		specific = append(specific, "- [ ] **event-bus** — outbox pattern used (or dual-write risk is explicitly accepted and documented)")
+	}
+	if capSet["mysql"] || capSet["postgres"] {
+		specific = append(specific, "- [ ] **database** — UUIDv7 used for primary keys (not auto-increment or random UUID)")
+		specific = append(specific, "- [ ] **database** — migration files included")
+	}
+
+	// If no archway.yaml, emit the universal financial checklist.
+	if len(caps) == 0 {
+		specific = append(specific,
+			"- [ ] **payments** — idempotency key required on all payment/order operations",
+			"- [ ] **payments** — append-only audit log written on every financial mutation",
+			"- [ ] **payments** — circuit breaker on the payment HTTP client",
+		)
+	}
+
+	if len(specific) > 0 {
+		b.WriteString("### Your Stack\n\n")
+		for _, item := range specific {
+			b.WriteString(item + "\n")
+		}
+		b.WriteString("\n")
+	}
+}
+
+func writeHeader(b *strings.Builder) {
+	b.WriteString("# Archway -- Architecture Guide\n\n")
+	b.WriteString("> Auto-generated by `archway guide`. Do not edit manually.\n")
+	b.WriteString("> Re-run `archway guide` to update.\n\n")
+}
+
+// writeAgentInstructions writes the usage preamble for the given guide mode.
+// mode: "passive" | "audit" | "prompted" — defaults to "passive".
+func writeAgentInstructions(b *strings.Builder, mode ...string) {
+	m := "passive"
+	if len(mode) > 0 && mode[0] != "" {
+		m = mode[0]
+	}
+
+	b.WriteString("## How to Use This Guide\n\n")
+
+	switch m {
+	case "audit":
+		b.WriteString("**On every session start:**\n\n")
+		b.WriteString("1. **Read the codebase** — scan the project files to understand current state.\n")
+		b.WriteString("2. **Cross-reference `archway.yaml`** — compare what's declared against what's implemented.\n")
+		b.WriteString("3. **Lead with a gap report** — before answering any question, output an `## Architecture Audit` section listing violations, missing capabilities, and drift.\n\n")
+		b.WriteString("This guide reflects your *declared* architecture. Treat deviations as bugs to fix, not style choices.\n\n")
+	case "prompted":
+		b.WriteString("**Respond in this order:**\n\n")
+		b.WriteString("1. **Research first** — search the web for current docs, APIs, and best practices. Read the codebase to understand what's already there. Answer the user's question fully.\n")
+		b.WriteString("2. **Architecture Notes last** — after your full answer, append an `## Architecture Notes` section with any capability gaps, warnings, or boundary violations. Omit this section if nothing applies.\n\n")
+		b.WriteString("This guide reflects your *declared* architecture (`archway.yaml`). Always read the code first — use this guide to check alignment, not replace research.\n\n")
+		b.WriteString("See **Suggested Prompts** at the bottom of this guide for queries that unlock the most value from archway.\n\n")
+	default: // passive
+		b.WriteString("**Respond in this order:**\n\n")
+		b.WriteString("1. **Research first** — search the web for current docs, APIs, and best practices. Read the codebase to understand what's already there. Answer the user's question fully.\n")
+		b.WriteString("2. **Architecture Notes last** — after your full answer, append an `## Architecture Notes` section with any capability gaps, warnings, or boundary violations. Omit this section if nothing applies.\n\n")
+		b.WriteString("This guide reflects your *declared* architecture (`archway.yaml`). Always read the code first — use this guide to check alignment, not replace research.\n\n")
+	}
+
+	b.WriteString("This guide contains two types of content:\n\n")
+	b.WriteString("- **🔴 MUST** — Implementation requirements. If a MUST applies to what you are building, implement it. The only valid reason to skip is if it genuinely does not apply — state that explicitly.\n")
+	b.WriteString("- **🟡 SHOULD** — Production readiness recommendations. Implement if scope allows; otherwise flag as a known gap.\n\n")
+	b.WriteString("**Before you finish:** run through the Verification Checklist at the bottom of this guide.\n\n")
+}
+
+// InterviewProtocol returns the standalone AI interview protocol as markdown.
+// Used by `archway init --ai` to print the protocol to stdout so an AI agent
+// can conduct the scaffold interview conversationally.
+func InterviewProtocol() string {
+	var b strings.Builder
+	b.WriteString("# Archway — AI Interview Protocol\n\n")
+	b.WriteString("> You are setting up a new service with archway. Conduct this interview with the user, then run the scaffold command.\n\n")
+	writeInterviewProtocol(&b)
+	return b.String()
+}
+
+// writeInterviewProtocol appends an AI interview protocol section so agents can
+// scaffold new services conversationally without the TUI wizard.
+func writeInterviewProtocol(b *strings.Builder) {
+	b.WriteString("## AI Interview: Scaffold a New Service\n\n")
+	b.WriteString("If the user says they need a new service, want to scaffold something, or asks how to start — conduct this interview. Do NOT run the command until all questions are answered and the user has confirmed.\n\n")
+
+	b.WriteString("### Step 1 — Service name\n\n")
+	b.WriteString("Ask: \"What's the name of your service?\"\n\n")
+	b.WriteString("Collect as `--name <value>`. Use lowercase-kebab-case.\n\n")
+
+	b.WriteString("### Step 2 — Go module path\n\n")
+	b.WriteString("Ask: \"What's your Go module path? (e.g. github.com/myorg/my-service)\"\n\n")
+	b.WriteString("Collect as `--module <value>`.\n\n")
+
+	b.WriteString("### Step 3 — Architecture\n\n")
+	b.WriteString("Present the options with a one-line description of each:\n\n")
+	b.WriteString("- **hexagonal** — ports & adapters; business logic isolated from infrastructure. Best for complex domains, long-lived services.\n")
+	b.WriteString("- **clean** — concentric rings (entity → usecase → interface → infrastructure). Good for large teams with strict layering.\n")
+	b.WriteString("- **layered** — handler → service → repository → model. Familiar, predictable, lower ceremony.\n")
+	b.WriteString("- **flat** — single package, no layer rules. Ideal for simple tools, CLIs, or prototypes.\n\n")
+	b.WriteString("Collect as `--arch <value>`.\n\n")
+
+	b.WriteString("### Step 4 — Capabilities\n\n")
+	b.WriteString("Ask: \"What does this service need?\" Guide the conversation:\n\n")
+	b.WriteString("- Start broad: \"Will it expose an HTTP API? Connect to a database? Consume events?\"\n")
+	b.WriteString("- As they answer, proactively suggest related capabilities:\n")
+	b.WriteString("  - `http-api` → suggest `health`, `request-id`, `validation`, `cors` (browser), `rate-limiting` (public)\n")
+	b.WriteString("  - `postgres` or `mysql` → suggest `migrations`, `uuid`\n")
+	b.WriteString("  - `http-client` → suggest `circuit-breaker`, `retry`, `timeout`\n")
+	b.WriteString("  - `retry` → warn: \"also add `idempotency` — retrying without it causes duplicates\"\n")
+	b.WriteString("  - `event-bus` → warn: \"also add `outbox` — events can be lost without it\"\n")
+	b.WriteString("- Confirm final capability list before moving on.\n\n")
+	b.WriteString("Collect as `--cap <comma-separated>`.\n\n")
+
+	b.WriteString("### Step 5 — Guide mode\n\n")
+	b.WriteString("Ask: \"How should I use the architecture guide in this project?\"\n\n")
+	b.WriteString("- **passive** (default) — answer questions fully, architecture notes at the end. Low friction for day-to-day work.\n")
+	b.WriteString("- **audit** — on every session start, read the codebase and lead with a gap report. Best for onboarding or pre-release reviews.\n")
+	b.WriteString("- **prompted** — like passive, but with suggested prompts appended so the team knows what to ask.\n\n")
+	b.WriteString("Collect as `--guide-mode <value>`.\n\n")
+
+	b.WriteString("### Step 6 — Confirm and scaffold\n\n")
+	b.WriteString("Show a summary of all choices. Ask: \"Ready to scaffold?\"\n\n")
+	b.WriteString("On confirmation, run:\n\n")
+	b.WriteString("```bash\n")
+	b.WriteString("archway new <name> \\\n")
+	b.WriteString("  --module <module> \\\n")
+	b.WriteString("  --arch <arch> \\\n")
+	b.WriteString("  --cap <capabilities> \\\n")
+	b.WriteString("  --guide-mode <mode> \\\n")
+	b.WriteString("  --no-wizard\n")
+	b.WriteString("```\n\n")
+	b.WriteString("After scaffolding, run `archway guide` to generate updated context files, then tell the user what was created.\n\n")
+}
+
+// writeSuggestedPrompts appends copy-paste prompts that unlock the most value from archway.
+func writeSuggestedPrompts(b *strings.Builder) {
+	b.WriteString("## Suggested Prompts\n\n")
+	b.WriteString("Copy any of these into your AI agent to get the most from archway:\n\n")
+	b.WriteString("```\n")
+	b.WriteString("Audit this codebase against archway.yaml and list all violations\n")
+	b.WriteString("What capabilities am I missing before going to production?\n")
+	b.WriteString("I need to add [feature] — what capabilities do I need and how should I wire them?\n")
+	b.WriteString("Research best practices for [capability] and implement it following my architecture\n")
+	b.WriteString("What dangerous capability combinations do I have that need fixing?\n")
+	b.WriteString("```\n\n")
+}
+
+func writeArchitecture(b *strings.Builder, arch string) {
+	b.WriteString("## Architecture: " + arch + "\n\n")
+	switch arch {
+	case "hexagonal":
+		b.WriteString("This project uses hexagonal (ports & adapters) architecture.\n")
+		b.WriteString("Business logic lives in the center (domain + service layers),\n")
+		b.WriteString("isolated from infrastructure by ports (interfaces) and adapters (implementations).\n\n")
+	case "layered":
+		b.WriteString("This project uses layered architecture.\n")
+		b.WriteString("Code is organized into four layers: handler, service, repository, and model.\n")
+		b.WriteString("Dependencies flow strictly downward: handler → service → repository → model.\n\n")
+	case "clean":
+		b.WriteString("This project uses Clean Architecture (Uncle Bob).\n")
+		b.WriteString("Code is organized into four layers: entity, usecase, interface, and infrastructure.\n")
+		b.WriteString("Dependencies point inward: infrastructure → interface → usecase → entity.\n")
+		b.WriteString("The entity layer has no external dependencies — it is the innermost ring.\n\n")
+	case "flat":
+		b.WriteString("This project uses a flat architecture.\n")
+		b.WriteString("All code lives in a single package with no layer restrictions.\n\n")
+	default:
+		b.WriteString("Architecture type: " + arch + "\n\n")
+	}
+}
+
+func writeLayerRules(b *strings.Builder, arch string, components []config.Component) {
+	b.WriteString("## Layer Rules\n\n")
+
+	if arch == "flat" {
+		b.WriteString("No layer restrictions. All code lives in the root package.\n\n")
+		return
+	}
+
+	if len(components) == 0 {
+		return
+	}
+
+	for _, c := range components {
+		b.WriteString("### " + c.Name + "\n")
+		b.WriteString("- Directories: " + strings.Join(c.In, ", ") + "\n")
+		if len(c.MayDependOn) == 0 {
+			b.WriteString("- Dependencies: none (innermost layer)\n")
+		} else {
+			b.WriteString("- May depend on: " + strings.Join(c.MayDependOn, ", ") + "\n")
+		}
+		b.WriteString("\n")
+	}
+}
+
+func writeDependencyDirection(b *strings.Builder, arch string, components []config.Component) {
+	b.WriteString("## Dependency Direction\n\n")
+
+	if arch == "flat" {
+		b.WriteString("No dependency restrictions in flat architecture.\n\n")
+		return
+	}
+
+	b.WriteString("Dependencies point **inward** toward the domain.\n\n")
+	b.WriteString("**NEVER rules:**\n\n")
+
+	for _, c := range components {
+		forbidden := forbiddenDeps(c, components)
+		for _, f := range forbidden {
+			fmt.Fprintf(b, "- `%s` NEVER imports from `%s`\n", c.Name, f)
+		}
+	}
+	b.WriteString("\n")
+}
+
+// forbiddenDeps returns component names that c must NOT depend on.
+func forbiddenDeps(c config.Component, all []config.Component) []string {
+	allowed := map[string]bool{c.Name: true}
+	for _, dep := range c.MayDependOn {
+		allowed[dep] = true
+	}
+
+	var forbidden []string
+	for _, other := range all {
+		if !allowed[other.Name] {
+			forbidden = append(forbidden, other.Name)
+		}
+	}
+	return forbidden
+}
+
+func writeAddingCode(b *strings.Builder, arch string) {
+	b.WriteString("## Adding Code\n\n")
+
+	if arch == "flat" {
+		b.WriteString("Add new files to the root package. No special placement rules.\n\n")
+		return
+	}
+
+	if arch == "clean" {
+		b.WriteString("### New entity (enterprise business rule)\n")
+		b.WriteString("1. Add to `internal/entity/`\n")
+		b.WriteString("2. Entity MUST NOT import from usecase, interface, or infrastructure\n\n")
+
+		b.WriteString("### New use case (application business rule)\n")
+		b.WriteString("1. Add to `internal/usecase/`\n")
+		b.WriteString("2. Use case may only import from `internal/entity/`\n")
+		b.WriteString("3. Use case MUST NOT import from infrastructure\n\n")
+
+		b.WriteString("### New interface adapter (handler, presenter, gateway)\n")
+		b.WriteString("1. Add to `internal/interface/`\n")
+		b.WriteString("2. Interface adapters may import from `internal/usecase/` and `internal/entity/`\n\n")
+
+		b.WriteString("### New HTTP endpoint\n")
+		b.WriteString("1. Add handler function in `internal/interface/handler/`\n")
+		b.WriteString("2. Register route in `internal/interface/handler/router.go`\n")
+		b.WriteString("3. Handler calls a use case; NEVER calls entity or infrastructure directly\n\n")
+
+		b.WriteString("### New infrastructure component (DB, web, config)\n")
+		b.WriteString("1. Add to `internal/infrastructure/`\n")
+		b.WriteString("2. Infrastructure may import from all inner layers\n\n")
+		return
+	}
+
+	if arch == "layered" {
+		b.WriteString("### New model (shared entity)\n")
+		b.WriteString("1. Add to `internal/model/`\n")
+		b.WriteString("2. Model MUST NOT import from handler, service, or repository\n\n")
+
+		b.WriteString("### New repository\n")
+		b.WriteString("1. Add to `internal/repository/`\n")
+		b.WriteString("2. Repository may only import from `internal/model/`\n\n")
+
+		b.WriteString("### New service\n")
+		b.WriteString("1. Add to `internal/service/`\n")
+		b.WriteString("2. Service may import from `internal/repository/` and `internal/model/`\n\n")
+
+		b.WriteString("### New HTTP endpoint\n")
+		b.WriteString("1. Add handler function in `internal/handler/`\n")
+		b.WriteString("2. Register route in `internal/handler/router.go`\n")
+		b.WriteString("3. Handler calls service; NEVER calls repository directly\n\n")
+		return
+	}
+
+	b.WriteString("### New domain entity\n")
+	b.WriteString("1. Create the entity in `domain/`\n")
+	b.WriteString("2. Define value objects and domain errors alongside it\n")
+	b.WriteString("3. Domain MUST NOT import from any other layer\n\n")
+
+	b.WriteString("### New port (interface)\n")
+	b.WriteString("1. Define the interface in `port/`\n")
+	b.WriteString("2. Ports may only import from `domain/`\n\n")
+
+	b.WriteString("### New adapter (implementation)\n")
+	b.WriteString("1. Create in `adapter/<type>/` (e.g., `adapter/httphandler/`, `adapter/mysqlrepo/`)\n")
+	b.WriteString("2. Implement a port interface\n")
+	b.WriteString("3. Adapters may import from `port/` and `domain/` only\n\n")
+
+	b.WriteString("### New service / use case\n")
+	b.WriteString("1. Add to `service/`\n")
+	b.WriteString("2. Depend on ports (interfaces), not adapters (implementations)\n")
+	b.WriteString("3. Services may import from `domain/` and `port/`\n\n")
+
+	b.WriteString("### New HTTP endpoint\n")
+	b.WriteString("1. Add handler function in `adapter/httphandler/`\n")
+	b.WriteString("2. Register route in the router\n")
+	b.WriteString("3. Handler calls a service via its port interface\n\n")
+}
+
+func writeCapabilities(b *strings.Builder, capabilities []string) {
+	b.WriteString("## Capabilities\n\n")
+
+	if len(capabilities) == 0 {
+		b.WriteString("No capabilities configured.\n\n")
+		return
+	}
+
+	b.WriteString("Installed capabilities:\n\n")
+	for _, cap := range capabilities {
+		dir := capabilityDir(cap)
+		fmt.Fprintf(b, "- **%s** -- %s\n", cap, dir)
+	}
+	b.WriteString("\n")
+}
+
+// featureDescriptions maps feature keys to human-readable descriptions with minimum version.
+var featureDescriptions = map[string]struct {
+	minVersion  string
+	description string
+}{
+	"slices_package":       {"1.21+", "use slices.SortFunc, slices.Contains instead of sort.Slice"},
+	"log_slog":             {"1.21+", "use log/slog for structured logging"},
+	"maps_package":         {"1.21+", "use maps.Keys, maps.Values from stdlib"},
+	"range_over_int":       {"1.22+", "use `for i := range n` syntax"},
+	"range_over_func":      {"1.23+", "use iterator functions with range"},
+	"os_root":              {"1.24+", "use os.OpenRoot for kernel-level path safety"},
+	"weak_pointers":        {"1.24+", "use weak package for weak references"},
+	"os_root_fs":           {"1.25+", "os.Root implements fs.FS interface"},
+	"synctest":             {"1.24+", "use testing/synctest for concurrent test control"},
+	"generic_type_aliases": {"1.24+", "fully generic type aliases supported"},
+}
+
+// featureOrder defines the display order for features.
+var featureOrder = []string{
+	"slices_package",
+	"log_slog",
+	"maps_package",
+	"range_over_int",
+	"range_over_func",
+	"os_root",
+	"weak_pointers",
+	"os_root_fs",
+	"synctest",
+	"generic_type_aliases",
+}
+
+func writeLanguageVersion(b *strings.Builder, version string, features map[string]bool) {
+	if version == "" || len(features) == 0 {
+		return
+	}
+
+	// Check if any feature is active.
+	hasActive := false
+	for _, active := range features {
+		if active {
+			hasActive = true
+			break
+		}
+	}
+	if !hasActive {
+		return
+	}
+
+	b.WriteString("## Language Version\n\n")
+	fmt.Fprintf(b, "%s detected. Available modern APIs:\n", version)
+
+	for _, key := range featureOrder {
+		if !features[key] {
+			continue
+		}
+		desc, ok := featureDescriptions[key]
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(b, "- %s (%s) — %s\n", key, desc.minVersion, desc.description)
+	}
+
+	b.WriteString("\nWhen writing code, prefer these modern APIs over legacy alternatives.\n\n")
+}
+
+// capabilityDir returns the typical directory for a capability.
+func capabilityDir(cap string) string {
+	dirs := map[string]string{
+		"http-api":      "adapter/httphandler/",
+		"grpc":          "adapter/grpchandler/, proto/",
+		"graphql":       "adapter/graphql/",
+		"sse":           "adapter/httphandler/",
+		"mysql":         "adapter/mysqlrepo/",
+		"postgres":      "adapter/postgresrepo/",
+		"redis":         "adapter/redisrepo/",
+		"mongodb":       "adapter/mongorepo/",
+		"sqlite":        "adapter/sqliterepo/",
+		"kafka":         "adapter/kafkahandler/",
+		"s3":            "adapter/s3client/",
+		"dynamodb":      "adapter/dynamorepo/",
+		"observability": "platform/observability/",
+		"config":        "config/",
+		"docker":        "Dockerfile, docker-compose.yml",
+		"ci-github":     ".github/workflows/",
+		"makefile":      "Makefile",
+		"saga":          "service/saga/",
+		"feature-flags": "platform/featureflags/",
+		"multi-tenancy": "adapter/httphandler/middleware/",
+		"ci-gitlab":     ".gitlab-ci.yml",
+		"devcontainer":  ".devcontainer/",
+		"templ":         "adapter/httphandler/views/",
+		"htmx":          "adapter/httphandler/",
+		"static-assets": "static/",
+	}
+	if d, ok := dirs[cap]; ok {
+		return d
+	}
+	return "see project structure"
+}
+
+func writeRuleSummaries(b *strings.Builder, projectDir string) {
+	if projectDir == "" {
+		return
+	}
+
+	rulesDir := filepath.Join(projectDir, ".archway", "rules")
+	if _, err := os.Stat(rulesDir); errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+
+	loadedRules, statuses, err := rules.LoadRules(rulesDir, projectDir)
+	if err != nil {
+		return
+	}
+
+	// Filter to valid rules only.
+	var validRules []rules.Rule
+	statusMap := make(map[string]string, len(statuses))
+	for _, s := range statuses {
+		statusMap[s.Rule.ID] = s.Status
+	}
+	for _, r := range loadedRules {
+		if statusMap[r.ID] == "valid" {
+			validRules = append(validRules, r)
+		}
+	}
+
+	if len(validRules) == 0 {
+		return
+	}
+
+	fmt.Fprintf(b, "## Active Rules\n\n")
+	fmt.Fprintf(b, "%d proxy rules enforced by `archway check`:\n\n", len(validRules))
+	b.WriteString("| Rule | Engine | Severity | Scope |\n")
+	b.WriteString("|------|--------|----------|-------|\n")
+	for _, r := range validRules {
+		scope := strings.Join(r.Scope, ", ")
+		fmt.Fprintf(b, "| %s | %s | %s | %s |\n", r.ID, r.Engine, r.Severity, scope)
+	}
+	b.WriteString("\nRun `archway check` to validate. Run `archway check --staged` as pre-commit hook.\n\n")
+}
+
+func writeAntiPatterns(b *strings.Builder, arch string) {
+	b.WriteString("## Anti-patterns to Avoid\n\n")
+
+	// Common anti-patterns.
+	b.WriteString("- NEVER create `utils/`, `helpers/`, `common/`, or `shared/` packages\n")
+	b.WriteString("- NEVER use init() for business logic\n")
+	b.WriteString("- NEVER ignore errors with `_`\n")
+
+	if arch == "hexagonal" {
+		b.WriteString("- NEVER import infrastructure packages from `domain/`\n")
+		b.WriteString("- NEVER put business logic in HTTP handlers or adapters\n")
+		b.WriteString("- NEVER depend on concrete implementations; use port interfaces\n")
+		b.WriteString("- NEVER let domain types reference database/transport concerns (SQL tags, JSON tags in domain)\n")
+		b.WriteString("- NEVER bypass the service layer; handlers must not call repositories directly\n")
+	}
+
+	if arch == "clean" {
+		b.WriteString("- NEVER let `internal/entity/` import from usecase, interface, or infrastructure\n")
+		b.WriteString("- NEVER let `internal/usecase/` import from infrastructure\n")
+		b.WriteString("- NEVER put business logic in `internal/interface/` adapters; that is transport only\n")
+		b.WriteString("- NEVER bypass use cases; interface adapters must not call entity methods directly for business operations\n")
+		b.WriteString("- NEVER let infrastructure concerns (SQL tags, HTTP headers) leak into entities or use cases\n")
+	}
+
+	if arch == "layered" {
+		b.WriteString("- NEVER put business logic in `internal/handler/`; that is transport only\n")
+		b.WriteString("- NEVER import `internal/handler/` or `internal/service/` from `internal/repository/`\n")
+		b.WriteString("- NEVER import `internal/handler/` or `internal/repository/` from each other directly\n")
+		b.WriteString("- NEVER let handler bypass service and call repository directly\n")
+		b.WriteString("- NEVER put data access (SQL, HTTP clients) in `internal/service/`\n")
+	}
+
+	b.WriteString("\n")
+}

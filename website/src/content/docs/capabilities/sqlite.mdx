@@ -1,0 +1,38 @@
+---
+title: "sqlite capability"
+description: "Add SQLite to your Go service using modernc.org/sqlite — pure Go, no CGO, ideal for embedded or single-binary deployments."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`sqlite` adds a pure-Go SQLite database to your service using `modernc.org/sqlite` — no CGO required, single binary deployment.
+
+## What You Get
+
+- Database connection
+- Query helpers
+- Ideal for embedded or single-node applications
+
+## When to Use
+
+Use `sqlite` for embedded databases, single-binary deployments, testing, or scenarios where you don't want external infrastructure. The pure-Go implementation means no CGO compile-time complexity.
+
+## Requirements & Suggestions
+
+**Suggests:** [`migrations`](/capabilities/migrations/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap sqlite
+# or add to an existing service:
+archway add sqlite
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="migrations" href="/capabilities/migrations/">Versioned schema management even for SQLite databases.</Card>
+  <Card title="repository" href="/capabilities/repository/">Generic repository pattern for clean data access.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test utilities — SQLite is great for fast in-process tests.</Card>
+</CardGrid>

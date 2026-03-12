@@ -1,0 +1,39 @@
+---
+title: "ddd capability"
+description: "Add Domain-Driven Design building blocks to your Go service — AggregateRoot, ValueObject, DomainEvent base types, and entity identity patterns."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`ddd` adds Domain-Driven Design building blocks to your Go service with base types for aggregates, value objects, and domain events.
+
+## What You Get
+
+- AggregateRoot base type
+- ValueObject base type
+- DomainEvent base types
+- Entity identity patterns
+
+## When to Use
+
+Use `ddd` when your service has complex business logic that benefits from explicit domain modeling. The base types enforce DDD patterns — aggregates own their consistency boundaries, value objects are immutable, and domain events make significant occurrences explicit.
+
+## Requirements & Suggestions
+
+**Suggests:** [`event-bus`](/capabilities/event-bus/), [`repository`](/capabilities/repository/), [`cqrs`](/capabilities/cqrs/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap ddd
+# or add to an existing service:
+archway add ddd
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="event-bus" href="/capabilities/event-bus/">In-process event bus for dispatching DomainEvents.</Card>
+  <Card title="repository" href="/capabilities/repository/">Repository pattern for persisting aggregates.</Card>
+  <Card title="cqrs" href="/capabilities/cqrs/">CQRS pattern that pairs naturally with DDD.</Card>
+</CardGrid>

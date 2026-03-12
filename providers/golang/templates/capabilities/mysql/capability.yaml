@@ -1,0 +1,9 @@
+name: mysql
+description: "MySQL database connection and repository pattern"
+requires: []
+suggests:
+  - uuid
+  - migrations
+  - docker
+  - observability
+conflicts: []

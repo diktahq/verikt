@@ -1,0 +1,39 @@
+---
+title: "postgres capability"
+description: "Add PostgreSQL to your Go service using the pgx driver with connection pooling, health checks, and a repository scaffold."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`postgres` wires PostgreSQL into your Go service using the pgx driver, with connection pooling and a repository scaffold ready to use.
+
+## What You Get
+
+- Connection setup with pgx driver
+- Pool configuration
+- Health checks
+- Repository scaffold
+
+## When to Use
+
+Use `postgres` for relational data with SQL querying, transactional workloads, or when you need PostgreSQL-specific features like JSONB, full-text search, or advanced indexing. Pair with `migrations` for schema management and `uuid` for database-friendly primary keys.
+
+## Requirements & Suggestions
+
+**Suggests:** [`migrations`](/capabilities/migrations/), [`docker`](/capabilities/docker/), [`uuid`](/capabilities/uuid/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap postgres
+# or add to an existing service:
+archway add postgres
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="migrations" href="/capabilities/migrations/">Versioned schema migrations with golang-migrate.</Card>
+  <Card title="uuid" href="/capabilities/uuid/">UUIDv7 primary keys for index-friendly IDs.</Card>
+  <Card title="repository" href="/capabilities/repository/">Generic repository pattern using Go generics.</Card>
+</CardGrid>

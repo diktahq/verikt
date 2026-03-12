@@ -1,0 +1,79 @@
+---
+title: "What is OpenTelemetry? — Distributed Tracing and Metrics for Go Services"
+description: "OpenTelemetry is the open standard for Go service observability — providing unified APIs for distributed tracing, metrics, and logs that export to any backend without vendor lock-in."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+OpenTelemetry (OTel) is an open-source observability framework and CNCF project that provides vendor-neutral APIs, SDKs, and tooling for generating and exporting telemetry data — traces, metrics, and logs — from applications. It was formed in 2019 by merging OpenCensus (Google) and OpenTracing (CNCF) to eliminate fragmentation in the observability ecosystem.
+
+The core value proposition is portability: instrument your Go service once with the OpenTelemetry SDK, and export telemetry to any compatible backend — Jaeger, Zipkin, Tempo, Datadog, Honeycomb, New Relic — by changing configuration rather than code. There's no vendor SDK in your application code, only the neutral OTel API.
+
+OpenTelemetry operates across three signals: traces (the path of a request through services and components, represented as spans), metrics (numeric measurements over time — counters, histograms, gauges), and logs (structured timestamped records that can be correlated with traces via trace context). All three share a common context propagation mechanism that allows correlation across service boundaries.
+
+## How It Works
+
+A trace is a tree of spans representing the execution of a request:
+
+```
+Trace: order-placement (200ms total)
+  └─ http-api handler (5ms)
+       └─ OrderService.PlaceOrder (190ms)
+            ├─ InventoryService.Reserve (80ms)  ← external gRPC call
+            └─ postgres: INSERT INTO orders (100ms)  ← database span
+```
+
+Each span has a start time, end time, status, and attributes (user ID, order ID, HTTP status code). Spans from different services share a trace ID propagated via W3C TraceContext headers. In Jaeger or Tempo, you can view the entire end-to-end trace for a single request across all services.
+
+## In Go
+
+archway's `observability` capability scaffolds OTLP/gRPC export, trace propagation middleware, and metric collection:
+
+```go
+// Tracer is initialized once at startup
+tracer := otel.Tracer("order-service")
+
+func (s *OrderService) PlaceOrder(ctx context.Context, cmd PlaceOrderCommand) error {
+    ctx, span := tracer.Start(ctx, "OrderService.PlaceOrder")
+    defer span.End()
+
+    span.SetAttributes(
+        attribute.String("order.customer_id", cmd.CustomerID.String()),
+        attribute.Int("order.item_count", len(cmd.Items)),
+    )
+
+    // errors are recorded on the span
+    if err := s.repo.Save(ctx, order); err != nil {
+        span.RecordError(err)
+        span.SetStatus(codes.Error, err.Error())
+        return err
+    }
+    return nil
+}
+```
+
+The context carries the span, which is propagated automatically to downstream calls.
+
+## How archway Supports It
+
+The `observability` capability scaffolds OTLP/gRPC export configuration, trace propagation middleware, and metric instruments. It's suggested whenever `http-api`, `grpc`, or `kafka-consumer` is selected — you cannot debug a production service without it. See [Capabilities](/concepts/capabilities/).
+
+<Aside type="tip">
+Instrument at service boundaries first: HTTP handlers, database calls, external HTTP calls, and message publish/consume. That gives you the most valuable traces for the least instrumentation effort. Add business-logic spans only when debugging requires it.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Service Mesh" icon="right-arrow">
+    Mesh-level network spans compose with OTel application spans into a single end-to-end trace. [Service Mesh](/glossary/service-mesh/)
+  </Card>
+  <Card title="Circuit Breaker" icon="right-arrow">
+    Circuit breaker state changes are critical events to record as span events in your traces. [Circuit Breaker](/glossary/circuit-breaker/)
+  </Card>
+  <Card title="Bulkhead Pattern" icon="right-arrow">
+    Metrics on bulkhead saturation are the signal that tells you when to tune concurrency limits. [Bulkhead Pattern](/glossary/bulkhead-pattern/)
+  </Card>
+</CardGrid>

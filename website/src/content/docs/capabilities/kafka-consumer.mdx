@@ -1,0 +1,35 @@
+---
+title: "kafka-consumer capability"
+description: "Add a Kafka consumer to your Go service with consumer group setup, message handler interface, graceful drain on shutdown, and broker/topic configuration."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`kafka-consumer` adds a Kafka consumer to your Go service with a handler interface and graceful shutdown drain.
+
+## What You Get
+
+- Consumer group setup
+- Message handler interface
+- Graceful shutdown with drain
+- Config for brokers/topics/consumer group
+
+## When to Use
+
+Use `kafka-consumer` for event-driven architectures and async message processing. Always pair with `graceful` shutdown — ungraceful shutdown causes rebalancing storms and potential duplicate processing.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap kafka-consumer
+# or add to an existing service:
+archway add kafka-consumer
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="graceful" href="/capabilities/graceful/">Graceful shutdown to prevent rebalancing storms.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace Kafka message processing with OpenTelemetry.</Card>
+  <Card title="outbox" href="/capabilities/outbox/">Transactional outbox for reliable event publishing.</Card>
+</CardGrid>

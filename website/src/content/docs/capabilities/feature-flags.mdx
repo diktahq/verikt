@@ -1,0 +1,40 @@
+---
+title: "feature-flags capability"
+description: "Add feature flag evaluation to your Go service with YAML-based flag definitions, local config fallback, and context-aware evaluation."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`feature-flags` adds feature flag evaluation to your Go service with YAML-based definitions and context-aware flag resolution.
+
+## What You Get
+
+- Flag evaluator
+- YAML-based flag definitions
+- Context-aware evaluation
+
+## When to Use
+
+Use `feature-flags` for gradual rollouts, A/B testing, and kill switches. Flags let you deploy code dark and enable it for specific users or percentages of traffic without a new release. The local YAML fallback means flags work without a feature flag service during development.
+
+## Requirements & Suggestions
+
+**Requires:** [`platform`](/capabilities/platform/) (config)
+
+**Suggests:** [`observability`](/capabilities/observability/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap platform,feature-flags
+# or add to an existing service:
+archway add feature-flags
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="platform" href="/capabilities/platform/">Required for configuration management.</Card>
+  <Card title="observability" href="/capabilities/observability/">Track flag evaluation metrics and flag-triggered behavior.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">Use JWT claims for user-targeted flag evaluation.</Card>
+</CardGrid>

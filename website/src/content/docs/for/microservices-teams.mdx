@@ -1,0 +1,71 @@
+---
+title: "archway for Microservices Teams: Consistent Go Service Architecture at Scale"
+description: "When every service is scaffolded differently, the org pays the price. archway gives microservices teams a shared composition model, consistent Go architecture patterns, and enforcement in CI."
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+Six months into building a microservices platform, every team has drifted. The payments service uses hexagonal architecture. The notifications service is flat with everything in `main.go`. The user service uses a layered pattern but nobody agreed on naming so it's `handlers/`, `controllers/`, and `routes/` across three different services. A new engineer joins and spends their first week just understanding that each service is a different codebase with different conventions — before writing a line of business logic.
+
+This isn't a discipline problem. It's a tooling problem. When there's no shared composition model, every service starts from scratch, and scratch means whoever was in a hurry that day.
+
+## What archway does for microservices teams
+
+- Gives the org a shared vocabulary: architecture patterns (hexagonal, layered, clean) + capabilities (http-api, kafka-consumer, postgres, circuit-breaker) are the building blocks every service is described in
+- Ensures every scaffolded service starts from the same structural baseline — same layer names, same dependency rules, same capability patterns
+- Makes capability choices explicit and documented in `archway.yaml` — any engineer can look at a service and know exactly what it uses and why
+- Enforces the declared architecture in CI with `archway check` — a service that was scaffolded as hexagonal stays hexagonal
+
+## The problem it solves
+
+Inconsistency in microservices isn't just an aesthetic problem. When the payments service puts business logic in HTTP handlers and the orders service puts it in service-layer use cases, you can't reason about either without reading every file. Cross-service debugging gets harder. Onboarding takes longer. Code review standards drift. The architecture diagram on the wiki stops matching the code.
+
+The deeper problem is that inconsistency compounds. The third engineer to join copies from whichever service they saw first. The fourth copies from the third. Within a year, the org has 12 services and 7 structural patterns, and the cost of normalizing them is so high that nobody does it.
+
+archway addresses this at the scaffolding layer. When a new service is started with `archway new`, it uses the architecture and capabilities the team agreed on. The rules aren't documented — they're enforced.
+
+## How it works
+
+```bash
+# What the team uses when starting every new Go microservice
+archway new payments-service \
+  --arch hexagonal \
+  --cap platform,bootstrap,http-api,health,request-id,observability,postgres,migrations,uuid,docker,ci-github \
+  --module github.com/myorg/payments-service \
+  --no-wizard
+```
+
+Every service starts with the same architecture, the same capability set, and an `archway.yaml` that records the decisions. Six months later, when someone runs `archway check` in CI on all 12 services, every one enforces the same dependency rules.
+
+## Capabilities microservices teams reach for most
+
+<CardGrid>
+  <Card title="health" icon="approve-check-circle">
+    `/health` and `/ready` endpoints for orchestrator readiness and liveness probes. Required for every service behind Kubernetes or a load balancer.
+
+    [health capability](/capabilities/health/)
+  </Card>
+  <Card title="kafka-consumer" icon="puzzle">
+    Consumer group setup, message handler interface, graceful shutdown with drain. For event-driven microservice communication.
+
+    [kafka-consumer capability](/capabilities/kafka-consumer/)
+  </Card>
+  <Card title="circuit-breaker" icon="setting">
+    Circuit breaker wrapper with open/half-open/closed states. Essential when your service calls other services — prevents cascade failures.
+
+    [circuit-breaker capability](/capabilities/circuit-breaker/)
+  </Card>
+  <Card title="outbox" icon="right-arrow">
+    Transactional outbox for reliable event publishing. If your service publishes domain events after writing to a database, this prevents event loss on process crash.
+
+    [outbox capability](/capabilities/outbox/)
+  </Card>
+</CardGrid>
+
+<Aside type="tip">
+`archway check` runs as a standalone CI step — point it at any service's root and it validates the declared architecture against the actual code. You can add it to every service's pipeline without changing any service code.
+</Aside>
+
+## Get started
+
+[Quick Start](/getting-started/cli/) — scaffold your first service in 2 minutes.

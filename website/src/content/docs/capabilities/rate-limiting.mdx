@@ -1,0 +1,37 @@
+---
+title: "rate-limiting capability"
+description: "Add a token bucket rate limiter to your Go service with per-endpoint configuration to prevent API abuse."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`rate-limiting` adds a token bucket rate limiter to your Go service as Chi middleware.
+
+## What You Get
+
+- Rate limiting middleware
+- Per-endpoint configuration
+
+## When to Use
+
+Use `rate-limiting` on any public-facing API to prevent abuse, brute-force attacks, and runaway clients. Essential for authentication endpoints and any endpoint with significant compute cost.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,rate-limiting
+# or add to an existing service:
+archway add rate-limiting
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication — rate-limit auth endpoints tightly.</Card>
+  <Card title="idempotency" href="/capabilities/idempotency/">Idempotency keys to safely retry rate-limited requests.</Card>
+</CardGrid>

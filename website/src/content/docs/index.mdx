@@ -1,0 +1,97 @@
+---
+title: archway — Architecture-aware Service Composer and Enforcer
+description: Archway composes production-ready services from 4 architecture patterns and 63 modular capabilities, then enforces architecture rules in CI. Guide, compose, analyze, enforce.
+template: splash
+hero:
+  title: arch<span style="color:var(--sl-color-accent)">way</span>
+  tagline: |
+    Architecture-aware service composer and enforcer
+    <p class="hero-description">Compose production-grade services from architecture patterns and 63 modular capabilities. Guide, compose, analyze, and enforce — from first commit to production.</p>
+  actions:
+    - text: Quick Start with AI Agents
+      link: /getting-started/ai-agents/
+      icon: right-arrow
+    - text: Quick Start with CLI
+      link: /getting-started/cli/
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/dcsg/archway
+      variant: minimal
+      icon: github
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+```
+Architecture (hexagonal) + Capabilities (http-api, mysql, docker) = Your Service
+```
+
+Pick an architecture, pick what your service needs — archway wires it all together, feeds your AI agents the rules, and enforces it stays true.
+
+**63 capabilities. Zero lock-in. You own every line of code.**
+
+<CardGrid>
+  <Card title="Guide" icon="star">
+    Feed AI agents your architecture context with `archway guide`. Prevention beats correction — agents write correct code from the first line.
+  </Card>
+  <Card title="Compose" icon="puzzle">
+    Pick an architecture pattern and combine 63 modular capabilities — transport, data, security, resilience, observability, and more. Get a production-ready service in one command.
+  </Card>
+  <Card title="Analyze" icon="magnifier">
+    Scan any codebase. archway detects the architecture pattern, maps dependencies, and reports what's there — deterministically, no LLM needed.
+  </Card>
+  <Card title="Enforce" icon="approve-check-circle">
+    Run `archway check` in CI. 11 AST-based detectors catch dependency violations, anti-patterns, and architecture drift before they ship.
+  </Card>
+</CardGrid>
+
+## See It in Action
+
+```bash
+# Interactive wizard — guides you through every choice
+archway new my-service
+
+# Or go non-interactive
+archway new my-service \
+  --arch hexagonal \
+  --cap platform,bootstrap,http-api,mysql,docker \
+  --module github.com/myorg/my-service \
+  --no-wizard
+```
+
+You get a production-ready service with:
+- Hexagonal architecture with strict dependency rules
+- REST API with Chi router and RFC 7807 errors
+- MySQL with connection pooling and health checks
+- Structured logging, OpenTelemetry, PII redaction
+- Bootstrap pattern for testable dependency wiring
+- Docker Compose for local development
+- `archway.yaml` for architecture enforcement
+
+<Aside type="tip">
+The smart wizard suggests what you're missing. Adding HTTP? You probably want rate limiting, CORS, and auth too. 18 suggestion rules help you build complete services.
+</Aside>
+
+## Capabilities at a Glance
+
+| Category | Capabilities |
+|----------|-------------|
+| **Transport** | HTTP API, gRPC, GraphQL, Kafka, NATS, WebSocket, SSE |
+| **Data** | PostgreSQL, MySQL, MongoDB, Redis, S3, migrations |
+| **Security** | JWT auth, OAuth2, encryption, multi-tenancy |
+| **Resilience** | Circuit breaker, retry, bulkhead, idempotency |
+| **Patterns** | CQRS, DDD, event bus, outbox, saga, worker |
+| **Observability** | Health checks, OpenTelemetry, request ID, audit log |
+| **Infrastructure** | Docker, CI/GitHub, Makefile, pre-commit |
+| **Platform** | Config, lifecycle, bootstrap, validation, UUID |
+| **Quality** | Linting, testing |
+| **Frontend** | templ, HTMX, static assets, i18n |
+
+<CardGrid>
+  <Card title="Read the docs" icon="right-arrow">
+    [How It Works](/concepts/how-it-works/) — understand the composition model
+  </Card>
+  <Card title="Try it now" icon="rocket">
+    [Quick Start with AI Agents](/getting-started/ai-agents/) — set up your project without leaving your agent session
+  </Card>
+</CardGrid>

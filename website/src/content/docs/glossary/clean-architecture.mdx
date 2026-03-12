@@ -1,0 +1,68 @@
+---
+title: "What is Clean Architecture? — Uncle Bob's Layered Design for Go"
+description: "Clean architecture organizes Go services into four concentric layers — entities, use cases, interfaces, and infrastructure — with dependencies pointing strictly inward toward business rules."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Clean architecture is a software design philosophy introduced by Robert C. Martin (Uncle Bob) in 2012, synthesizing earlier ideas from hexagonal architecture, onion architecture, and screaming architecture. The core principle is the Dependency Rule: source code dependencies must point inward. Outer layers can depend on inner layers; inner layers cannot depend on anything outer.
+
+The architecture organizes code into four concentric circles: entities (enterprise-wide business rules), use cases (application-specific business rules), interface adapters (controllers, presenters, gateways), and frameworks/infrastructure (databases, web frameworks, external services). The innermost layers know nothing about the outer layers — they contain pure business logic with no framework imports, no database drivers, no HTTP concepts.
+
+The practical benefit is testability and replaceability. Use cases can be tested without a web framework. Entities can be validated without a database. The database can be swapped without touching business rules. The architecture enforces these properties structurally — they're not a matter of discipline but of import constraints.
+
+## How It Works
+
+The four layers in archway's clean architecture scaffold:
+
+```
+internal/entity/            → Core business entities. No external dependencies.
+internal/usecase/           → Application use cases. Imports only entity/.
+internal/interface/handler/ → HTTP handlers, adapters. Imports usecase/, entity/.
+internal/infrastructure/    → Database, external services. Imports all inner layers.
+```
+
+Use cases define repository interfaces that the infrastructure layer implements. A `CreateOrderUseCase` declares `OrderRepository` as an interface parameter — the Postgres implementation lives in `infrastructure/` and is injected at startup. The use case never references `*sql.DB`.
+
+## In Go
+
+The challenge in Go is that there's no enforcement mechanism beyond conventions and tooling. The pattern works when you discipline imports at the package level and use interfaces consistently:
+
+```go
+// internal/usecase/create_order.go
+type OrderRepository interface {
+    Save(ctx context.Context, order *entity.Order) error
+}
+
+type CreateOrderUseCase struct {
+    repo OrderRepository
+}
+```
+
+The `usecase` package imports `entity` — nothing else. The concrete `PostgresOrderRepository` in `infrastructure/` imports `usecase` (for the interface) and `entity`, implementing the interface without the use case knowing.
+
+`archway check` enforces these import boundaries statically, catching violations before they accumulate.
+
+## How archway Supports It
+
+archway scaffolds the clean architecture layout with `entity/`, `usecase/`, `interface/`, and `infrastructure/` directories and encodes the dependency rules in `archway.yaml`. Run `archway check` to catch dependency violations. See [Architectures](/concepts/architectures/) for the full comparison.
+
+<Aside type="tip">
+The interface/handler layer is a thin translator — it converts HTTP requests into use case commands and use case results into HTTP responses. Business decisions belong in use cases, not handlers.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Hexagonal Architecture" icon="right-arrow">
+    A related pattern with the same dependency-inversion goal, different terminology. [Hexagonal Architecture](/glossary/hexagonal-architecture/)
+  </Card>
+  <Card title="Domain-Driven Design" icon="right-arrow">
+    DDD pairs naturally with clean architecture — entities and use cases map to DDD concepts. [Domain-Driven Design](/glossary/domain-driven-design/)
+  </Card>
+  <Card title="Architectures" icon="right-arrow">
+    See how archway implements clean architecture alongside hexagonal, layered, and flat. [Architectures](/concepts/architectures/)
+  </Card>
+</CardGrid>

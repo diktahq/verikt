@@ -1,0 +1,32 @@
+---
+title: "makefile capability"
+description: "Add a Makefile to your Go service with standard development targets — build, test, lint, run, and clean."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`makefile` adds a `Makefile` to your Go service with standard targets for the most common development tasks.
+
+## What You Get
+
+- `Makefile` with build, test, lint, run, and clean targets
+
+## When to Use
+
+Use `makefile` to standardize development commands across the team. `make build`, `make test`, `make lint` work consistently regardless of the underlying Go commands — new contributors don't need to read documentation to get started.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap makefile
+# or add to an existing service:
+archway add makefile
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="linting" href="/capabilities/linting/">golangci-lint wired into the lint Makefile target.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test utilities invoked by the test Makefile target.</Card>
+  <Card title="docker" href="/capabilities/docker/">Docker targets for starting/stopping local dependencies.</Card>
+</CardGrid>

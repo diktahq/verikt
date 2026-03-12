@@ -1,0 +1,36 @@
+---
+title: "cors capability"
+description: "Add Cross-Origin Resource Sharing middleware to your Go service with configurable origins, methods, and headers."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`cors` adds CORS middleware to your Go service so browser clients can make cross-origin requests.
+
+## What You Get
+
+- CORS middleware with configurable origins, methods, and headers
+
+## When to Use
+
+Any Go API consumed directly by a browser from a different origin needs CORS headers. Without them, browsers will block requests. Configure allowed origins tightly in production — avoid wildcard `*` for authenticated APIs.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,cors
+# or add to an existing service:
+archway add cors
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">JWT authentication for securing CORS-enabled APIs.</Card>
+  <Card title="rate-limiting" href="/capabilities/rate-limiting/">Rate limiting to protect your public API endpoints.</Card>
+</CardGrid>

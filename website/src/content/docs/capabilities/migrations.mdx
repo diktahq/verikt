@@ -1,0 +1,38 @@
+---
+title: "migrations capability"
+description: "Add versioned database schema migrations to your Go service using golang-migrate with up/down migration files and version tracking."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`migrations` adds database schema migration support to your Go service using golang-migrate, with up/down files and version tracking.
+
+## What You Get
+
+- Migration runner
+- Up/down migration files
+- Version tracking
+
+## When to Use
+
+Any service with a relational database needs migrations. Schema changes without versioned migrations are risky in production — you lose repeatability, rollback capability, and team coordination. Add `migrations` alongside `postgres` or `mysql` from the start.
+
+## Requirements & Suggestions
+
+**Suggests:** [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap postgres,migrations
+# or add to an existing service:
+archway add migrations
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="postgres" href="/capabilities/postgres/">PostgreSQL — the most common pairing with migrations.</Card>
+  <Card title="mysql" href="/capabilities/mysql/">MySQL with versioned schema management.</Card>
+  <Card title="docker" href="/capabilities/docker/">Local database instance for running migrations in dev.</Card>
+</CardGrid>

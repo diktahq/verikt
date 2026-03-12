@@ -1,0 +1,103 @@
+---
+title: Quick Start with CLI
+description: Scaffold a production-ready service in under 2 minutes using the Archway CLI wizard with architecture patterns and modular capabilities
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+<Aside type="tip">
+  Want the full experience? This works best when combined with an AI agent. After scaffolding, run `archway guide` and open the project in [Claude Code, Cursor, or Copilot](/getting-started/ai-agents/) — the agent will already know your architecture.
+</Aside>
+
+<Steps>
+
+1. **Scaffold your service**
+
+   The wizard guides you through every choice:
+
+   ```bash
+   archway new my-service
+   ```
+
+   You'll pick:
+   - Service name and module path
+   - Architecture — hexagonal, layered, clean, or flat
+   - Capabilities — multi-select what your service needs
+   - Smart suggestions — accept or skip recommended additions
+
+   :::tip
+   Know exactly what you want? Skip the wizard:
+
+   ```bash
+   archway new my-service \
+     --arch hexagonal \
+     --cap platform,bootstrap,http-api,mysql,docker \
+     --module github.com/myorg/my-service \
+     --no-wizard
+   ```
+   :::
+
+2. **Explore what you got**
+
+   ```
+   my-service/
+   ├── cmd/my-service/main.go          # Thin entry point (15 lines)
+   ├── internal/bootstrap/bootstrap.go # All dependency wiring
+   ├── domain/                         # Business logic (zero deps)
+   │   ├── errors.go                   # Typed domain errors
+   │   └── clock.go                    # Testable time abstraction
+   ├── port/                           # Interfaces
+   │   ├── inbound.go                  # Use case interfaces
+   │   └── outbound.go                 # Repository interfaces
+   ├── service/                        # Use case implementations
+   ├── adapter/                        # External integrations
+   │   ├── httphandler/                # REST API (Chi router)
+   │   └── mysqlrepo/                  # MySQL repositories
+   ├── config/                         # YAML config loading
+   ├── platform/                       # Logging, OTel, lifecycle
+   ├── docs/PROJECT.md                 # Full project anatomy
+   ├── archway.yaml                    # Architecture rules
+   └── go.mod
+   ```
+
+3. **Run it**
+
+   ```bash
+   cd my-service
+   go run ./cmd/my-service
+   ```
+
+4. **Validate the architecture**
+
+   ```bash
+   archway check
+   ```
+
+   This catches dependency violations, missing directories, function complexity issues, and anti-patterns — with **11 AST-based detectors**.
+
+</Steps>
+
+## What's Next
+
+<Tabs>
+<TabItem label="Learn">
+
+- [How It Works](/concepts/how-it-works/) — understand the composition model
+- [Architectures](/concepts/architectures/) — hexagonal vs flat
+- [Capabilities](/concepts/capabilities/) — all 63 capabilities explained
+
+</TabItem>
+<TabItem label="Build">
+
+- [Building a REST API](/guides/rest-api/) — step-by-step guide
+- [Adding Capabilities](/guides/adding-capabilities/) — extend an existing project
+
+</TabItem>
+<TabItem label="Reference">
+
+- [Capabilities Matrix](/reference/capabilities-matrix/) — everything at a glance
+- [CLI Commands](/reference/cli/) — full flag reference
+- [archway.yaml](/reference/archway-yaml/) — configuration spec
+
+</TabItem>
+</Tabs>

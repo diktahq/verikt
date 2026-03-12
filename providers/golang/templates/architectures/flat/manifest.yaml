@@ -1,0 +1,30 @@
+name: flat
+description: "Flat structure for simple CLIs and scripts"
+variables:
+  - name: ServiceName
+    type: string
+    required: true
+    description: "Name of the service"
+  - name: ModulePath
+    type: string
+    required: true
+    description: "Go module path"
+  - name: GoVersion
+    type: string
+    default: "1.22"
+    description: "Go version for go.mod"
+path_mappings:
+  adapter/httphandler: handler
+  adapter/pgxrepo: repository
+  adapter/grpchandler: handler
+  adapter/mysqlrepo: repository
+  adapter/redisrepo: repository
+  adapter/esrepo: repository
+  adapter/kafkahandler: handler
+  adapter/natshandler: handler
+  adapter/bffgateway: handler
+  adapter/mailpit: repository
+  domain: model
+  port: ""
+  service: ""
+components: []

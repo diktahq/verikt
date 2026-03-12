@@ -1,0 +1,33 @@
+---
+title: "docker capability"
+description: "Add a Docker Compose local development environment to your Go service with service dependencies and environment variable configuration."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`docker` adds a `docker-compose.yml` to your Go service for running local development dependencies with a single command.
+
+## What You Get
+
+- `docker-compose.yml` with service dependencies
+- `.env.example` for environment variables
+
+## When to Use
+
+Use `docker` whenever your service depends on external infrastructure — databases, caches, message brokers, or third-party services. Docker Compose lets every developer spin up the full stack locally without manual installation.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap docker
+# or add to an existing service:
+archway add docker
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="postgres" href="/capabilities/postgres/">PostgreSQL instance in Docker Compose.</Card>
+  <Card title="redis" href="/capabilities/redis/">Redis instance in Docker Compose.</Card>
+  <Card title="devcontainer" href="/capabilities/devcontainer/">VS Code Dev Container that uses the Docker Compose stack.</Card>
+</CardGrid>

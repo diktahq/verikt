@@ -1,0 +1,36 @@
+---
+title: "ci-bitbucket capability"
+description: "Add a Bitbucket Pipelines CI/CD configuration to your Go service with build, test, and deploy steps in bitbucket-pipelines.yml."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`ci-bitbucket` adds a Bitbucket Pipelines configuration to your Go service for automated build, test, and deploy.
+
+## What You Get
+
+- `bitbucket-pipelines.yml` with build, test, and deploy steps
+
+## When to Use
+
+Use `ci-bitbucket` for services hosted on Bitbucket. The pipeline covers the standard Go CI workflow — build, test, and deploy — without manual YAML authoring.
+
+## Requirements & Suggestions
+
+**Suggests:** [`linting`](/capabilities/linting/), [`testing`](/capabilities/testing/), [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap ci-bitbucket
+# or add to an existing service:
+archway add ci-bitbucket
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="linting" href="/capabilities/linting/">golangci-lint running in the pipeline.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test utilities for the test step.</Card>
+  <Card title="docker" href="/capabilities/docker/">Docker build step in the pipeline.</Card>
+</CardGrid>

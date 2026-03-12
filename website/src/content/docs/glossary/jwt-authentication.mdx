@@ -1,0 +1,81 @@
+---
+title: "What is JWT Authentication? — Stateless Auth for Go APIs"
+description: "JWT authentication enables stateless identity verification in Go APIs — clients present a signed token, the server validates it without a database lookup, enabling horizontal scaling without shared session state."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+JSON Web Token (JWT) authentication is a mechanism for stateless identity verification. A JWT is a compact, URL-safe token consisting of three base64-encoded parts: a header (algorithm and token type), a payload (claims — user ID, roles, expiry, and any custom data), and a signature (cryptographic proof that the token was issued by a trusted party and hasn't been tampered with).
+
+The key property is statelessness: the server validates the token's signature and reads claims directly from the token — no database lookup required. Any service instance can verify any token as long as it has the signing key (or the public key for asymmetric algorithms). This makes JWTs well-suited to horizontally scaled APIs where different requests from the same client may hit different instances.
+
+JWTs are defined in RFC 7519 and are the dominant authentication mechanism for REST APIs and microservices. The most common signing algorithms are HS256 (HMAC-SHA256, symmetric — same key signs and verifies) and RS256/ES256 (asymmetric — private key signs, public key verifies). Asymmetric algorithms are preferred when multiple services verify tokens but only one issues them.
+
+## How It Works
+
+```
+Login:
+  Client → POST /auth/login {credentials}
+  Server → validates credentials → issues JWT
+  JWT payload: { sub: "user-123", roles: ["user"], exp: 1709251260 }
+  JWT signed with private/shared key → returned to client
+
+Subsequent requests:
+  Client → GET /orders  Authorization: Bearer eyJhbG...
+  Server → extract JWT from header → verify signature → check exp
+         → extract sub and roles from payload
+         → proceed if valid, reject with 401 if not
+```
+
+The server never calls the database during token verification — all required information is in the token.
+
+## In Go
+
+archway's `auth-jwt` capability scaffolds middleware that validates tokens and injects claims into the request context:
+
+```go
+func JWTMiddleware(verifier TokenVerifier) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            token := extractBearerToken(r)
+            if token == "" {
+                w.WriteHeader(http.StatusUnauthorized)
+                return
+            }
+            claims, err := verifier.Verify(token)
+            if err != nil {
+                w.WriteHeader(http.StatusUnauthorized)
+                return
+            }
+            ctx := context.WithValue(r.Context(), claimsKey, claims)
+            next.ServeHTTP(w, r.WithContext(ctx))
+        })
+    }
+}
+```
+
+Handlers extract the authenticated user's identity from the context without re-verifying.
+
+## How archway Supports It
+
+The `auth-jwt` capability requires `http-api` and scaffolds middleware with claims extraction and route-level authentication. archway warns when `multi-tenancy` is used without an auth capability — tenant IDs from unverified headers can be spoofed. See the [Capabilities Matrix](/reference/capabilities-matrix/).
+
+<Aside type="tip">
+Keep JWT payloads small — they're sent with every request. Include only what you need (user ID, roles, tenant ID) and fetch additional user data from cache when required. Large JWTs add overhead to every request.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Rate Limiting" icon="right-arrow">
+    Use the authenticated user identity from JWT claims as the rate limit key. [Rate Limiting](/glossary/rate-limiting/)
+  </Card>
+  <Card title="OpenTelemetry" icon="right-arrow">
+    Propagate user identity from JWT claims into trace spans for correlated observability. [OpenTelemetry](/glossary/opentelemetry/)
+  </Card>
+  <Card title="Service Mesh" icon="right-arrow">
+    Mesh mTLS authenticates services to each other; JWT authenticates end users to services. [Service Mesh](/glossary/service-mesh/)
+  </Card>
+</CardGrid>

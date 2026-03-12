@@ -1,0 +1,107 @@
+---
+title: "Clean vs Layered Architecture: Which Go Architecture Should You Use?"
+description: "Compare Clean Architecture and Layered architecture for Go services — entity modeling, dependency rules, and when each pattern is the right fit."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Both Clean and Layered architecture are supported by archway. They both enforce a top-down dependency direction, but Clean Architecture is more opinionated — it introduces entities, use cases, and a formal ring model, while layered gives you the same directional discipline with a simpler vocabulary.
+
+## At a Glance
+
+| | Clean | Layered |
+|---|---|---|
+| Complexity | High | Medium |
+| Best for | DDD, entity-centric domain modeling | Standard CRUD APIs |
+| Dependency rules | Strict (ring model) | Strict (top-down) |
+| Team size | Medium / Large | Any |
+| Directory structure | Complex | Moderate |
+
+## Clean Architecture
+
+Clean Architecture structures a Go service around Uncle Bob's concentric ring model. Entities are the innermost ring — pure business objects with no dependencies. Use cases orchestrate those entities. Interface adapters translate between use cases and the outside world. Infrastructure sits at the outermost ring.
+
+```
+cmd/<name>/                  → Entry point
+internal/entity/             → Core business entities (no dependencies)
+internal/usecase/            → Application use cases
+internal/interface/handler/  → HTTP handlers, adapters
+internal/infrastructure/     → Database, external services, config
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| entity | nothing |
+| usecase | entity |
+| interface | usecase, entity |
+| infrastructure | interface, usecase, entity |
+
+The `infrastructure` package is explicitly the outermost layer — it's allowed to depend on everything because it's the wiring layer. Your entities and use cases never know about databases or HTTP.
+
+## Layered Architecture
+
+Layered uses the classic three-tier model: handlers at the top, services in the middle, repositories at the bottom, with a shared `model` package for domain types.
+
+```
+cmd/<name>/             → Entry point
+internal/handler/       → HTTP handlers (request/response)
+internal/service/       → Business logic
+internal/repository/    → Data access
+internal/model/         → Shared types and domain models
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| model | nothing |
+| repository | model |
+| service | repository, model |
+| handler | service, model |
+
+Dependencies flow top-down. The `model` package is shared across all layers, which is both layered's strength (simplicity) and its limitation (model changes affect everything).
+
+## Key Differences
+
+- **Domain modeling**: Clean Architecture has an explicit `entity` layer for core business objects. Layered uses `model` as a shared data structure layer — the distinction between domain logic and data types is less formal.
+- **Use cases as first-class concepts**: Clean Architecture treats each use case as a named, explicit concept (`internal/usecase/create_order.go`). Layered puts equivalent logic in service methods, which are less discoverable as a set of operations.
+- **Infrastructure placement**: In Clean Architecture, `infrastructure` is an explicit outer ring that wires everything. In layered, wiring is implicit — services import repositories directly.
+- **Coupling**: Layered's shared `model` package creates implicit coupling across all layers. Clean Architecture's entity layer is tighter but dependencies are more explicit.
+
+## When to Choose Clean
+
+- Your project uses Domain-Driven Design and your team reasons in terms of entities and aggregate roots
+- Use cases are the primary way you communicate what the service does — each use case is a discrete, named operation
+- You're building something where the distinction between domain logic (entities) and application orchestration (use cases) is meaningful
+- Your team knows Uncle Bob's conventions and you want a structure that maps to that shared vocabulary
+
+## When to Choose Layered
+
+- You're building a standard HTTP API backed by a relational database
+- Your team is more familiar with the traditional handler → service → repository pattern
+- The business logic is about orchestrating data access and applying validation, not modeling a rich domain
+- You want a structure that any Go developer can navigate without prior explanation
+- Clean Architecture's entity/usecase distinction feels like unnecessary ceremony for what you're building
+
+## Scaffold Either with archway
+
+```bash
+# Clean Architecture
+archway new my-service --arch clean
+
+# Layered
+archway new my-service --arch layered
+```
+
+<Aside type="tip">
+If you find yourself writing service methods that just call one repository method, you probably don't need Clean Architecture. Clean earns its overhead when use cases involve multiple entities, cross-aggregate coordination, or business rules that need to be isolated from infrastructure.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures compared](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

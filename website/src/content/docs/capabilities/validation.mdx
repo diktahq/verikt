@@ -1,0 +1,34 @@
+---
+title: "validation capability"
+description: "Add input validation to your Go service using go-playground/validator with struct tags, error formatting, and field-level validation messages."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`validation` adds input validation to your Go service using `go-playground/validator` with struct tags and formatted error responses.
+
+## What You Get
+
+- Validation rules
+- Error formatting
+- Field-level validation messages
+
+## When to Use
+
+Any API that accepts external input needs validation at the boundary. Use `validation` to validate HTTP request payloads at the handler layer before they reach business logic. Struct tag validation reduces boilerplate and keeps rules co-located with the data structure.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap validation
+# or add to an existing service:
+archway add validation
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="http-api" href="/capabilities/http-api/">The HTTP API where validation runs at the boundary.</Card>
+  <Card title="auth-jwt" href="/capabilities/auth-jwt/">Validate authenticated requests alongside input validation.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test validation rules with table-driven tests.</Card>
+</CardGrid>

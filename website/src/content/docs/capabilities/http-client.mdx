@@ -1,0 +1,36 @@
+---
+title: "http-client capability"
+description: "Add a resilient outbound HTTP client to your Go service with retry, timeout, and observability built in for calling external services."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`http-client` adds a resilient HTTP client to your Go service with retry, timeout, and observability built in for outbound calls.
+
+## What You Get
+
+- HTTP client with retry, timeout, and observability built in
+
+## When to Use
+
+Use `http-client` for any outbound HTTP call to external services. A raw `http.DefaultClient` has no timeout, no retry, and no tracing — all three are production requirements. Pair with `circuit-breaker` to stop calling dependencies that are clearly down.
+
+## Requirements & Suggestions
+
+**Suggests:** [`circuit-breaker`](/capabilities/circuit-breaker/), [`retry`](/capabilities/retry/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-client
+# or add to an existing service:
+archway add http-client
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="circuit-breaker" href="/capabilities/circuit-breaker/">Stop calling failed dependencies before they cascade.</Card>
+  <Card title="retry" href="/capabilities/retry/">Retry transient failures with exponential backoff.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace outbound HTTP calls with OpenTelemetry.</Card>
+</CardGrid>

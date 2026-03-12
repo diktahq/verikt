@@ -1,0 +1,37 @@
+---
+title: "redis capability"
+description: "Add Redis to your Go service with connection management and repository pattern scaffold for caching, sessions, and pub/sub."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`redis` wires Redis into your Go service with a configured connection and repository pattern scaffold.
+
+## What You Get
+
+- Connection management
+- Repository pattern scaffold
+
+## When to Use
+
+Use `redis` for caching, session storage, rate limiting backends, or pub/sub. It pairs well with `idempotency` (key storage) and `rate-limiting` (token bucket backend).
+
+## Requirements & Suggestions
+
+**Suggests:** [`docker`](/capabilities/docker/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap redis
+# or add to an existing service:
+archway add redis
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="docker" href="/capabilities/docker/">Local Redis instance via Docker Compose.</Card>
+  <Card title="idempotency" href="/capabilities/idempotency/">Use Redis as idempotency key storage.</Card>
+  <Card title="rate-limiting" href="/capabilities/rate-limiting/">Token bucket rate limiter that can use Redis as a backend.</Card>
+</CardGrid>

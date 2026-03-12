@@ -1,0 +1,76 @@
+---
+title: "What is Layered Architecture? — Handler, Service, Repository in Go"
+description: "Layered architecture organizes Go services into handler, service, and repository layers — the most common pattern for CRUD APIs and straightforward business logic with clear separation of concerns."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## Definition
+
+Layered architecture (also called n-tier or three-tier architecture) organizes a service into horizontal layers, each responsible for a distinct concern. The canonical three layers are presentation (HTTP handlers), business logic (services), and data access (repositories), with a shared model package for types used across layers.
+
+It's the most widely understood architecture pattern in backend development — most Go developers will recognize it immediately. Each layer calls down to the layer below, and dependencies point in one direction: handlers call services, services call repositories. Repositories never call services, services never call handlers.
+
+The pattern's strength is its familiarity and simplicity. For straightforward CRUD APIs, an order service with a `handler`, `service`, and `repository` package is easier to reason about than a full hexagonal architecture with separate `port/` and `adapter/` directories. The trade-off is that the model package creates a shared dependency between all layers, which can lead to tight coupling as the codebase grows.
+
+## How It Works
+
+archway's layered architecture scaffold produces:
+
+```
+cmd/<name>/             → Entry point
+internal/handler/       → HTTP request handling — parsing, validation, response formatting
+internal/service/       → Business logic — rules, orchestration, decisions
+internal/repository/    → Data access — queries, persistence, transactions
+internal/model/         → Shared types — request/response structs, domain models
+```
+
+Dependency direction:
+
+| Layer | May Depend On |
+|-------|--------------|
+| handler | service, model |
+| service | repository, model |
+| repository | model |
+| model | nothing |
+
+The `model` package is the shared vocabulary. Every layer imports from it, but `model` imports from nothing.
+
+## In Go
+
+In practice, each layer holds a struct with its dependencies injected:
+
+```go
+// internal/service/order.go
+type OrderService struct {
+    repo repository.OrderRepository
+}
+
+func (s *OrderService) CreateOrder(ctx context.Context, req model.CreateOrderRequest) (*model.Order, error) {
+    // business rules here
+}
+```
+
+The handler receives an `OrderService` interface (not the concrete struct), making it testable. The repository also hides behind an interface, allowing the service tests to run without a database.
+
+## How archway Supports It
+
+archway scaffolds the full layered structure and encodes dependency rules in `archway.yaml`. Run `archway check` to catch violations — a handler importing directly from a repository, or a service calling another service's handler. See [Architectures](/concepts/architectures/) for the full comparison with hexagonal and clean.
+
+<Aside type="tip">
+Layered works well until your service layer starts accumulating methods for different concerns. When a single `OrderService` has 20+ methods, that's the signal to consider hexagonal or clean architecture with explicit use cases.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Hexagonal Architecture" icon="right-arrow">
+    The next step up — stronger separation via ports and adapters when layered feels limiting. [Hexagonal Architecture](/glossary/hexagonal-architecture/)
+  </Card>
+  <Card title="Repository Pattern" icon="right-arrow">
+    The data access layer in detail — interfaces, generics, and the data access contract. [Repository Pattern](/glossary/repository-pattern/)
+  </Card>
+  <Card title="Architectures" icon="right-arrow">
+    Full comparison of all four architectures archway supports. [Architectures](/concepts/architectures/)
+  </Card>
+</CardGrid>

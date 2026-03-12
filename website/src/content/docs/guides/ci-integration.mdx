@@ -1,0 +1,144 @@
+---
+title: CI Integration
+description: Enforce Go service architecture rules automatically with archway check in GitHub Actions, GitLab CI, and pre-commit hooks to catch violations before merge
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Archway can enforce architecture rules automatically in your CI pipeline and as a pre-commit hook. This ensures violations are caught before code reaches your main branch.
+
+## Prerequisites
+
+Your project must have an `archway.yaml` file at the repository root. This file defines the architecture, capabilities, and rules that `archway check` validates against.
+
+If you don't have one yet, run `archway new` to scaffold a project, or create one manually following the [archway.yaml reference](/reference/archway-yaml/).
+
+## GitHub Actions
+
+Add this workflow to `.github/workflows/archway.yml`:
+
+```yaml
+name: Architecture Check
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  archway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Archway
+        run: |
+          curl -sSfL https://github.com/dcsg/releases/download/v0.1.0/archway_linux_amd64.tar.gz | tar xz
+          sudo mv archway /usr/local/bin/
+
+      - name: Check architecture
+        run: archway check
+```
+
+<Aside type="caution">
+Always pin to a specific version (`v0.1.0`) instead of `@latest`. This prevents unexpected CI failures when a new version introduces stricter rules.
+</Aside>
+
+## GitLab CI
+
+Add this to your `.gitlab-ci.yml`:
+
+```yaml
+archway:
+  stage: test
+  image: golang:1.24
+  cache:
+    key: archway
+    paths:
+      - /go/pkg/mod/
+  before_script:
+    - curl -sSfL https://github.com/dcsg/releases/download/v0.1.0/archway_linux_amd64.tar.gz | tar xz
+    - mv archway /usr/local/bin/
+  script:
+    - archway check
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+```
+
+## Pre-commit Hook
+
+Add a git pre-commit hook to catch violations before they are committed. Create `.git/hooks/pre-commit`:
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+archway check --staged
+```
+
+Then make it executable:
+
+```bash
+chmod +x .git/hooks/pre-commit
+```
+
+The `--staged` flag tells Archway to only check files that are staged for commit, making the hook fast enough for interactive use.
+
+## Pre-commit Framework
+
+If you use the [pre-commit](https://pre-commit.com) framework, add this to your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: archway-check
+        name: archway check
+        entry: archway check --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+```
+
+## Exit Codes
+
+`archway check` uses the following exit codes:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| `0` | All checks passed. Warnings may be present but do not cause failure. |
+| `1` | One or more architecture violations were found. |
+
+Warnings (such as missing optional capabilities) are printed to stderr but do not cause a non-zero exit code. Only actual violations fail the check.
+
+## Testing Across Go Versions
+
+Archway resolves [feature flags](/reference/features/) based on the detected Go version, which means scaffolded output varies by version. To verify templates render correctly across versions, use `--set GoVersion` in a matrix build:
+
+```yaml
+# GitHub Actions example
+jobs:
+  scaffold-matrix:
+    strategy:
+      matrix:
+        go-version: ["1.21", "1.23", "1.24", "1.25"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Archway
+        run: |
+          curl -sSfL https://github.com/dcsg/releases/download/v0.1.0/archway_linux_amd64.tar.gz | tar xz
+          sudo mv archway /usr/local/bin/
+      - name: Scaffold with target version
+        run: |
+          archway new test-svc \
+            --set GoVersion=${{ matrix.go-version }} \
+            --arch hexagonal \
+            --cap platform,bootstrap,http-api \
+            --no-wizard
+      - name: Verify generated code compiles
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - run: cd test-svc && go build ./...
+```
+
+This catches cases where a feature-gated template emits code that doesn't compile on older Go versions.

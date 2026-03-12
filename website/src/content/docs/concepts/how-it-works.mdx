@@ -1,0 +1,129 @@
+---
+title: How It Works
+description: Understand how Archway composes services by combining architecture patterns with modular capabilities through template rendering and partial injection
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+## The Composition Model
+
+```
+Architecture + Capabilities = Your Service
+```
+
+Every archway service is built from two types of building blocks that get composed together.
+
+### Architecture
+
+An architecture defines your project's **structure and dependency rules**:
+
+- Directory layout (where domain, ports, adapters, etc. live)
+- Base files (go.mod, Makefile, Dockerfile, .gitignore)
+- Component definitions with dependency constraints
+- A fallback `main.go`
+
+| Architecture | Structure | Best For |
+|-------------|-----------|----------|
+| **Hexagonal** | `domain/` → `port/` → `service/` → `adapter/` | Production APIs, microservices |
+| **Layered** | `handler/` → `service/` → `repository/` → `model/` | Standard CRUD APIs |
+| **Clean** | `entity/` → `usecase/` → `interface/` → `infrastructure/` | Complex business logic |
+| **Flat** | Single package | CLIs, scripts, prototypes |
+
+### Capabilities
+
+Capabilities are **modular features** that plug into your architecture. Each capability provides:
+
+- Template files that get rendered into your project
+- **Partials** — code snippets that inject into the bootstrap wiring (imports, init, shutdown hooks)
+- A `capability.yaml` manifest with metadata, requirements, and suggestions
+
+<Aside type="note">
+archway ships with **63 capabilities** across 10 categories: transport, data, security, resilience, patterns, observability, infrastructure, platform, quality, and frontend.
+</Aside>
+
+## How Composition Works
+
+When you run `archway new`, here's what happens:
+
+<Steps>
+
+1. **Load architecture** — Read the manifest, set up base variables
+
+2. **Detect version** — Run `go env GOVERSION` to detect the installed Go version (or use `--set GoVersion=X.XX`)
+
+3. **Resolve features** — Compare the detected version against `features.yaml` to produce a boolean feature map (e.g., `os_root: true`, `log_slog: true`). See the [Feature Matrix](/reference/features/).
+
+4. **Load capabilities** — Read each capability manifest, validate requirements, conflicts, and `requires_features` gates
+
+5. **Collect partials** — Gather code snippets from each capability's `_partials/` directory
+
+6. **Render architecture files** — Lay down the base project structure, applying `conditional` rules based on resolved features
+
+7. **Render capability files** — Add capability-specific files with feature-gated conditional file inclusion
+
+8. **Inject partials** — Capability partials get injected into `bootstrap.go` at marked points
+
+9. **Run hooks** — `go mod tidy`, `git init`, etc.
+
+10. **Generate metadata** — `archway.yaml` and `docs/PROJECT.md`
+
+</Steps>
+
+### Partial Injection Points
+
+The bootstrap pattern provides four injection points where capabilities wire themselves in:
+
+| Partial | Purpose | Example |
+|---------|---------|---------|
+| `main_imports` | Import statements | `"github.com/org/svc/adapter/httphandler"` |
+| `main_init` | Initialize connections | `db, err := mysqlrepo.NewConnection(...)` |
+| `main_register` | Register with lifecycle | `app.Register("http", httpServer)` |
+| `main_shutdown` | Cleanup hooks | `app.OnShutdown("mysql", ...)` |
+
+## Dependency Rules
+
+Capabilities can declare relationships:
+
+- **`requires`** — Must be selected together. `bootstrap` requires `platform`.
+- **`suggests`** — Recommended but optional. archway prompts you in the wizard.
+- **`conflicts`** — Cannot coexist.
+
+## Smart Suggestions
+
+After you select capabilities, archway checks **18 suggestion rules** with cross-referencing and recommends what you might be missing:
+
+```
+Based on your selections, you might also want:
+  [x] platform        Production services need config, logging, and lifecycle management
+  [x] bootstrap       Bootstrap pattern provides testable dependency wiring
+  [ ] rate-limiting   HTTP APIs benefit from rate limiting to prevent abuse
+  [ ] cors            Cross-origin resource sharing for browser clients
+```
+
+<Aside type="caution">
+archway also warns about **problematic combinations** — like using MySQL without migrations, or running an HTTP API without health checks. These are warnings, not blockers.
+</Aside>
+
+## Architecture Enforcement
+
+Every scaffolded project includes an `archway.yaml` that defines component boundaries:
+
+```yaml
+components:
+  - name: domain
+    in: ["domain/**"]
+    may_depend_on: []
+  - name: ports
+    in: ["port/**"]
+    may_depend_on: [domain]
+  - name: service
+    in: ["service/**"]
+    may_depend_on: [domain, ports]
+  - name: adapters
+    in: ["adapter/**"]
+    may_depend_on: [ports, domain]
+```
+
+Run `archway check` at any time to validate these rules. It uses **11 AST-based detectors** to catch dependency violations, missing directories, function complexity issues, and anti-patterns.
+
+Ready to try it? [Start with AI Agents](/getting-started/ai-agents/) — set up your project without leaving your agent session. Or go to the [CLI Quick Start](/getting-started/cli/) if you prefer the terminal wizard.

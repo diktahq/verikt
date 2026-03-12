@@ -1,0 +1,40 @@
+---
+title: "htmx capability"
+description: "Add HTMX integration to your Go service for server-driven interactivity using partial rendering and HTML swaps — no JavaScript framework needed."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`htmx` adds HTMX integration to your Go service for dynamic UI interactions driven entirely by server-rendered HTML fragments.
+
+## What You Get
+
+- HTMX response helpers
+- Partial rendering patterns
+- Swap configuration
+
+## When to Use
+
+Use `htmx` when you want interactive UIs without a JavaScript framework. HTMX sends AJAX requests and swaps HTML fragments returned by your Go handlers — the browser stays in sync with the server without a separate frontend build step.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/), [`templ`](/capabilities/templ/)
+
+**Suggests:** [`static-assets`](/capabilities/static-assets/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,templ,htmx
+# or add to an existing service:
+archway add htmx
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="templ" href="/capabilities/templ/">Type-safe templates that render HTMX-swappable fragments.</Card>
+  <Card title="static-assets" href="/capabilities/static-assets/">Serve the HTMX library and other static assets.</Card>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+</CardGrid>

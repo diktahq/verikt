@@ -1,0 +1,38 @@
+---
+title: "bootstrap capability"
+description: "Add the Composition Root pattern to your Go service with a thin main.go and all dependency wiring in internal/bootstrap/ for testability."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`bootstrap` adds the Composition Root pattern to your Go service, keeping `main.go` thin and all dependency wiring in a dedicated, testable module.
+
+## What You Get
+
+- Thin `main.go` that calls `bootstrap.Run(version)`
+- `internal/bootstrap/bootstrap.go` with all dependency wiring
+- Partial injection points
+
+## When to Use
+
+Use `bootstrap` alongside `platform` in any service where you want testable dependency injection. The Composition Root pattern keeps wiring logic out of `main.go` and in a package that tests can import and override.
+
+## Requirements & Suggestions
+
+**Requires:** [`platform`](/capabilities/platform/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap platform,bootstrap
+# or add to an existing service:
+archway add bootstrap
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="platform" href="/capabilities/platform/">Required platform capability for lifecycle and config.</Card>
+  <Card title="testing" href="/capabilities/testing/">Test utilities that pair with the bootstrap wiring pattern.</Card>
+  <Card title="observability" href="/capabilities/observability/">Wire observability providers in the bootstrap module.</Card>
+</CardGrid>

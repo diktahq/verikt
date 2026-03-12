@@ -1,0 +1,110 @@
+---
+title: "Hexagonal vs Layered Architecture: Which Go Architecture Should You Use?"
+description: "Compare Hexagonal (Ports & Adapters) and Layered architecture for Go services — dependency rules, complexity, and when each pattern fits."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Both Hexagonal and Layered are supported by archway. Layered is the most familiar pattern for Go developers coming from web frameworks — handler, service, repository. Hexagonal is stricter, more explicit about integration points, and better at scaling with complexity.
+
+## At a Glance
+
+| | Hexagonal | Layered |
+|---|---|---|
+| Complexity | High | Medium |
+| Best for | Complex domain, multiple transports | Standard CRUD APIs |
+| Dependency rules | Strict (ports & adapters) | Strict (top-down) |
+| Team size | Medium / Large | Any |
+| Directory structure | Complex | Moderate |
+
+## Hexagonal Architecture
+
+Hexagonal architecture puts your domain and ports at the center. Adapters — HTTP handlers, database clients, message producers — are external and plug in through interfaces defined in `port/`.
+
+```
+domain/              → Pure business logic, no external dependencies
+port/                → Interfaces (inbound use cases, outbound repositories)
+service/             → Use case implementations
+adapter/             → External integrations (HTTP, DB, messaging)
+config/              → Configuration loading
+platform/            → Cross-cutting concerns
+internal/bootstrap/  → Dependency wiring
+cmd/<name>/          → Entry point
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| domain | nothing |
+| ports | domain |
+| service | domain, ports |
+| adapters | ports, domain |
+
+The structure forces you to define, explicitly, what the domain needs from the outside world (outbound ports) and what operations it exposes (inbound ports). Adapters satisfy ports — they never talk directly to each other.
+
+## Layered Architecture
+
+Layered is the classic three-tier pattern: handlers receive requests and delegate to services, services contain business logic and delegate to repositories, repositories handle data access.
+
+```
+cmd/<name>/             → Entry point
+internal/handler/       → HTTP handlers (request/response)
+internal/service/       → Business logic
+internal/repository/    → Data access
+internal/model/         → Shared types and domain models
+```
+
+| Component | May Depend On |
+|-----------|--------------|
+| model | nothing |
+| repository | model |
+| service | repository, model |
+| handler | service, model |
+
+Dependencies flow top-down: handlers know about services, services know about repositories. `model` is the shared foundation. It's predictable, easy to explain, and maps closely to how most Go developers already think about web services.
+
+## Key Differences
+
+- **Abstraction of integrations**: Hexagonal makes every external integration explicit through ports and named adapters. Layered treats repositories and handlers as natural layers without requiring an interface boundary between them.
+- **Transport flexibility**: Hexagonal handles multiple inbound transports cleanly — a gRPC adapter and an HTTP adapter both satisfy the same inbound port. Layered is handler-centric and adding a second transport requires structural changes.
+- **Learning curve**: Layered maps directly to how most web frameworks organize code. Hexagonal requires understanding ports vs adapters before it clicks.
+- **Testability**: Both enforce dependency direction, but hexagonal's explicit port interfaces make it easier to swap adapters for fakes in tests without any additional setup.
+
+## When to Choose Hexagonal
+
+- Your service has multiple inbound transports (HTTP, gRPC, Kafka) that share domain logic
+- You want every external dependency to be declared as an explicit interface in `port/`
+- Your business logic is complex enough that strict isolation from infrastructure matters
+- You're building a service that will grow significantly in scope and want the structure to hold up
+
+## When to Choose Layered
+
+- You're building a standard HTTP API with a single data store
+- Your team already thinks in handler → service → repository terms
+- The business logic is straightforward — orchestrating data access, not modeling complex domain rules
+- You want a structure that new team members can understand in five minutes
+- Hexagonal feels like over-engineering for your service's current and expected complexity
+
+## Scaffold Either with archway
+
+```bash
+# Hexagonal
+archway new my-service --arch hexagonal
+
+# Layered
+archway new my-service --arch layered
+```
+
+<Aside type="tip">
+Start with layered if you're not sure. Hexagonal's benefits become concrete when you have 3+ adapters, multiple transports, or domain logic complex enough that you want it completely isolated from infrastructure. If you're building a CRUD API with one database, layered is probably enough.
+</Aside>
+
+## Related
+
+<CardGrid>
+  <Card title="Architecture Patterns" icon="right-arrow">
+    [All 4 architectures compared](/concepts/architectures/)
+  </Card>
+  <Card title="Quick Start" icon="rocket">
+    [Scaffold your first service](/getting-started/cli/)
+  </Card>
+</CardGrid>

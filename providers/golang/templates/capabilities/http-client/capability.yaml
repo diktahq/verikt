@@ -1,0 +1,7 @@
+name: http-client
+description: "HTTP client with retry and observability"
+requires: []
+suggests:
+  - circuit-breaker
+  - retry
+conflicts: []

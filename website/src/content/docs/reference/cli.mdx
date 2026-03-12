@@ -1,0 +1,325 @@
+---
+title: CLI Commands
+description: Complete CLI reference for Archway — scaffold, analyze, check, diff, guide, and init commands with flags, examples, and exit codes for Go services
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## `archway guide`
+
+Generate architecture context for AI coding agents. Reads your `archway.yaml` and outputs rules, dependency constraints, and anti-patterns that AI agents consume before writing code.
+
+```bash
+archway guide [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--target` | AI tool target (`claude`, `cursor`, `copilot`, `windsurf`, `generic`) | `generic` |
+| `--path` | Path to project | `.` |
+| `--output` | Output format (`terminal`, `file`) | `terminal` |
+
+### Examples
+
+```bash
+# Generate context for any AI agent
+archway guide
+
+# Target Claude Code specifically
+archway guide --target claude
+
+# Target Cursor
+archway guide --target cursor
+```
+
+<Aside type="tip">
+Prevention beats correction. Feed your AI agent the architecture rules before it writes code, and it produces correct code from the first line.
+</Aside>
+
+---
+
+## `archway new`
+
+Scaffold a new project.
+
+```bash
+archway new [name] [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--name` | Project/service name | positional arg |
+| `--arch` | Architecture pattern (`hexagonal`, `flat`) | `hexagonal` |
+| `--cap` | Capabilities (comma-separated) | none |
+| `--module` | Go module path | `example.com/<name>` |
+| `--output-dir` | Output directory | `.` |
+| `--no-wizard` | Disable interactive wizard | `false` |
+| `--set` | Template variable (key=value), repeatable | none |
+| `--language` | Project language | `go` |
+
+### Version Detection and Features
+
+By default, archway runs `go env GOVERSION` to detect the installed Go version. The detected version is used to resolve **feature flags** from the provider's feature matrix — enabling modern stdlib APIs and language features in the generated code.
+
+You can override the detected version with `--set GoVersion=X.XX`. This is useful in CI environments or when targeting a specific Go version different from the one installed locally.
+
+```bash
+# Use detected Go version (default)
+archway new my-service --no-wizard
+
+# Target a specific Go version
+archway new my-service --set GoVersion=1.24 --no-wizard
+```
+
+See the [Feature Matrix](/reference/features/) for the full list of version-gated features.
+
+### Examples
+
+```bash
+# Interactive wizard — guides you through every choice
+archway new my-service
+
+# Non-interactive with all options
+archway new my-service \
+  --arch hexagonal \
+  --cap platform,bootstrap,http-api,mysql,docker \
+  --module github.com/myorg/my-service \
+  --no-wizard
+
+# Target Go 1.24 features explicitly
+archway new my-service --set GoVersion=1.24 --no-wizard
+```
+
+## `archway check`
+
+Validate a project against its `archway.yaml` rules.
+
+```bash
+archway check [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--path` | Path to project | `.` |
+| `--output` | Output format (`terminal`, `json`) | `terminal` |
+
+### What It Checks
+
+archway runs **11 AST-based detectors**:
+
+- **Dependency violations** — imports that cross component boundaries
+- **Required directories** — components with missing directories
+- **Forbidden directories** — directories that shouldn't exist
+- **Function complexity** — functions exceeding line/param/return limits
+- **Component coverage** — percentage of components with source files
+- **Anti-patterns** — common architectural violations
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All checks pass |
+| 1 | One or more violations found |
+
+### Example Output
+
+```
+archway check
+
+Architecture: hexagonal
+Components: 4 defined
+
+Dependency Violations: 0
+Structure Issues: 0
+Function Issues: 0
+
+Component Coverage: 100% (4/4)
+Compliance: 100%
+
+✓ All checks passed
+```
+
+## `archway analyze`
+
+Analyze an existing project's architecture.
+
+```bash
+archway analyze [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--path` | Path to project | `.` |
+| `--output` | Output format (`terminal`, `json`) | `terminal` |
+
+<Aside type="tip">
+Use `archway analyze` on existing projects to understand their structure before adding an `archway.yaml` for enforcement.
+</Aside>
+
+## `archway add`
+
+Add one or more capabilities to an existing project.
+
+```bash
+archway add <capability> [capability...] [flags]
+```
+
+Capabilities are validated against the provider's templates, conflicts are checked, and transitive dependencies are auto-resolved. **Existing files are never overwritten** — only new files are created.
+
+### What It Does
+
+1. Finds `archway.yaml` in the current directory
+2. Validates that each capability exists and doesn't conflict
+3. Auto-resolves transitive dependencies (e.g., `bff` pulls in `http-api`)
+4. Renders only new capability files, skipping any that already exist on disk
+5. Updates `archway.yaml` with the new capabilities
+6. Regenerates `archway guide` output
+
+### Examples
+
+```bash
+# Add a single capability
+archway add redis
+
+# Add multiple capabilities at once
+archway add kafka-consumer observability
+
+# Add a capability with transitive deps
+archway add bff  # auto-adds http-api if not present
+```
+
+### Example Output
+
+```
+Adding capabilities:
+  + http-api (auto-dependency)
+  + bff
+  Created: adapter/httphandler/handler.go
+  Created: adapter/httphandler/router.go
+  Skipped (exists): config/config.go
+
+Done: 5 files created, 1 files skipped, 2 capabilities added
+Auto-resolved dependencies: http-api
+```
+
+---
+
+## `archway diff`
+
+Show structural drift between `archway.yaml` and files on disk. Like `terraform plan` for code architecture.
+
+```bash
+archway diff [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--path` | Project path to diff | `.` |
+| `-o, --output` | Output format (`terminal`, `json`, `markdown`) | `terminal` |
+
+### What It Reports
+
+For each capability declared in `archway.yaml`, diff checks whether the expected files exist:
+
+| Status | Meaning |
+|--------|---------|
+| `ok` | All expected files are present |
+| `partial` | Some files present, some missing |
+| `missing` | All expected files are missing |
+
+The **drift score** (0.00 = perfect, 1.00 = completely drifted) tells you how far reality has diverged from the declared architecture.
+
+### Examples
+
+```bash
+# Check drift in current project
+archway diff
+
+# Check a specific project
+archway diff --path ./my-service
+
+# Get JSON output for CI
+archway diff -o json
+```
+
+### Example Output
+
+```
+archway Diff — hexagonal + 4 capabilities
+═══════════════════════════════════════════════════════
+  ✓ architecture       all files present
+  ✓ http-api           all files present
+  ✗ redis              2 missing files
+    - adapter/redisrepo/connection.go
+    - adapter/redisrepo/repository.go
+  ✓ docker             all files present
+
+═══════════════════════════════════════════════════════
+
+Summary: 3/4 capabilities fully present | drift score: 0.12
+```
+
+<Aside type="tip">
+Use `archway diff -o json` in CI pipelines to fail builds when drift exceeds a threshold.
+</Aside>
+
+---
+
+## `archway init`
+
+Initialize an `archway.yaml` for an existing project.
+
+```bash
+archway init [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--path` | Path to project | `.` |
+| `--no-wizard` | Skip interactive wizard | `false` |
+| `--force` | Overwrite existing archway.yaml | `false` |
+
+<Aside type="note">
+This is useful for adding architecture enforcement to projects that weren't scaffolded with archway. Use `archway analyze` first to understand the existing structure.
+</Aside>
+
+---
+
+## `archway version`
+
+Print version, commit hash, and build date.
+
+```bash
+archway version
+```
+
+### Example Output
+
+```
+archway version 1.0.0
+commit: 6d22600
+built: 2026-03-11T12:00:00Z
+```
+
+---
+
+## Global Flags
+
+These flags are available on all commands:
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--no-color` | Disable colored output | `false` |
+| `-o, --output` | Output format (`terminal`, `json`, `markdown`) | `terminal` |

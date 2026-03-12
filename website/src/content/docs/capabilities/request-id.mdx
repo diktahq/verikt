@@ -1,0 +1,38 @@
+---
+title: "request-id capability"
+description: "Add request ID propagation to your Go service with middleware, context propagation, and log correlation for end-to-end tracing."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`request-id` adds request ID middleware to your Go service so every request gets a unique ID that propagates through logs and downstream calls.
+
+## What You Get
+
+- Request ID middleware
+- Context propagation
+- Log correlation
+
+## When to Use
+
+Use `request-id` on any HTTP API to enable end-to-end request tracing across logs and services. Without request IDs, debugging production issues means correlating logs by timestamp — fragile and slow. Every HTTP API should have this.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,request-id
+# or add to an existing service:
+archway add request-id
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="observability" href="/capabilities/observability/">OpenTelemetry tracing that uses request IDs for correlation.</Card>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+  <Card title="audit-log" href="/capabilities/audit-log/">Audit events enriched with request IDs.</Card>
+</CardGrid>

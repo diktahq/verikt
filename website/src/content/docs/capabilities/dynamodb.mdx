@@ -1,0 +1,41 @@
+---
+title: "dynamodb capability"
+description: "Add AWS DynamoDB to your Go service with client setup, table operations, query builders, and region/endpoint configuration."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`dynamodb` wires AWS DynamoDB into your Go service with table operations and query builders ready to use.
+
+## What You Get
+
+- DynamoDB client setup
+- Table operations
+- Query builders
+- Config for region/endpoint
+
+## When to Use
+
+Use `dynamodb` for serverless workloads, key-value access at scale, or AWS-native applications where you need a managed NoSQL database. The endpoint config supports local DynamoDB for development.
+
+## Requirements & Suggestions
+
+**Requires:** [`platform`](/capabilities/platform/) (config)
+
+**Suggests:** [`docker`](/capabilities/docker/), [`observability`](/capabilities/observability/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap platform,dynamodb
+# or add to an existing service:
+archway add dynamodb
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="platform" href="/capabilities/platform/">Required for configuration management.</Card>
+  <Card title="docker" href="/capabilities/docker/">Local DynamoDB instance via Docker Compose.</Card>
+  <Card title="observability" href="/capabilities/observability/">Trace DynamoDB operations with OpenTelemetry.</Card>
+</CardGrid>

@@ -1,0 +1,226 @@
+---
+title: Quick Start with AI Agents
+description: archway guide feeds your architecture into AI coding agents so they write structurally correct code from the first prompt — no more explaining your architecture every session.
+---
+
+import { Aside, Steps, Tabs, TabItem, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Every time you open a new AI coding session, the agent starts cold. It doesn't know your architecture, your layer boundaries, or which capabilities you've wired. So you explain it. Every session. Or the agent puts things in the wrong place and you spend time correcting it.
+
+`archway guide` fixes this permanently.
+
+## Install
+
+```bash
+# Homebrew
+brew install dcsg/tap/archway
+
+# Go install
+go install github.com/dcsg/archway/cmd/archway@latest
+```
+
+## The Workflow
+
+<Steps>
+
+1. **Let your AI agent set up the project**
+
+   Run this once in your terminal:
+
+   ```bash
+   archway init --ai
+   ```
+
+   This prints the AI interview protocol to stdout. Paste it into your AI agent (Claude Code, Cursor, Copilot, Windsurf). The agent will interview you — asking about your service name, architecture, capabilities, and guide mode — then run `archway new` and generate everything.
+
+   No TUI. No switching context. The whole setup happens inside your AI session.
+
+   <Aside type="tip">
+     Already have a project? Skip this step — go straight to `archway guide`.
+   </Aside>
+
+2. **Generate architecture context**
+
+   ```bash
+   archway guide
+   ```
+
+   archway reads your `archway.yaml` and generates context files for every AI agent — directly in your project.
+
+   <CardGrid>
+     <Card title="Claude Code" icon="document">
+       `.claude/rules/archway.md`
+     </Card>
+     <Card title="Cursor" icon="document">
+       `.cursorrules`
+     </Card>
+     <Card title="GitHub Copilot" icon="document">
+       `.github/copilot-instructions.md`
+     </Card>
+     <Card title="Windsurf" icon="document">
+       `.windsurfrules`
+     </Card>
+   </CardGrid>
+
+3. **Open your AI agent**
+
+   Open Claude Code, Cursor, Copilot, or Windsurf in the project directory. The context file is already there — the agent loads it silently on session start.
+
+4. **Write prompts naturally**
+
+   No preamble. Just describe what you want:
+
+   ```
+   Add a new endpoint to list orders by customer ID
+   ```
+
+   The agent already knows your router, your error format, your layer boundaries, and which capabilities you have installed.
+
+5. **Commit the generated files**
+
+   ```bash
+   git add .claude/rules/archway.md .cursorrules
+   git commit -m "chore: add archway architecture context"
+   ```
+
+   Every engineer on the team — and every AI agent they use — gets the same architectural context automatically.
+
+</Steps>
+
+## What the Agent Gets
+
+The generated file gives the agent four things it would otherwise ask you for:
+
+**Your capability catalog** — what's installed and what's available but not yet added, with guidance on when to consider each one.
+
+**Smart suggestions** — dependency rules between capabilities. If you have `http-api`, the agent knows you probably need `health`, `request-id`, and `validation`. It'll flag the gaps proactively.
+
+**Interaction warnings** — dangerous combinations. Using `retry` without `idempotency`? The agent will warn you before you ship a duplicate payment bug.
+
+**Architecture boundary rules** — your specific dependency graph. The agent knows which layers exist, what they're allowed to import, and what constitutes a violation.
+
+## How the Agent Responds
+
+The generated context file tells the agent to **research first, architecture notes last**:
+
+1. The agent searches the web for current docs, reads your codebase, and answers your question fully.
+2. At the end of its response, it appends an `## Architecture Notes` section with any gaps, warnings, or violations that apply. If nothing applies, the section is omitted.
+
+For a prompt like *"I need to handle payments"*, you get a complete answer — Stripe integration, webhook verification, error handling — followed by:
+
+```
+## Architecture Notes
+- ⚠️  Missing `idempotency` — payment operations must be safe to retry.
+  Run: archway add idempotency
+- ⚠️  Missing `audit-log` — financial mutations require an append-only audit trail.
+  Run: archway add audit-log
+- ✓  `circuit-breaker` is installed — wire it to your Stripe HTTP client.
+```
+
+Then you add the missing capabilities and re-run guide:
+
+```bash
+archway add idempotency audit-log
+archway guide
+```
+
+The agent now knows how all of them are wired.
+
+## Don't Have an archway.yaml Yet?
+
+Let your AI agent handle the whole setup:
+
+```bash
+archway init --ai
+```
+
+Paste the output into your agent. It will interview you and scaffold the project — no terminal wizard needed.
+
+Or use the CLI directly:
+
+```bash
+# Interactive TUI wizard
+archway new my-api
+
+# Analyze an existing codebase
+archway analyze .
+archway guide
+```
+
+<Aside type="note">
+  `archway guide` runs automatically as a post-scaffold hook when you use `archway new` — no extra step needed.
+</Aside>
+
+## Keeping Context Fresh
+
+Re-run `archway guide` whenever your architecture changes:
+
+```bash
+# After adding capabilities
+archway add kafka-consumer
+archway guide
+
+# After changing archway.yaml manually
+archway guide
+```
+
+## Guide Modes
+
+Configure how AI agents use the architecture guide in your `archway.yaml`:
+
+```yaml
+guide:
+  mode: passive   # passive | audit | prompted
+```
+
+The wizard asks for this when you run `archway new`.
+
+### passive (default)
+
+The agent answers your question fully — searching the web, reading the codebase — then appends an `## Architecture Notes` section at the end if anything applies.
+
+Best for: day-to-day coding. Low friction, always on.
+
+### audit
+
+On every session start, the agent reads the codebase, cross-references it against `archway.yaml`, and leads with an `## Architecture Audit` section listing violations, missing capabilities, and drift — before answering any question.
+
+Best for: onboarding a new service, pre-release review, team handoffs.
+
+### prompted
+
+Same as passive, but the generated guide file includes a **Suggested Prompts** section at the bottom — copy-paste queries that unlock the most value from archway:
+
+```
+Audit this codebase against archway.yaml and list all violations
+What capabilities am I missing before going to production?
+I need to add [feature] — what capabilities do I need and how should I wire them?
+What dangerous capability combinations do I have that need fixing?
+```
+
+Best for: teams new to archway, or when you want to teach others what to ask.
+
+---
+
+<CardGrid>
+  <LinkCard
+    title="Star on GitHub"
+    description="archway is open source and free forever."
+    href="https://github.com/dcsg/archway"
+  />
+  <LinkCard
+    title="Capabilities Matrix"
+    description="Browse all 63 capabilities across 10 categories."
+    href="/reference/capabilities-matrix/"
+  />
+  <LinkCard
+    title="How It Works"
+    description="Understand the composition model behind archway."
+    href="/concepts/how-it-works/"
+  />
+  <LinkCard
+    title="Quick Start with CLI"
+    description="Prefer the terminal wizard? Start here."
+    href="/getting-started/cli/"
+  />
+</CardGrid>

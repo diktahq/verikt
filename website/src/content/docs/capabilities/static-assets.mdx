@@ -1,0 +1,40 @@
+---
+title: "static-assets capability"
+description: "Add embedded static file serving to your Go service using embed.FS with cache-control headers and content-type detection."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`static-assets` adds embedded static file serving to your Go service using Go's `embed.FS` for single-binary deployments.
+
+## What You Get
+
+- Embedded file server
+- Cache-control headers
+- Content-type detection
+
+## When to Use
+
+Use `static-assets` to serve CSS, JavaScript, images, or any static files directly from your Go binary. Embedding assets removes the need for a separate file server and simplifies deployment — one binary contains everything.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+**Suggests:** [`templ`](/capabilities/templ/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,static-assets
+# or add to an existing service:
+archway add static-assets
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="templ" href="/capabilities/templ/">Server-rendered templates served alongside static assets.</Card>
+  <Card title="htmx" href="/capabilities/htmx/">HTMX library served as a static asset.</Card>
+  <Card title="http-api" href="/capabilities/http-api/">The Chi router foundation required by this capability.</Card>
+</CardGrid>

@@ -1,0 +1,31 @@
+# Binaries
+archway
+bin/
+*.exe
+
+# Test artifacts
+test-service/
+test-seviceb/
+testservice/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Internal docs (not public)
+docs/internal/
+
+# Environment files
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# Claude Code
+.claude/settings.local.json
+.claude/worktrees/
+
+# Go
+vendor/

@@ -1,0 +1,444 @@
+---
+title: Capabilities
+description: Browse all 63 modular capabilities for service code generation — transport, data, security, resilience, observability, and more with smart suggestions
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 3
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Capabilities are self-contained modules that add specific functionality to your project. Each provides template files, configuration, and wiring code.
+
+archway ships with **63 capabilities** across **10 categories**.
+
+## Transport & API
+
+### `http-api`
+REST API built on [Chi](https://github.com/go-chi/chi) v5.
+
+**What you get:** Chi router, middleware chain (RequestID, RealIP, Recoverer, OTel), RFC 7807 Problem Detail error responses, pagination helpers, OpenAPI spec, handler patterns with request/response types.
+
+**Suggests:** `rate-limiting`, `auth-jwt`, `cors`, `health`, `request-id`
+
+### `grpc`
+gRPC service with [buf](https://buf.build/) tooling.
+
+**What you get:** Protocol Buffer definitions, buf configuration, server setup with interceptors, reflection for development.
+
+### `graphql`
+GraphQL API with [gqlgen](https://gqlgen.com/) code generation.
+
+**What you get:** gqlgen config, schema definition, resolver scaffolding, playground for development.
+
+**Suggests:** `auth-jwt`, `observability`, `health`, `docker`
+
+### `websocket`
+WebSocket server support.
+
+**What you get:** WebSocket upgrader, connection management, message handling patterns.
+
+**Requires:** `http-api`
+
+### `sse`
+Server-Sent Events for real-time streaming.
+
+**What you get:** SSE handler, event formatting, client connection management, heartbeat support.
+
+**Requires:** `http-api`
+
+### `bff`
+Backend-for-Frontend gateway — aggregates and shapes backend service responses for a specific client.
+
+**What you get:** Service aggregation patterns, response shaping, backend client abstractions.
+
+**Requires:** `http-api` · **Suggests:** `circuit-breaker`, `retry`, `observability`, `cors`
+
+### `cors`
+Cross-Origin Resource Sharing middleware.
+
+**What you get:** CORS middleware with configurable origins, methods, and headers.
+
+**Requires:** `http-api`
+
+### `rate-limiting`
+Token bucket rate limiter.
+
+**What you get:** Rate limiting middleware, per-endpoint configuration.
+
+**Requires:** `http-api`
+
+### `timeout`
+Context-based timeout middleware for HTTP handlers and service calls.
+
+**What you get:** Timeout middleware, configurable per-route timeouts, context cancellation propagation.
+
+**Requires:** `http-api`
+
+### `api-versioning`
+API versioning support.
+
+**What you get:** Version routing, header/path-based versioning strategies.
+
+**Requires:** `http-api`
+
+## Data & Storage
+
+### `postgres`
+PostgreSQL database with [pgx](https://github.com/jackc/pgx) driver.
+
+**What you get:** Connection setup, pool configuration, health checks, repository scaffold.
+
+**Suggests:** `migrations`, `docker`, `uuid`
+
+### `mysql`
+MySQL database with connection pooling.
+
+**What you get:** Connection setup with pool configuration, health checks, repository pattern scaffold.
+
+**Suggests:** `migrations`, `docker`, `uuid`
+
+### `mongodb`
+MongoDB connection using the official Go driver.
+
+**What you get:** Client connection, database/collection abstractions, repository pattern, BSON helpers.
+
+**Suggests:** `docker`, `health`, `observability`
+
+### `sqlite`
+SQLite database with [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) (pure Go, no CGO).
+
+**What you get:** Database connection, query helpers, ideal for embedded or single-node applications.
+
+**Suggests:** `migrations`
+
+### `dynamodb`
+AWS DynamoDB document database client.
+
+**What you get:** DynamoDB client setup, table operations, query builders, config for region/endpoint.
+
+**Requires:** `config` · **Suggests:** `docker`, `observability`
+
+### `redis`
+Redis connection and repository pattern.
+
+**What you get:** Connection management, repository pattern scaffold.
+
+**Suggests:** `docker`
+
+### `elasticsearch`
+Elasticsearch client with index management and search helpers.
+
+**What you get:** Client setup, index lifecycle management, search query builders, bulk operations.
+
+**Suggests:** `observability`, `docker`
+
+### `s3`
+AWS S3 object storage client.
+
+**What you get:** S3 client setup, upload/download operations, presigned URLs, multipart upload support.
+
+**Requires:** `config` · **Suggests:** `docker`, `observability`
+
+### `migrations`
+Database migration support with [golang-migrate](https://github.com/golang-migrate/migrate).
+
+**What you get:** Migration runner, up/down migration files, version tracking.
+
+**Suggests:** `docker`
+
+### `repository`
+Generic repository pattern using Go generics.
+
+**What you get:** Repository interface, base implementation with common CRUD operations.
+
+**Suggests:** `postgres`, `mysql`
+
+## Messaging & Events
+
+### `kafka-consumer`
+Kafka consumer with handler pattern.
+
+**What you get:** Consumer group setup, message handler interface, graceful shutdown with drain, config for brokers/topics/consumer group.
+
+### `nats`
+[NATS](https://nats.io/) messaging with JetStream for pub/sub and request-reply.
+
+**What you get:** NATS connection, JetStream setup, publisher/subscriber abstractions, durable consumers.
+
+**Suggests:** `health`, `observability`
+
+### `event-bus`
+In-process domain event bus with publish/subscribe pattern.
+
+**What you get:** Event publisher, subscriber interface, async event dispatch.
+
+### `outbox`
+Transactional outbox pattern for reliable event publishing.
+
+**What you get:** Outbox table, publisher, relay worker for at-least-once delivery.
+
+**Suggests:** `postgres`, `event-bus`, `scheduler`
+
+### `saga`
+Saga orchestrator for distributed transactions.
+
+**What you get:** Saga definition, step executor, compensation logic, state persistence.
+
+**Requires:** `event-bus` · **Suggests:** `observability`, `outbox`
+
+### `worker`
+Background worker/job processing.
+
+**What you get:** Worker pool, job interface, graceful shutdown support.
+
+## Resilience
+
+### `circuit-breaker`
+Circuit breaker pattern for external service calls.
+
+**What you get:** Circuit breaker wrapper with open/half-open/closed states, configurable thresholds and timeouts.
+
+### `retry`
+Retry logic with backoff strategies.
+
+**What you get:** Retry wrapper with exponential backoff, jitter, max attempts configuration.
+
+### `bulkhead`
+Concurrency limiter using semaphore pattern for load isolation.
+
+**What you get:** Semaphore-based concurrency limiter, configurable max concurrent operations, timeout support.
+
+**Suggests:** `observability`, `circuit-breaker`
+
+### `idempotency`
+Idempotency key support for safe retries.
+
+**What you get:** Idempotency middleware, key storage, duplicate detection.
+
+**Requires:** `http-api` · **Suggests:** `redis`
+
+### `graceful`
+Standalone graceful shutdown manager.
+
+**What you get:** Signal handling, ordered shutdown with timeouts, component registration.
+
+**Conflicts:** `platform` (platform includes its own shutdown manager)
+
+## Security
+
+### `auth-jwt`
+JWT authentication middleware.
+
+**What you get:** Middleware that validates JWT tokens, claims extraction into request context, route-level authentication.
+
+**Requires:** `http-api`
+
+### `oauth2`
+OAuth2 client credentials and authorization code flow.
+
+**What you get:** OAuth2 provider integration, token exchange, callback handler, session management.
+
+**Requires:** `http-api` · **Suggests:** `auth-jwt`
+
+### `encryption`
+At-rest encryption helpers using AES-256-GCM.
+
+**What you get:** Encrypt/decrypt functions, key management helpers, field-level encryption for sensitive data.
+
+### `multi-tenancy`
+Row-level tenant isolation with tenant context middleware.
+
+**What you get:** Tenant middleware, context-based tenant propagation, query scoping helpers.
+
+**Requires:** `http-api`, `config` · **Suggests:** `auth-jwt`, `observability`
+
+### `request-id`
+Request ID propagation.
+
+**What you get:** Request ID middleware, context propagation, log correlation.
+
+**Requires:** `http-api`
+
+## Observability
+
+### `health`
+Health check and readiness endpoints.
+
+**What you get:** `/health` and `/ready` endpoints, component health registration.
+
+**Requires:** `http-api`
+
+### `observability`
+OpenTelemetry traces and metrics.
+
+**What you get:** OTLP/gRPC export, trace propagation, metric collection.
+
+### `audit-log`
+Audit logging for sensitive operations.
+
+**What you get:** Audit log writer, structured audit events, configurable retention.
+
+### `http-client`
+Resilient HTTP client with retry and observability.
+
+**What you get:** HTTP client with retry, timeout, and observability built in.
+
+**Suggests:** `circuit-breaker`, `retry`
+
+## UI & Templating
+
+### `templ`
+Type-safe HTML templating with [templ](https://templ.guide/) — server-rendered components.
+
+**What you get:** templ setup, layout components, page templates, hot reload configuration.
+
+**Requires:** `http-api` · **Suggests:** `htmx`, `static-assets`
+
+### `htmx`
+[HTMX](https://htmx.org/) integration for server-driven interactivity without JavaScript.
+
+**What you get:** HTMX response helpers, partial rendering patterns, swap configuration.
+
+**Requires:** `http-api`, `templ` · **Suggests:** `static-assets`
+
+### `static-assets`
+Static file serving with embedded assets and cache headers.
+
+**What you get:** Embedded file server, cache-control headers, content-type detection.
+
+**Requires:** `http-api` · **Suggests:** `templ`
+
+### `i18n`
+Internationalization with message catalogs and locale middleware.
+
+**What you get:** Message catalog system (YAML per locale), locale middleware (Accept-Language + query param), context-based locale propagation, fallback to default locale.
+
+**Suggests:** `http-api`, `email-gateway`
+
+## Email & Notifications
+
+### `email-gateway`
+Email sending with provider abstraction.
+
+**What you get:** Email gateway interface, provider implementation, template support.
+
+**Suggests:** `i18n`, `mailpit`
+
+### `mailpit`
+Local email testing with [Mailpit](https://mailpit.axe.email/).
+
+**What you get:** SMTP provider implementing email gateway interface, Docker Compose service (SMTP :1025, Web UI :8025).
+
+**Suggests:** `email-gateway`, `docker`
+
+## Architecture Patterns
+
+### `cqrs`
+Command Query Responsibility Segregation.
+
+**What you get:** Command/query bus, handler interfaces, separation of read and write models.
+
+### `ddd`
+Domain-Driven Design building blocks.
+
+**What you get:** AggregateRoot, ValueObject, DomainEvent base types, entity identity patterns.
+
+**Suggests:** `event-bus`, `repository`, `cqrs`
+
+## Application Core
+
+### `platform`
+The production infrastructure layer.
+
+**What you get:** YAML config loading with capability-aware struct fields, `lifecycle.App` with ordered startup/shutdown, structured logging via `slog`, PII redaction log handler, live reload with `.air.toml`.
+
+**Suggests:** `docker`, `bootstrap`
+
+### `bootstrap`
+The [Composition Root](https://blog.ploeh.dk/2011/07/28/CompositionRoot/) pattern.
+
+**What you get:** Thin `main.go` that calls `bootstrap.Run(version)`, `internal/bootstrap/bootstrap.go` with all dependency wiring, partial injection points.
+
+**Requires:** `platform`
+
+### `validation`
+Input validation with [go-playground/validator](https://github.com/go-playground/validator).
+
+**What you get:** Validation rules, error formatting, field-level validation messages.
+
+### `uuid`
+Time-sortable UUIDs (UUIDv7) for database-friendly primary keys.
+
+**What you get:** UUID generation, type-safe ID wrappers.
+
+## Feature Management
+
+### `feature-flags`
+Feature flag evaluation with local config fallback.
+
+**What you get:** Flag evaluator, YAML-based flag definitions, context-aware evaluation.
+
+**Requires:** `config` · **Suggests:** `observability`
+
+### `scheduler`
+Cron-style periodic task scheduling.
+
+**What you get:** Cron-like scheduler, job registration, configurable intervals.
+
+## Development & DevOps
+
+### `docker`
+Local development environment.
+
+**What you get:** `docker-compose.yml` with service dependencies, `.env.example` for environment variables.
+
+### `devcontainer`
+VS Code Dev Container for consistent development environments.
+
+**What you get:** `.devcontainer/devcontainer.json`, Docker configuration, extension recommendations.
+
+**Suggests:** `docker`
+
+### `ci-github`
+GitHub workflow and templates.
+
+**What you get:** Issue templates (bug report, feature request), pull request template.
+
+### `ci-gitlab`
+GitLab CI/CD pipeline configuration.
+
+**What you get:** `.gitlab-ci.yml` with build, test, lint, and deploy stages.
+
+**Suggests:** `docker`, `linting`, `testing` · **Conflicts:** `ci-github`
+
+### `ci-bitbucket`
+Bitbucket Pipelines CI/CD configuration.
+
+**What you get:** `bitbucket-pipelines.yml` with build, test, and deploy steps.
+
+**Suggests:** `linting`, `testing`, `docker`
+
+### `makefile`
+Makefile with common development targets.
+
+**What you get:** `Makefile` with build, test, lint, run, and clean targets.
+
+### `linting`
+Linting configuration.
+
+**What you get:** `.golangci.yaml` with curated linter set (errcheck, govet, staticcheck, bodyclose, noctx, and more).
+
+### `testing`
+Test utilities and example tests.
+
+**What you get:** Test helper functions, example table-driven tests, test fixtures pattern.
+
+### `pre-commit`
+Pre-commit hook configuration.
+
+**What you get:** Pre-commit hooks for formatting, linting, and test execution.
+
+<Aside type="tip">
+Use the interactive wizard (`archway new my-service`) to explore capabilities with descriptions and smart suggestions. Or see the [Capabilities Matrix](/reference/capabilities-matrix/) for a condensed overview. To add capabilities to an existing project, see [Adding Capabilities](/guides/adding-capabilities/).
+</Aside>

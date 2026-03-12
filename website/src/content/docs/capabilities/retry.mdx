@@ -1,0 +1,34 @@
+---
+title: "retry capability"
+description: "Add retry logic to your Go service with exponential backoff, jitter, and configurable max attempts for handling transient failures."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`retry` adds a retry wrapper to your Go service with exponential backoff and jitter for handling transient failures gracefully.
+
+## What You Get
+
+- Retry wrapper with exponential backoff
+- Jitter
+- Max attempts configuration
+
+## When to Use
+
+Use `retry` for transient failures from external services — network blips, rate limit responses, temporary unavailability. Always pair with `idempotency` when retrying operations that mutate state — retrying a non-idempotent payment operation causes duplicate charges.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap retry
+# or add to an existing service:
+archway add retry
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="circuit-breaker" href="/capabilities/circuit-breaker/">Stop retrying when the dependency is down hard.</Card>
+  <Card title="idempotency" href="/capabilities/idempotency/">Required when retrying state-mutating operations.</Card>
+  <Card title="http-client" href="/capabilities/http-client/">Resilient HTTP client with retry built in.</Card>
+</CardGrid>

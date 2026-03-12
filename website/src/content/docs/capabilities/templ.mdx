@@ -1,0 +1,41 @@
+---
+title: "templ capability"
+description: "Add type-safe server-rendered HTML templating to your Go service using templ, with layout components, page templates, and hot reload."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`templ` adds type-safe HTML templating to your Go service using the templ library for server-rendered components.
+
+## What You Get
+
+- templ setup
+- Layout components
+- Page templates
+- Hot reload configuration
+
+## When to Use
+
+Use `templ` for server-rendered web applications where you want Go's type system to catch template errors at compile time. Pairs with `htmx` for dynamic partial rendering without a JavaScript framework.
+
+## Requirements & Suggestions
+
+**Requires:** [`http-api`](/capabilities/http-api/)
+
+**Suggests:** [`htmx`](/capabilities/htmx/), [`static-assets`](/capabilities/static-assets/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap http-api,templ
+# or add to an existing service:
+archway add templ
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="htmx" href="/capabilities/htmx/">HTMX for server-driven interactivity with templ partials.</Card>
+  <Card title="static-assets" href="/capabilities/static-assets/">Serve CSS, JS, and images alongside templ pages.</Card>
+  <Card title="i18n" href="/capabilities/i18n/">Internationalization for multi-language templ templates.</Card>
+</CardGrid>

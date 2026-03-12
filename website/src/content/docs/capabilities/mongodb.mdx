@@ -1,0 +1,39 @@
+---
+title: "mongodb capability"
+description: "Add MongoDB to your Go service using the official Go driver with client connection, collection abstractions, and BSON helpers."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`mongodb` wires MongoDB into your Go service using the official Go driver, with collection abstractions and BSON helpers ready to use.
+
+## What You Get
+
+- Client connection
+- Database/collection abstractions
+- Repository pattern
+- BSON helpers
+
+## When to Use
+
+Use `mongodb` for document-oriented data, flexible schemas, or rapid prototyping where a relational model would be overly rigid. Well-suited for content, catalog, and event store use cases.
+
+## Requirements & Suggestions
+
+**Suggests:** [`docker`](/capabilities/docker/), [`health`](/capabilities/health/), [`observability`](/capabilities/observability/)
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap mongodb
+# or add to an existing service:
+archway add mongodb
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="docker" href="/capabilities/docker/">Local MongoDB instance via Docker Compose.</Card>
+  <Card title="health" href="/capabilities/health/">Health checks that include MongoDB connectivity.</Card>
+  <Card title="observability" href="/capabilities/observability/">OpenTelemetry tracing for MongoDB operations.</Card>
+</CardGrid>

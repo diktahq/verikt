@@ -1,0 +1,35 @@
+---
+title: "grpc capability"
+description: "Scaffold a gRPC service in Go with Protocol Buffer definitions, buf tooling, server interceptors, and reflection for development."
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+`grpc` adds a gRPC service layer to your Go service using buf tooling for schema management and code generation.
+
+## What You Get
+
+- Protocol Buffer definitions
+- buf configuration for linting and code generation
+- Server setup with interceptors
+- Reflection for development tooling
+
+## When to Use
+
+Use `grpc` for internal microservice communication where you need strong typing, streaming, or high-performance RPC. It's a better fit than REST for service-to-service calls within a controlled network.
+
+## Add to Your Service
+
+```bash
+archway new my-service --cap grpc
+# or add to an existing service:
+archway add grpc
+```
+
+## Related Capabilities
+
+<CardGrid>
+  <Card title="observability" href="/capabilities/observability/">OpenTelemetry traces and metrics for your gRPC service.</Card>
+  <Card title="platform" href="/capabilities/platform/">Config, lifecycle, and structured logging.</Card>
+  <Card title="health" href="/capabilities/health/">Health and readiness endpoints for orchestrators.</Card>
+</CardGrid>
