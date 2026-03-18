@@ -1,0 +1,107 @@
+---
+title: "EXP-05 — Does the Prompt Even Matter?"
+description: The guide is the dominant variable. A lazy prompt with the guide outperformed a thorough prompt without it on architecture shape.
+---
+
+A lazy 3-line prompt with the guide outperformed a detailed requirements spec without it. The guide is the dominant variable — prompt quality is secondary.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number small">B &gt; C</span>
+    <span class="exp-stat-label">lazy+guide beat thorough+no guide</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number small">guide</span>
+    <span class="exp-stat-label">dominant variable</span>
+  </div>
+</div>
+
+## What the agent produced
+
+2×2 design: lazy vs thorough prompt × no guide vs guide. Same inventory service task across all four conditions.
+
+**Architecture shape**
+
+```
+Condition A (lazy, no guide)      Condition B (lazy, guide)
+─────────────────────────         ──────────────────────────────
+(root)/                           (root)/
+  internal/                         adapter/
+  main.go                           domain/
+                                    port/
+                                    service/
+                                    cmd/
+
+Condition C (thorough, no guide)  Condition D (thorough, guide)
+─────────────────────────         ──────────────────────────────
+(root)/                           (root)/
+  internal/                         adapter/
+  main.go                           domain/
+                                    port/
+                                    service/
+                                    cmd/
+```
+
+**Violations**
+
+```
+Condition   Prompt      Guide   Hexagonal   Violations   Result
+─────────────────────────────────────────────────────────────────
+A           lazy        no      No          6            FAIL
+B           lazy        yes     Yes         3            FAIL
+C           thorough    no      No          7            FAIL
+D           thorough    yes     Yes         1            FAIL
+```
+
+**Capabilities wired**
+
+```
+No-guide conditions (A, C)        Guide conditions (B, D)
+─────────────────────────         ──────────────────────────────
+(agent's discretion)              http-api      ✓ wired
+                                  mysql         ✓ wired
+                                  platform      ✓ wired
+                                  health        ⚠ missing
+                                  validation    ⚠ missing
+```
+
+## Metrics
+
+| Condition | Prompt | Guide | Hexagonal | Violations |
+|-----------|--------|-------|-----------|-----------|
+| A | Lazy | No | No | 6 |
+| B | Lazy | Yes | **Yes** | 3 |
+| C | Thorough | No | No | 7 |
+| D | Thorough | Yes | **Yes** | 1 |
+
+## Finding
+
+**The guide is the dominant variable. Prompt quality is secondary.**
+
+Both guide conditions (B, D) produced hexagonal structure. Both no-guide conditions (A, C) produced flat — even with a thorough prompt that explicitly said "no business logic in HTTP handlers."
+
+The thorough prompt without the guide (C=7 violations) produced *more* violations than the lazy prompt without it (A=6). Extra specificity didn't help — the agent produced a different but equally non-conforming flat structure.
+
+B (lazy+guide, 3 violations) outperformed C (thorough+no-guide, 7 violations) on architecture. Engineers don't need to write architecture instructions in every prompt. They need the guide loaded.
+
+The original hypothesis — that B≈C (lazy+guide comparable to thorough+no-guide) — failed on this run: diff was 4, not ≤1. But the stronger finding emerged: the guide dominates regardless of prompt quality.
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="note">
+n=1 per condition. The finding that the guide dominates regardless of prompt quality is consistent with EXP-01 and EXP-02, but this specific 2×2 design needs 2 more runs per condition before the result can be considered validated.
+</Aside>
+
+## Setup
+
+- **Task:** Build an inventory service — products with name, SKU, quantity
+- **Lazy prompt:** 3 lines — service name, fields, HTTP API
+- **Thorough prompt:** Full requirements, typed errors, storage behind interface, explicit "no business logic in handlers"
+- **Agent:** claude-sonnet-4-6
+- **Runs:** 1 per condition (needs 2 more)
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-05)
+
+[→ EXP-06: Does the guide help on someone else's codebase?](/experiments/exp-06/)

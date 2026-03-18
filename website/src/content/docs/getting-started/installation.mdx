@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install the Archway CLI for service scaffolding and architecture enforcement via go install, from source, or with shell completions
+description: Install archway via Homebrew or install script — both set up your project and register architecture context for every AI agent automatically.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
@@ -15,13 +15,14 @@ brew install dcsg/tap/archway
 ```
 
 </TabItem>
-<TabItem label="Go Install">
+<TabItem label="Install Script">
 
 ```bash
-go install github.com/dcsg/archway/cmd/archway@latest
+curl -sSL https://archway.dcsg.me/install.sh | bash
 ```
 
-Requires **Go 1.23** or later.
+Works on macOS and Linux. Installs the binary and registers archway with
+your AI agents automatically.
 
 </TabItem>
 <TabItem label="From Source">
@@ -73,4 +74,4 @@ After installing completions, restart your shell or run `source ~/.bashrc` (or e
 
 ## Next Steps
 
-You're ready to scaffold your first service. Head to the [Quick Start](/getting-started/cli/).
+Head to the [Quick Start with AI Agents](/getting-started/ai-agents/) — or the [CLI Quick Start](/getting-started/cli/) if you prefer the terminal wizard.

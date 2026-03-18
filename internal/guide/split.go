@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dcsg/archway/internal/config"
 	"github.com/dcsg/archway/internal/scaffold"
 )
 
@@ -200,7 +201,7 @@ func buildCategoryContent(category string, installed []string, opts GenerateOpti
 	writeCategorySuggestions(&b, category, installed, opts.Capabilities)
 
 	// Category-relevant warnings.
-	writeCategoryWarnings(&b, category, installed, opts.Capabilities)
+	writeCategoryWarnings(&b, category, installed, opts.Capabilities, opts.SeverityOverrides)
 
 	return b.String()
 }
@@ -304,7 +305,7 @@ func writeCategorySuggestions(b *strings.Builder, category string, _, allInstall
 // writeCategoryWarnings writes warnings relevant to this category's capabilities.
 // Warning messages start with the triggering capability name (e.g., "http-api without ..."),
 // so we match by checking if the message starts with any capability in this category.
-func writeCategoryWarnings(b *strings.Builder, category string, _ []string, allInstalled []string) {
+func writeCategoryWarnings(b *strings.Builder, category string, _ []string, allInstalled []string, overrides config.SeverityOverrides) {
 	warnings := scaffold.CapabilityWarnings(allInstalled)
 	if len(warnings) == 0 {
 		return
@@ -333,6 +334,7 @@ func writeCategoryWarnings(b *strings.Builder, category string, _ []string, allI
 		} else {
 			fmt.Fprintf(b, "- 🟡 SHOULD: %s\n", w.Message)
 		}
+		writeOverrideLines(b, overrides, w.Key)
 	}
 	b.WriteString("\n")
 }
@@ -394,6 +396,16 @@ func (t *claudeTarget) WriteSplit(projectDir string, sc SplitContent) error {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", filename, err)
 		}
+	}
+
+	// Generate Claude Code hook scripts and update settings.json.
+	if err := generateHooks(projectDir); err != nil {
+		return fmt.Errorf("generate hooks: %w", err)
+	}
+
+	// Write guide hash for SessionStart staleness detection.
+	if err := writeGuideHash(projectDir); err != nil {
+		return fmt.Errorf("write guide hash: %w", err)
 	}
 
 	return nil

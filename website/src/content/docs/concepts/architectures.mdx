@@ -1,6 +1,6 @@
 ---
 title: Architectures
-description: Compare Archway's four architecture patterns — hexagonal, layered, clean, and flat — with dependency rules and usage guidance
+description: Compare archway's four architecture patterns — hexagonal, layered, clean, and flat — with dependency rules and usage guidance
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
@@ -42,10 +42,7 @@ Every scaffolded project includes an `archway.yaml` with these rules defined. Yo
 
 ### When to Use
 
-- Production APIs and microservices
-- Services with complex business logic
-- Projects where you want strict separation of concerns
-- Teams that need consistent structure across services
+Use hexagonal for production APIs and microservices where business logic is complex and you need strict separation of concerns. It's especially valuable when multiple teams contribute to the same service — the enforced boundaries prevent the accidental coupling that tends to accumulate in flat or layered structures.
 
 ## Flat
 
@@ -58,10 +55,7 @@ go.mod
 
 ### When to Use
 
-- CLI tools
-- Simple scripts
-- Quick prototypes
-- Projects that don't need layered architecture
+Use flat for CLI tools, simple scripts, and quick prototypes where layered structure would add friction without adding value.
 
 <Aside type="note">
 You can still add capabilities to a flat architecture (e.g., `http-api` for a simple API server), but the project won't have the layered structure of other architectures.
@@ -90,10 +84,7 @@ internal/model/         → Shared types and domain models
 
 ### When to Use
 
-- Services where hexagonal feels like overkill
-- Standard CRUD APIs with straightforward business logic
-- Teams familiar with the traditional three-tier pattern
-- Projects that prioritize simplicity over strict isolation
+Use layered when hexagonal feels like overkill — standard CRUD APIs with straightforward business logic, or teams already fluent in the traditional three-tier pattern who don't need the port/adapter indirection.
 
 ## Clean Architecture
 
@@ -118,10 +109,7 @@ internal/infrastructure/     → Database, external services, config
 
 ### When to Use
 
-- Complex business logic that benefits from strict layering
-- Teams following Uncle Bob's conventions
-- Projects where use cases are the central organizing concept
-- Large codebases where dependency discipline is critical
+Use clean architecture when use cases are the central organizing concept and dependency discipline matters at scale. It's a good fit for teams already fluent in Uncle Bob's conventions, or large codebases where strict layering pays for itself.
 
 <Aside type="tip">
 All four architectures work with any capability. The architecture defines *where* code goes; capabilities define *what* code gets generated. To monitor whether your codebase stays true to its declared architecture, see [Detecting Architecture Drift](/guides/architecture-drift/).

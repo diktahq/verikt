@@ -1,0 +1,71 @@
+---
+interface Props {
+  prompts: { prompt: string; knows: string }[];
+}
+
+const { prompts } = Astro.props;
+---
+
+<div class="prompt-table-wrap not-content">
+  <table class="prompt-table">
+    <thead>
+      <tr>
+        <th>You prompt</th>
+        <th>The agent already knows</th>
+      </tr>
+    </thead>
+    <tbody>
+      {prompts.map((p) => (
+        <tr>
+          <td class="prompt-col">{p.prompt}</td>
+          <td class="knows-col" set:html={p.knows} />
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .prompt-table-wrap {
+    overflow-x: auto;
+    margin-top: 1.5rem;
+  }
+
+  .prompt-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .prompt-table th {
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--sl-color-gray-3);
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid rgba(232, 145, 58, 0.15);
+  }
+
+  .prompt-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(232, 145, 58, 0.06);
+    font-size: 0.9rem;
+    vertical-align: top;
+    line-height: 1.6;
+  }
+
+  .prompt-col {
+    color: var(--sl-color-white, var(--sl-color-gray-1));
+    font-weight: 500;
+    width: 45%;
+  }
+
+  .knows-col {
+    color: var(--sl-color-gray-2);
+  }
+
+  .prompt-table tr:last-child td {
+    border-bottom: none;
+  }
+</style>

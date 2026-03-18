@@ -1,0 +1,101 @@
+---
+title: "EXP-09 — Does the Guide Expand What Agents Recommend?"
+description: Without the guide, the agent gave generic advice. With it — archway capability names, smart suggestions, and a generated RECOMMENDATIONS file with archway add commands.
+---
+
+Without the guide, the agent says "consider adding retries." With it, the agent generates a RECOMMENDATIONS file with `archway add retry`, `archway add circuit-breaker`, and `archway add idempotency` commands. This experiment isolates the guide as the variable.
+
+The RECOMMENDATIONS file appeared in every guide condition run. It never appeared in control runs.
+
+<div class="exp-compare">
+  <div class="exp-compare-col">
+    <div class="exp-compare-label">Without guide</div>
+    <div class="exp-compare-value">"consider adding retries"</div>
+  </div>
+  <div class="exp-compare-col">
+    <div class="exp-compare-label">With guide</div>
+    <div class="exp-compare-value"><code>archway add retry circuit-breaker idempotency</code></div>
+  </div>
+</div>
+
+## What the agent produced
+
+**Recommendations**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+"add error handling"        circuit-breaker  → archway add circuit-breaker
+"implement retries"         retry            → archway add retry
+"consider timeouts"         idempotency      → archway add idempotency
+                            timeout          → archway add timeout
+                            (RECOMMENDATIONS file generated)
+```
+
+**Architecture shape (across 2 runs)**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+Run 1: hexagonal ✓          Run 1: partial (missing domain/)
+Run 2: partial   ~          Run 2: hexagonal ✓
+(variance present)          (variance present)
+```
+
+**Capabilities wired**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+(agent's discretion)        http-api          ✓ wired
+                            mysql             ✓ wired
+                            platform          ✓ wired
+                            circuit-breaker   ⚠ recommended
+                            retry             ⚠ recommended
+                            idempotency       ⚠ recommended
+                            timeout           ⚠ recommended
+```
+
+**Violations**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+0 violations  ✓ pass        0 violations  ✓ pass
+```
+
+## Metrics (n=2 across 2026-03-15 + 2026-03-16)
+
+| | Without guide | With guide |
+|---|---|---|
+| Violations | 0 | 0 |
+| Pass rate | 2/2 | 2/2 |
+| RECOMMENDATIONS file | Never | **Always** |
+| Capability vocabulary | Generic phrases | **`archway add` commands** |
+| Cache tokens (run 2) | 12,085 | **62,630** |
+| Output tokens (run 2) | 2,309 | **6,470** |
+
+The guide condition generates significantly more output — the agent writes the RECOMMENDATIONS file and expands its analysis of the payment integration.
+
+## Finding
+
+**The guide expands what agents recommend.**
+
+**What this means for your team:** The RECOMMENDATIONS file gives agents a vocabulary for what to add next, not just what to build now. After adding a payment integration, your agent doesn't say "consider resilience patterns" — it says which capabilities are missing and gives you the exact commands to add them.
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="note">
+n=2. Architecture shape shows variance across runs — needs 1 more run per condition before drawing structural conclusions. The vocabulary and RECOMMENDATIONS file findings are consistent across both runs.
+</Aside>
+
+## Setup
+
+- **Task:** Add payment integration to an existing orders service
+- **Agent:** claude-sonnet-4-6
+- **Fixture:** orders-service with payment stub (Mode B — embedded)
+- **Runs:** 2 per condition (needs 1 more)
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-09)

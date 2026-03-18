@@ -1,78 +1,121 @@
 ---
-title: archway — Architecture-aware Service Composer and Enforcer
-description: Archway composes production-ready services from 4 architecture patterns and 63 modular capabilities, then enforces architecture rules in CI. Guide, compose, analyze, enforce.
+title: archway — Your Architecture, in Every Agent Session
+description: AI agents write correct syntax. They don't always remember your architecture. archway generates architecture context for every major AI coding agent — so every session is reliable, every engineer is consistent, and your architecture doesn't drift.
 template: splash
 hero:
-  title: arch<span style="color:var(--sl-color-accent)">way</span>
+  title: |
+    <span class="hero-wordmark">arch<span style="color:var(--sl-color-accent)">way</span></span>
+    Your architecture, in every agent session.
   tagline: |
-    Architecture-aware service composer and enforcer
-    <p class="hero-description">Compose production-grade services from architecture patterns and 63 modular capabilities. Guide, compose, analyze, and enforce — from first commit to production.</p>
+    <span class="hero-pain">The agent writes correct syntax. It doesn't remember your architecture.</span>
+    <p class="hero-description">archway generates architecture context for every AI agent you use — so every session starts with your layer boundaries, your capabilities, and your dependency rules already loaded.</p>
   actions:
-    - text: Quick Start with AI Agents
+    - text: Get Started
       link: /getting-started/ai-agents/
       icon: right-arrow
-    - text: Quick Start with CLI
-      link: /getting-started/cli/
-      variant: secondary
-    - text: GitHub
-      link: https://github.com/dcsg/archway
-      variant: minimal
-      icon: github
 ---
 
-import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+import Grid from '../../components/Grid.astro';
+import SolutionCard from '../../components/SolutionCard.astro';
+import PromptTable from '../../components/PromptTable.astro';
+import StatCard from '../../components/StatCard.astro';
+import QuoteCard from '../../components/QuoteCard.astro';
+import AudienceCard from '../../components/AudienceCard.astro';
+import Formula from '../../components/Formula.astro';
 
-```
-Architecture (hexagonal) + Capabilities (http-api, mysql, docker) = Your Service
-```
+<div class="homepage-section problem-section">
 
-Pick an architecture, pick what your service needs — archway wires it all together, feeds your AI agents the rules, and enforces it stays true.
+## What happens without architectural context
 
-**63 capabilities. Zero lock-in. You own every line of code.**
+Every session starts cold. The agent doesn't know your layers, your conventions, or which capabilities you've wired. It puts domain logic in the adapter layer. It reinvents patterns your team already standardised. It writes code that compiles, passes tests, and <span class="emphasis">violates your architecture</span>.
 
-<CardGrid>
-  <Card title="Guide" icon="star">
-    Feed AI agents your architecture context with `archway guide`. Prevention beats correction — agents write correct code from the first line.
-  </Card>
-  <Card title="Compose" icon="puzzle">
-    Pick an architecture pattern and combine 63 modular capabilities — transport, data, security, resilience, observability, and more. Get a production-ready service in one command.
-  </Card>
-  <Card title="Analyze" icon="magnifier">
-    Scan any codebase. archway detects the architecture pattern, maps dependencies, and reports what's there — deterministically, no LLM needed.
-  </Card>
-  <Card title="Enforce" icon="approve-check-circle">
-    Run `archway check` in CI. 11 AST-based detectors catch dependency violations, anti-patterns, and architecture drift before they ship.
-  </Card>
-</CardGrid>
+You correct it. Next session, same thing.
 
-## See It in Action
+The standard fix — a hand-written `CLAUDE.md` or `.cursorrules` file — works until it doesn't. You write it once, the architecture evolves, the file doesn't. Three months later your agent is following rules that no longer match your codebase.
 
-```bash
-# Interactive wizard — guides you through every choice
-archway new my-service
+At team scale, it compounds. Three engineers, three agents, three different interpretations of the same architecture. You discover the inconsistency in code review — the wrong person catching the wrong problem at the wrong time.
 
-# Or go non-interactive
-archway new my-service \
-  --arch hexagonal \
-  --cap platform,bootstrap,http-api,mysql,docker \
-  --module github.com/myorg/my-service \
-  --no-wizard
-```
+</div>
 
-You get a production-ready service with:
-- Hexagonal architecture with strict dependency rules
-- REST API with Chi router and RFC 7807 errors
-- MySQL with connection pooling and health checks
-- Structured logging, OpenTelemetry, PII redaction
-- Bootstrap pattern for testable dependency wiring
-- Docker Compose for local development
-- `archway.yaml` for architecture enforcement
+<div class="homepage-section">
 
-<Aside type="tip">
-The smart wizard suggests what you're missing. Adding HTTP? You probably want rate limiting, CORS, and auth too. 18 suggestion rules help you build complete services.
-</Aside>
+## Every agent session starts with your architecture already loaded
 
-## Capabilities at a Glance
+<Grid cols={2}>
+  <SolutionCard command="archway guide">
+    Generates context files for Claude Code, Cursor, Copilot, and Windsurf from your archway.yaml. Always current. One command to update.
+  </SolutionCard>
+  <SolutionCard command="archway.yaml">
+    One source of truth. Every engineer, every agent, every session. Your architecture as a versioned, commitable artifact — not a document that drifts.
+  </SolutionCard>
+  <SolutionCard command="archway check">
+    Catches violations before they ship. 11 architecture detectors in CI — wrong-layer dependencies, anti-patterns, drift. Not in code review. Not in production.
+  </SolutionCard>
+  <SolutionCard command="archway new">
+    Correct structure from day one. Scaffolds from architecture + capabilities, and runs `archway guide` automatically — so your agent has context from the first prompt.
+  </SolutionCard>
+</Grid>
+
+</div>
+
+<div class="homepage-section">
+
+## The prompts that just work
+
+### The CLI is the plumbing. The prompt is the interface.
+
+<PromptTable prompts={[
+  { prompt: '"Add a GET /orders endpoint filtered by customer ID, paginated, with RFC 7807 errors."', knows: 'Where the handler goes, which error format to use, how to wire the router — without being told.' },
+  { prompt: '"What capabilities am I missing before going to production?"', knows: 'Your installed capabilities, the smart suggestion rules, what\'s missing and why.' },
+  { prompt: '"Does this PR violate our architecture?"', knows: 'Your layer boundaries, dependency rules, and which files changed — runs <code>archway check --diff main</code>.' },
+  { prompt: '"I need to handle payments. What do I need?"', knows: 'That <code>idempotency</code> and <code>audit-log</code> are required, why, and how to add them.' },
+]} />
+
+</div>
+
+<div class="homepage-section">
+
+## Evidence, not claims
+
+Teams with high AI adoption merge 98% more PRs — but review times balloon by 91%. Only 48% of developers consistently check AI-assisted code before committing. ([Osmani, *The 80% Problem in Agentic Coding*](https://addyo.substack.com/p/the-80-problem-in-agentic-coding).) The productivity gain lands in generation. The cost lands in review. Architecture violations are that review cost.
+
+<Grid cols={2}>
+  <StatCard
+    label="Guide vs no guide — EXP-03"
+    description="Greenfield notification service. Same prompt, same model. Only the guide presence varies."
+    stats={[
+      { value: '7 → 1', label: 'violations' },
+      { value: '22.2×', label: 'variance reduction (EXP-02)' },
+      { value: '-23%', label: 'output tokens' },
+    ]}
+    summary="Without guide: flat structure (cmd/internal/), 7 violations, 3,522 output tokens. With guide: hexagonal (domain/port/service/adapter/), 1 violation, 2,703 tokens. Variance measured across 3 runs in EXP-02: [2,1,1] → [0,0,0]."
+  >
+    <a href="/experiments/exp-03/" style="font-size: 0.85rem; color: var(--sl-color-accent); text-decoration: none; margin-top: 0.75rem; display: inline-block;">See full experiment results →</a>
+  </StatCard>
+  <QuoteCard label="Practitioner validation" cite="— Senior engineer, payment systems (2M daily transactions)">
+    "AI-generated code that works but misses circuit breakers or retry logic is a real risk. Architecture awareness is the missing layer."
+  </QuoteCard>
+</Grid>
+
+<div class="evidence-cta not-content">
+  <a href="/getting-started/ai-agents/">Try it now →</a> <span class="sub">Two commands. Your next session starts differently.</span>
+</div>
+
+</div>
+
+<div class="homepage-section">
+
+## Start right. Stay right.
+
+### Every scaffolded service comes with an `archway.yaml` — the source of truth `archway guide` reads. Your agent has a complete architecture picture from the first prompt.
+
+<Formula>
+  <span>Architecture</span> (hexagonal) + <span>Capabilities</span> (http-api, postgres, docker) = <span>Your Service</span>
+</Formula>
+
+Pick an architecture. Pick your capabilities. Get a production-ready service with the structure already correct — and an `archway.yaml` that becomes the source of truth for every agent session.
+
+63 capabilities across 10 categories. The wizard suggests what's missing.
 
 | Category | Capabilities |
 |----------|-------------|
@@ -87,11 +130,66 @@ The smart wizard suggests what you're missing. Adding HTTP? You probably want ra
 | **Quality** | Linting, testing |
 | **Frontend** | templ, HTMX, static assets, i18n |
 
-<CardGrid>
-  <Card title="Read the docs" icon="right-arrow">
-    [How It Works](/concepts/how-it-works/) — understand the composition model
-  </Card>
-  <Card title="Try it now" icon="rocket">
-    [Quick Start with AI Agents](/getting-started/ai-agents/) — set up your project without leaving your agent session
-  </Card>
-</CardGrid>
+</div>
+
+<div class="homepage-section">
+
+## Three commands. Every agent knows your architecture.
+
+```bash
+# Homebrew (runs setup automatically)
+brew install dcsg/tap/archway
+
+# Or install script (also runs setup automatically)
+curl -sSL https://archway.dcsg.me/install.sh | bash
+
+# Generate architecture context for all AI agents
+archway guide
+
+# Enforce in CI
+archway check
+```
+
+Both install paths run `archway setup` automatically — detecting your AI agents and registering archway globally.
+
+Then open your AI agent in the project directory. The context is already there — the agent loads it silently. Write prompts naturally:
+
+<div class="agent-prompt not-content">
+Add a GET /orders endpoint filtered by customer ID, paginated, with RFC 7807 errors.
+</div>
+
+The agent already knows your architecture, your layers, and your capabilities.
+
+<div class="guide-link not-content">
+  <a href="/guides/prompt-engineering/">Prompt engineering guide →</a> <span class="sub">How to prompt when the architecture is already loaded.</span>
+</div>
+
+</div>
+
+<div class="homepage-section">
+
+## One engineer to start. Consistent across the team.
+
+<Grid cols={2}>
+  <AudienceCard title="For Engineers" href="/for/engineers/">
+    Your agent sessions become reliable. Every session starts with your architecture. Stop correcting, start shipping.
+  </AudienceCard>
+  <AudienceCard title="For Engineering Leaders" href="/for/engineering-leaders/">
+    One archway.yaml. Every engineer. Every agent. Every session. Architecture governance without being the enforcer.
+  </AudienceCard>
+</Grid>
+
+</div>
+
+<div class="footer-cta not-content">
+  <div class="tagline-repeat">Your architecture, in every agent session.</div>
+
+```bash
+brew install dcsg/tap/archway
+```
+
+  <div class="links">
+    <a href="/getting-started/ai-agents/">Quick Start with AI Agents</a>
+    <a href="https://github.com/dcsg/archway">GitHub</a>
+  </div>
+</div>

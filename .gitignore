@@ -3,6 +3,9 @@ archway
 bin/
 *.exe
 
+# Engine binary (built locally, not committed — see internal/engineclient/embed.go)
+internal/engineclient/bin/
+
 # Test artifacts
 test-service/
 test-seviceb/
@@ -29,3 +32,4 @@ docs/internal/
 
 # Go
 vendor/
+docs/product/plans/

@@ -1,0 +1,21 @@
+{
+  "violations_dep": 0,
+  "violations_fn": 0,
+  "violations_ap": 0,
+  "violations_arch": 0,
+  "violations_total": 0,
+  "passed": true,
+  "hexagonal_shape": false,
+  "packages": [
+    "(root)",
+    "adapter",
+    "cmd",
+    "port",
+    "service"
+  ],
+  "files_generated": 5,
+  "input_tokens": 3,
+  "cache_tokens": 12085,
+  "output_tokens": 2309,
+  "duration_ms": 38183
+}

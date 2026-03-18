@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package engine;
+
+option go_package = "github.com/dcsg/archway/internal/engineclient/pb";
+
+// PoC: Ping + Check (grep only). Full schema in Obsidian design doc.
+
+// ═══════════════════════════════════════════════════════════════════
+// REQUEST
+// ═══════════════════════════════════════════════════════════════════
+
+message EngineRequest {
+  oneof command {
+    CheckRequest check = 1;
+    PingRequest ping = 4;
+  }
+}
+
+message PingRequest {}
+
+message CheckRequest {
+  string project_path = 1;
+  repeated Rule rules = 2;
+  repeated string target_files = 3; // empty = all files; non-empty = only these (--staged)
+}
+
+message Rule {
+  string id = 1;
+  Severity severity = 2;
+  string message = 3;
+  EngineType engine = 4;
+  RuleScope scope = 5;
+
+  oneof spec {
+    GrepSpec grep = 10;
+    ImportGraphSpec import_graph = 11;
+    AntiPatternSpec anti_pattern = 12;
+    FunctionMetricSpec function_metric = 13;
+  }
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  INFO = 1;
+  WARNING = 2;
+  ERROR = 3;
+}
+
+enum EngineType {
+  ENGINE_UNSPECIFIED = 0;
+  GREP = 1;
+  AST = 2;
+  IMPORT_GRAPH = 3;
+  METRIC = 4;
+  STRUCTURE = 5;
+  ANTI_PATTERN = 6;
+}
+
+message RuleScope {
+  string language = 1;
+  repeated string include = 2; // glob patterns for files to check
+  repeated string exclude = 3; // glob patterns for files to skip
+}
+
+message GrepSpec {
+  string pattern = 1;           // regex — find matching lines
+  string must_contain = 2;      // matched lines must also match this
+  string must_not_contain = 3;  // matched lines must NOT match this
+  string file_must_contain = 4; // file-level prerequisite
+}
+
+message ImportGraphSpec {
+  string package_pattern = 1;      // glob — which packages this rule applies to (e.g., "internal/cli/**")
+  repeated string forbidden = 2;   // import path patterns that are forbidden
+  repeated string allowed_only = 3; // if non-empty, only these import patterns are allowed
+}
+
+message FunctionMetricSpec {
+  // Maximum number of lines in a function body (0 = unlimited).
+  int32 max_lines = 1;
+  // Maximum number of parameters (0 = unlimited).
+  int32 max_params = 2;
+  // Maximum number of return values (0 = unlimited).
+  int32 max_returns = 3;
+}
+
+message AntiPatternSpec {
+  // Which detectors to enable. Empty = all detectors enabled.
+  // Available: global_mutable_state, init_abuse, init_side_effects, naked_goroutine,
+  //            swallowed_error, context_background_in_handler, sql_concatenation,
+  //            uuid_v4_as_key, fat_handler, god_package
+  repeated string detectors = 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RESPONSE
+// ═══════════════════════════════════════════════════════════════════
+
+message EngineResponse {
+  oneof payload {
+    Finding finding = 2;
+    CheckComplete check_complete = 3;
+    PingResult ping_result = 6;
+    EngineError error = 10;
+  }
+}
+
+message Finding {
+  string rule_id = 1;
+  Severity severity = 2;
+  string file = 3;
+  uint32 line = 4;
+  uint32 column = 5;
+  string message = 6;
+  string match = 7;
+  string engine = 8;
+}
+
+message CheckComplete {
+  uint32 files_checked = 1;
+  uint32 rules_evaluated = 2;
+  uint32 findings_total = 3;
+  uint32 findings_error = 4;
+  uint32 findings_warning = 5;
+  uint32 findings_info = 6;
+  double duration_ms = 7;
+  repeated RuleStatus rule_statuses = 8;
+}
+
+message RuleStatus {
+  string rule_id = 1;
+  Status status = 2;
+  string error = 3;
+
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    VALID = 1;
+    INVALID = 2;
+    STALE = 3;
+  }
+}
+
+message PingResult {
+  string version = 1;
+  repeated string capabilities = 2;
+}
+
+message EngineError {
+  string message = 1;
+  string code = 2;
+}

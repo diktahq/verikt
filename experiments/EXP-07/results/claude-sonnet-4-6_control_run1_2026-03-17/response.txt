@@ -1,0 +1,472 @@
+The file paths in the codebase are module paths — let me work with the files as shown.
+
+=== domain/discount.go ===
+```go
+package domain
+
+import "errors"
+
+// ErrDiscountNotFound is returned when a discount code cannot be located.
+var ErrDiscountNotFound = errors.New("discount not found")
+
+// Discount represents a promotional code with a percentage reduction.
+type Discount struct {
+	Code       string
+	Percentage int // 1–100
+}
+```
+
+=== domain/order.go ===
+```go
+package domain
+
+import (
+	"errors"
+	"time"
+)
+
+// OrderStatus represents the lifecycle state of an order.
+type OrderStatus string
+
+const (
+	StatusPending   OrderStatus = "pending"
+	StatusConfirmed OrderStatus = "confirmed"
+	StatusShipped   OrderStatus = "shipped"
+	StatusCancelled OrderStatus = "cancelled"
+)
+
+// ErrOrderNotFound is returned when an order cannot be located by ID.
+var ErrOrderNotFound = errors.New("order not found")
+
+// ErrInvalidOrder is returned when an order fails domain validation.
+var ErrInvalidOrder = errors.New("invalid order")
+
+// Order is the central aggregate of the ordering domain.
+type Order struct {
+	ID               string
+	CustomerID       string
+	TotalCents       int64
+	DiscountCode     string
+	DiscountPercent  int
+	Status           OrderStatus
+	CreatedAt        time.Time
+}
+
+// Validate checks that the order satisfies domain invariants.
+// Returns ErrInvalidOrder if any invariant is violated.
+func (o *Order) Validate() error {
+	if o.CustomerID == "" {
+		return errors.Join(ErrInvalidOrder, errors.New("customer ID must not be empty"))
+	}
+	if o.TotalCents <= 0 {
+		return errors.Join(ErrInvalidOrder, errors.New("total must be greater than zero"))
+	}
+	return nil
+}
+```
+
+=== port/discount_repository.go ===
+```go
+package port
+
+import (
+	"context"
+
+	"github.com/example/orders/domain"
+)
+
+// DiscountRepository defines lookup operations for discount codes.
+type DiscountRepository interface {
+	FindByCode(ctx context.Context, code string) (*domain.Discount, error)
+}
+```
+
+=== port/order_service.go ===
+```go
+package port
+
+import (
+	"context"
+
+	"github.com/example/orders/domain"
+)
+
+// CreateOrderInput carries the data required to place a new order.
+type CreateOrderInput struct {
+	CustomerID   string
+	TotalCents   int64
+	DiscountCode string // optional; empty string means no discount
+}
+
+// OrderService defines the application use cases for order management.
+// The HTTP adapter and any future transport call into this interface.
+type OrderService interface {
+	CreateOrder(ctx context.Context, in CreateOrderInput) (*domain.Order, error)
+	GetOrder(ctx context.Context, id string) (*domain.Order, error)
+}
+```
+
+=== service/order_service.go ===
+```go
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+type orderService struct {
+	repo      port.OrderRepository
+	discounts port.DiscountRepository
+}
+
+// NewOrderService constructs an OrderService backed by the given repositories.
+// Pass nil for discounts to disable discount support.
+func NewOrderService(repo port.OrderRepository, discounts port.DiscountRepository) port.OrderService {
+	return &orderService{repo: repo, discounts: discounts}
+}
+
+func (s *orderService) CreateOrder(ctx context.Context, in port.CreateOrderInput) (*domain.Order, error) {
+	order := &domain.Order{
+		ID:         fmt.Sprintf("order-%d", time.Now().UnixNano()),
+		CustomerID: in.CustomerID,
+		TotalCents: in.TotalCents,
+		Status:     domain.StatusPending,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	if in.DiscountCode != "" {
+		if err := s.applyDiscount(ctx, order, in.DiscountCode); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := order.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Save(ctx, order); err != nil {
+		return nil, fmt.Errorf("save order: %w", err)
+	}
+
+	return order, nil
+}
+
+func (s *orderService) applyDiscount(ctx context.Context, order *domain.Order, code string) error {
+	if s.discounts == nil {
+		return nil
+	}
+	d, err := s.discounts.FindByCode(ctx, code)
+	if err != nil {
+		if errors.Is(err, domain.ErrDiscountNotFound) {
+			return fmt.Errorf("%w: unknown discount code", domain.ErrInvalidOrder)
+		}
+		return fmt.Errorf("look up discount: %w", err)
+	}
+	order.DiscountCode = d.Code
+	order.DiscountPercent = d.Percentage
+	order.TotalCents = order.TotalCents - (order.TotalCents * int64(d.Percentage) / 100)
+	return nil
+}
+
+func (s *orderService) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
+	order, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("find order: %w", err)
+	}
+	return order, nil
+}
+```
+
+=== adapter/http/handler.go ===
+```go
+package http
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+// Handler holds the HTTP handlers for the orders API.
+type Handler struct {
+	svc port.OrderService
+}
+
+// NewHandler constructs a Handler wired to the given service.
+func NewHandler(svc port.OrderService) *Handler {
+	return &Handler{svc: svc}
+}
+
+type createOrderRequest struct {
+	CustomerID   string `json:"customer_id"`
+	TotalCents   int64  `json:"total_cents"`
+	DiscountCode string `json:"discount_code,omitempty"`
+}
+
+type orderResponse struct {
+	ID              string `json:"id"`
+	CustomerID      string `json:"customer_id"`
+	TotalCents      int64  `json:"total_cents"`
+	DiscountCode    string `json:"discount_code,omitempty"`
+	DiscountPercent int    `json:"discount_percent,omitempty"`
+	Status          string `json:"status"`
+	CreatedAt       string `json:"created_at"`
+}
+
+func toResponse(o *domain.Order) orderResponse {
+	return orderResponse{
+		ID:              o.ID,
+		CustomerID:      o.CustomerID,
+		TotalCents:      o.TotalCents,
+		DiscountCode:    o.DiscountCode,
+		DiscountPercent: o.DiscountPercent,
+		Status:          string(o.Status),
+		CreatedAt:       o.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+// CreateOrder handles POST /orders.
+func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	var req createOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.svc.CreateOrder(r.Context(), port.CreateOrderInput{
+		CustomerID:   req.CustomerID,
+		TotalCents:   req.TotalCents,
+		DiscountCode: req.DiscountCode,
+	})
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidOrder) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(toResponse(order)) //nolint:errcheck
+}
+
+// GetOrder handles GET /orders/{id}.
+func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing order id", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.svc.GetOrder(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			http.Error(w, "order not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toResponse(order)) //nolint:errcheck
+}
+```
+
+=== adapter/postgres/order_repository.go ===
+```go
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+// PostgresOrderRepository implements port.OrderRepository against a PostgreSQL database.
+type PostgresOrderRepository struct {
+	db *sql.DB
+}
+
+// NewPostgresOrderRepository constructs a repository backed by the given *sql.DB.
+func NewPostgresOrderRepository(db *sql.DB) port.OrderRepository {
+	return &PostgresOrderRepository{db: db}
+}
+
+// Save persists an order. Callers are responsible for providing a unique ID.
+func (r *PostgresOrderRepository) Save(ctx context.Context, order *domain.Order) error {
+	const q = `
+		INSERT INTO orders (id, customer_id, total_cents, discount_code, discount_percent, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE
+		SET status = EXCLUDED.status`
+
+	_, err := r.db.ExecContext(ctx, q,
+		order.ID,
+		order.CustomerID,
+		order.TotalCents,
+		order.DiscountCode,
+		order.DiscountPercent,
+		string(order.Status),
+		order.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("postgres save order: %w", err)
+	}
+	return nil
+}
+
+// FindByID retrieves an order by its ID.
+// Returns domain.ErrOrderNotFound when no row matches.
+func (r *PostgresOrderRepository) FindByID(ctx context.Context, id string) (*domain.Order, error) {
+	const q = `
+		SELECT id, customer_id, total_cents, discount_code, discount_percent, status, created_at
+		FROM orders
+		WHERE id = $1`
+
+	row := r.db.QueryRowContext(ctx, q, id)
+
+	var o domain.Order
+	var status string
+	err := row.Scan(&o.ID, &o.CustomerID, &o.TotalCents, &o.DiscountCode, &o.DiscountPercent, &status, &o.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrOrderNotFound
+		}
+		return nil, fmt.Errorf("postgres find order: %w", err)
+	}
+
+	o.Status = domain.OrderStatus(status)
+	return &o, nil
+}
+```
+
+=== adapter/postgres/discount_repository.go ===
+```go
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+// PostgresDiscountRepository implements port.DiscountRepository against a PostgreSQL database.
+type PostgresDiscountRepository struct {
+	db *sql.DB
+}
+
+// NewPostgresDiscountRepository constructs a repository backed by the given *sql.DB.
+func NewPostgresDiscountRepository(db *sql.DB) port.DiscountRepository {
+	return &PostgresDiscountRepository{db: db}
+}
+
+// FindByCode retrieves a discount by its code.
+// Returns domain.ErrDiscountNotFound when no row matches.
+func (r *PostgresDiscountRepository) FindByCode(ctx context.Context, code string) (*domain.Discount, error) {
+	const q = `
+		SELECT code, percentage
+		FROM discounts
+		WHERE code = $1`
+
+	row := r.db.QueryRowContext(ctx, q, code)
+
+	var d domain.Discount
+	if err := row.Scan(&d.Code, &d.Percentage); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrDiscountNotFound
+		}
+		return nil, fmt.Errorf("postgres find discount: %w", err)
+	}
+
+	return &d, nil
+}
+```
+
+=== cmd/orders/main.go ===
+```go
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	adapthttp "github.com/example/orders/adapter/http"
+	"github.com/example/orders/adapter/postgres"
+	"github.com/example/orders/service"
+)
+
+func main() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL must be set")
+	}
+
+	// In production: import a driver package (e.g. pgx) for its side-effect init.
+	// This stub uses database/sql directly; driver registration is left to the deployer.
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	repo := postgres.NewPostgresOrderRepository(db)
+	discounts := postgres.NewPostgresDiscountRepository(db)
+	svc := service.NewOrderService(repo, discounts)
+	h := adapthttp.NewHandler(svc)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /orders", h.CreateOrder)
+	mux.HandleFunc("GET /orders/{id}", h.GetOrder)
+
+	addr := ":8080"
+	fmt.Printf("orders service listening on %s\n", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("server: %v", err)
+	}
+}
+```
+
+---
+
+What changed and why:
+
+**`domain/discount.go`** — new file. `Discount` aggregate with `Code` and `Percentage`.
+
+**`domain/order.go`** — added `DiscountCode` and `DiscountPercent` fields so the applied discount is stored with the order (auditable, no need to re-fetch).
+
+**`port/discount_repository.go`** — new file. `FindByCode` is the only operation needed.
+
+**`port/order_service.go`** — `DiscountCode` added to `CreateOrderInput`; empty string means no discount.
+
+**`service/order_service.go`** — `NewOrderService` now takes a `DiscountRepository` (nil-safe). `applyDiscount` looks up the code, sets the fields, and reduces `TotalCents` before validation runs — so a discount that pushes the total to zero will still fail the `> 0` invariant.
+
+**`adapter/http/handler.go`** — `discount_code` accepted in the request body; `discount_code` and `discount_percent` returned in the response (omitted when zero).
+
+**`adapter/postgres/order_repository.go`** — updated SQL to persist/scan the two new columns.
+
+**`adapter/postgres/discount_repository.go`** — new file. Expects a `discounts(code, percentage)` table.
+
+**`cmd/orders/main.go`** — wires `PostgresDiscountRepository` into `NewOrderService`.

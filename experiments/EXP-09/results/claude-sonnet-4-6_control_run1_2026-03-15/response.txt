@@ -1,0 +1,436 @@
+=== port/payment_gateway.go ===
+package port
+
+import "context"
+
+// ChargeInput carries the data required to charge a customer.
+type ChargeInput struct {
+	CustomerID  string
+	AmountCents int64
+	OrderID     string
+}
+
+// ChargeResult holds the outcome of a successful charge.
+type ChargeResult struct {
+	TransactionID string
+}
+
+// PaymentGateway defines the contract for charging customers.
+type PaymentGateway interface {
+	Charge(ctx context.Context, in ChargeInput) (*ChargeResult, error)
+}
+
+=== adapter/payments/client.go ===
+package payments
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"github.com/example/orders/port"
+)
+
+const chargeEndpoint = "https://api.payments.example.com/charge"
+
+// Client implements port.PaymentGateway over HTTP.
+type Client struct {
+	http *http.Client
+}
+
+// NewClient constructs a payments Client using the given HTTP client.
+func NewClient(httpClient *http.Client) port.PaymentGateway {
+	return &Client{http: httpClient}
+}
+
+type chargeRequest struct {
+	CustomerID  string `json:"customer_id"`
+	AmountCents int64  `json:"amount_cents"`
+	OrderID     string `json:"order_id"`
+}
+
+type chargeResponse struct {
+	TransactionID string `json:"transaction_id"`
+}
+
+// Charge POSTs a charge request to the payments API.
+func (c *Client) Charge(ctx context.Context, in port.ChargeInput) (*port.ChargeResult, error) {
+	body, err := json.Marshal(chargeRequest{
+		CustomerID:  in.CustomerID,
+		AmountCents: in.AmountCents,
+		OrderID:     in.OrderID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("payments charge: marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chargeEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("payments charge: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("payments charge: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("payments charge: unexpected status %d", resp.StatusCode)
+	}
+
+	var result chargeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("payments charge: decode response: %w", err)
+	}
+
+	return &port.ChargeResult{TransactionID: result.TransactionID}, nil
+}
+
+=== domain/order.go ===
+package domain
+
+import (
+	"errors"
+	"time"
+)
+
+// OrderStatus represents the lifecycle state of an order.
+type OrderStatus string
+
+const (
+	StatusPending   OrderStatus = "pending"
+	StatusConfirmed OrderStatus = "confirmed"
+	StatusShipped   OrderStatus = "shipped"
+	StatusCancelled OrderStatus = "cancelled"
+)
+
+// ErrOrderNotFound is returned when an order cannot be located by ID.
+var ErrOrderNotFound = errors.New("order not found")
+
+// ErrInvalidOrder is returned when an order fails domain validation.
+var ErrInvalidOrder = errors.New("invalid order")
+
+// ErrPaymentFailed is returned when the payment gateway rejects a charge.
+var ErrPaymentFailed = errors.New("payment failed")
+
+// Order is the central aggregate of the ordering domain.
+type Order struct {
+	ID            string
+	CustomerID    string
+	TotalCents    int64
+	Status        OrderStatus
+	TransactionID string
+	CreatedAt     time.Time
+}
+
+// Validate checks that the order satisfies domain invariants.
+// Returns ErrInvalidOrder if any invariant is violated.
+func (o *Order) Validate() error {
+	if o.CustomerID == "" {
+		return errors.Join(ErrInvalidOrder, errors.New("customer ID must not be empty"))
+	}
+	if o.TotalCents <= 0 {
+		return errors.Join(ErrInvalidOrder, errors.New("total must be greater than zero"))
+	}
+	return nil
+}
+
+=== service/order_service.go ===
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+type orderService struct {
+	repo    port.OrderRepository
+	payment port.PaymentGateway
+}
+
+// NewOrderService constructs an OrderService backed by the given repository and payment gateway.
+func NewOrderService(repo port.OrderRepository, payment port.PaymentGateway) port.OrderService {
+	return &orderService{repo: repo, payment: payment}
+}
+
+func (s *orderService) CreateOrder(ctx context.Context, in port.CreateOrderInput) (*domain.Order, error) {
+	order := &domain.Order{
+		ID:         fmt.Sprintf("order-%d", time.Now().UnixNano()),
+		CustomerID: in.CustomerID,
+		TotalCents: in.TotalCents,
+		Status:     domain.StatusPending,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	if err := order.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Save(ctx, order); err != nil {
+		return nil, fmt.Errorf("save order: %w", err)
+	}
+
+	charge, err := s.payment.Charge(ctx, port.ChargeInput{
+		CustomerID:  order.CustomerID,
+		AmountCents: order.TotalCents,
+		OrderID:     order.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", domain.ErrPaymentFailed, err)
+	}
+
+	order.TransactionID = charge.TransactionID
+	order.Status = domain.StatusConfirmed
+
+	if err := s.repo.Save(ctx, order); err != nil {
+		return nil, fmt.Errorf("confirm order: %w", err)
+	}
+
+	return order, nil
+}
+
+func (s *orderService) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
+	order, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("find order: %w", err)
+	}
+	return order, nil
+}
+
+=== adapter/http/handler.go ===
+package http
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+// Handler holds the HTTP handlers for the orders API.
+type Handler struct {
+	svc port.OrderService
+}
+
+// NewHandler constructs a Handler wired to the given service.
+func NewHandler(svc port.OrderService) *Handler {
+	return &Handler{svc: svc}
+}
+
+type createOrderRequest struct {
+	CustomerID string `json:"customer_id"`
+	TotalCents int64  `json:"total_cents"`
+}
+
+type orderResponse struct {
+	ID            string `json:"id"`
+	CustomerID    string `json:"customer_id"`
+	TotalCents    int64  `json:"total_cents"`
+	Status        string `json:"status"`
+	TransactionID string `json:"transaction_id,omitempty"`
+	CreatedAt     string `json:"created_at"`
+}
+
+func toResponse(o *domain.Order) orderResponse {
+	return orderResponse{
+		ID:            o.ID,
+		CustomerID:    o.CustomerID,
+		TotalCents:    o.TotalCents,
+		Status:        string(o.Status),
+		TransactionID: o.TransactionID,
+		CreatedAt:     o.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+// CreateOrder handles POST /orders.
+func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	var req createOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.svc.CreateOrder(r.Context(), port.CreateOrderInput{
+		CustomerID: req.CustomerID,
+		TotalCents: req.TotalCents,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrInvalidOrder):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, domain.ErrPaymentFailed):
+			http.Error(w, err.Error(), http.StatusPaymentRequired)
+		default:
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(toResponse(order)) //nolint:errcheck
+}
+
+// GetOrder handles GET /orders/{id}.
+func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing order id", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.svc.GetOrder(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			http.Error(w, "order not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toResponse(order)) //nolint:errcheck
+}
+
+=== adapter/postgres/order_repository.go ===
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+// PostgresOrderRepository implements port.OrderRepository against a PostgreSQL database.
+type PostgresOrderRepository struct {
+	db *sql.DB
+}
+
+// NewPostgresOrderRepository constructs a repository backed by the given *sql.DB.
+func NewPostgresOrderRepository(db *sql.DB) port.OrderRepository {
+	return &PostgresOrderRepository{db: db}
+}
+
+// Save persists an order. Callers are responsible for providing a unique ID.
+func (r *PostgresOrderRepository) Save(ctx context.Context, order *domain.Order) error {
+	const q = `
+		INSERT INTO orders (id, customer_id, total_cents, status, transaction_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO UPDATE
+		SET status = EXCLUDED.status,
+		    transaction_id = EXCLUDED.transaction_id`
+
+	_, err := r.db.ExecContext(ctx, q,
+		order.ID,
+		order.CustomerID,
+		order.TotalCents,
+		string(order.Status),
+		order.TransactionID,
+		order.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("postgres save order: %w", err)
+	}
+	return nil
+}
+
+// FindByID retrieves an order by its ID.
+// Returns domain.ErrOrderNotFound when no row matches.
+func (r *PostgresOrderRepository) FindByID(ctx context.Context, id string) (*domain.Order, error) {
+	const q = `
+		SELECT id, customer_id, total_cents, status, transaction_id, created_at
+		FROM orders
+		WHERE id = $1`
+
+	row := r.db.QueryRowContext(ctx, q, id)
+
+	var o domain.Order
+	var status string
+	err := row.Scan(&o.ID, &o.CustomerID, &o.TotalCents, &status, &o.TransactionID, &o.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrOrderNotFound
+		}
+		return nil, fmt.Errorf("postgres find order: %w", err)
+	}
+
+	o.Status = domain.OrderStatus(status)
+	return &o, nil
+}
+
+=== cmd/orders/main.go ===
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	adapthttp "github.com/example/orders/adapter/http"
+	"github.com/example/orders/adapter/payments"
+	"github.com/example/orders/adapter/postgres"
+	"github.com/example/orders/service"
+)
+
+func main() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL must be set")
+	}
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	repo := postgres.NewPostgresOrderRepository(db)
+	paymentClient := payments.NewClient(&http.Client{})
+	svc := service.NewOrderService(repo, paymentClient)
+	h := adapthttp.NewHandler(svc)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /orders", h.CreateOrder)
+	mux.HandleFunc("GET /orders/{id}", h.GetOrder)
+
+	addr := ":8080"
+	fmt.Printf("orders service listening on %s\n", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("server: %v", err)
+	}
+}
+
+=== RECOMMENDATIONS ===
+
+**idempotency** — This is the most urgent gap. `CreateOrder` now has two non-atomic external side effects: the payment charge and the DB write. If the client retries after a network timeout, you charge the customer twice. The payment API needs to receive a stable idempotency key (derived from the request, not `time.Now().UnixNano()`), and `POST /orders` needs to deduplicate at the HTTP layer so repeat requests return the existing order rather than creating a new one.
+
+**retry + circuit-breaker on the payments http.Client** — Right now `payments.Client` uses a bare `&http.Client{}` with no timeout, no retry, and no circuit breaking. A single hung connection to `api.payments.example.com` will block the goroutine indefinitely. A slow payment provider will exhaust your connection pool and cascade failure to all order creation. Add a timeout to the HTTP client, retry with exponential backoff for transient errors (5xx, network), and a circuit breaker to fail fast when the payment service is down.
+
+**timeout middleware** — Related to the above but at the HTTP layer. `POST /orders` now touches both a database and an external HTTP service. Without a request-scoped deadline, a slow caller can hold a goroutine open for as long as both downstream calls take. Add context deadline injection at the handler level.
+
+**audit-log** — You are now processing payments. Every charge attempt — successful or failed — needs an append-only record: customer ID, order ID, amount, transaction ID, timestamp, and outcome. This is not optional for a payment flow. It is required for dispute resolution, fraud investigation, and most compliance frameworks.
+
+**outbox pattern** — The current flow has a silent consistency hole: if the process crashes after the charge succeeds but before the second `repo.Save` (the status confirmation write), the order stays `pending` in the database but the customer has been charged. The transactional outbox pattern solves this by writing the charge intent and confirmation into the same DB transaction as the order, then processing the payment asynchronously with guaranteed delivery.
+
+**migrations** — `transaction_id` was just added to the orders table. Right now that schema change is undocumented and unversioned. Any re-deployment or new environment will be missing it. Add versioned migrations (Goose or Atlas) so schema changes are reproducible and deployable without manual intervention.
+
+**observability** — `CreateOrder` now crosses three systems (DB, payment API, DB again). When it fails in production, you currently have no way to know which step failed, how long each took, or whether payment timeouts are trending upward. Structured logging with request-scoped trace IDs and timing for each external call is the minimum. Distributed tracing is the right answer.
+
+**health + readiness endpoints** — If this runs behind a load balancer or in Kubernetes, the orchestrator needs to know when the service is ready (DB connection established) and when it's live. Without readiness probes, a pod with a broken DB connection continues receiving traffic. Without liveness probes, a deadlocked process is never restarted.

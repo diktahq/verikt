@@ -1,0 +1,84 @@
+---
+interface Props {
+  label: string;
+  description?: string;
+  summary?: string;
+  stats: { value: string; label: string }[];
+}
+
+const { label, description, summary, stats } = Astro.props;
+---
+
+<div class="stat-card not-content">
+  <div class="label">{label}</div>
+  {description && <p class="desc">{description}</p>}
+  <div class="stat-row">
+    {stats.map((s) => (
+      <div class="stat">
+        <span class="number">{s.value}</span>
+        <span class="stat-label">{s.label}</span>
+      </div>
+    ))}
+  </div>
+  {summary && <p class="summary">{summary}</p>}
+  <slot />
+</div>
+
+<style>
+  .stat-card {
+    background: var(--sl-color-gray-6, #1E1D1B);
+    border: 1px solid rgba(232, 145, 58, 0.08);
+    border-radius: 0.75rem;
+    padding: 1.75rem;
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--sl-color-accent);
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  .desc {
+    font-size: 0.9rem;
+    color: var(--sl-color-gray-2);
+    margin: 0 0 0.5rem;
+    line-height: 1.6;
+  }
+
+  .stat-row {
+    display: flex;
+    gap: 2rem;
+    margin: 1rem 0;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .number {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--sl-color-accent);
+    display: block;
+    line-height: 1.2;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--sl-color-gray-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .summary {
+    font-size: 0.9rem;
+    color: var(--sl-color-gray-1);
+    font-weight: 500;
+    margin: 1rem 0 0;
+  }
+</style>

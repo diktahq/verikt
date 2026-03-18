@@ -40,7 +40,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.ValidRuleCount(), "expected 1 valid rule")
@@ -76,7 +76,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.ValidRuleCount())
@@ -122,7 +122,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, result.ValidRuleCount())
@@ -162,7 +162,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.ValidRuleCount())
@@ -175,7 +175,7 @@ func TestRunRulesNonexistentDir(t *testing.T) {
 	dir := t.TempDir()
 	rulesDir := filepath.Join(dir, ".archway", "rules")
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Empty(t, result.Violations)

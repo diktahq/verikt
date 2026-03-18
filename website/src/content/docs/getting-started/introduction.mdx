@@ -1,9 +1,9 @@
 ---
 title: Introduction
-description: Learn what Archway is, who it helps, and how it composes production-grade services from architecture patterns and 63 modular capabilities
+description: archway makes your architecture persistent and enforceable — so AI agents start every session with your rules, and every service starts from a consistent foundation.
 ---
 
-import { Aside, Steps, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 ## The Problem
 
@@ -11,9 +11,13 @@ Starting a new service means making dozens of decisions upfront: project layout,
 
 Then, three months later, every team's service looks different.
 
+AI agents make this worse. They write correct syntax but don't know your architecture — domain code imports adapter code, config loading ends up in the wrong layer, and the production patterns you've standardized get reinvented differently every time.
+
 ## The Solution
 
-archway is an **architecture-aware service composer**. Instead of monolithic templates, it composes your project from two building blocks:
+`archway guide` generates instruction files from your `archway.yaml` so AI agents (Claude Code, Cursor, Copilot, Windsurf) start every session with your exact architecture rules, capability set, and dependency constraints. This is prevention, not correction — the agent knows the rules before it writes the first line.
+
+For greenfield services, archway also composes your project from two building blocks:
 
 1. **Architecture** — The structural pattern (hexagonal, layered, clean, flat) that defines your project layout and dependency rules
 2. **Capabilities** — 63 modular features (HTTP API, MySQL, auth, circuit breaker, i18n, etc.) that plug into your architecture
@@ -26,43 +30,13 @@ Architecture (hexagonal) + Capabilities (http-api, mysql, docker) = Your Service
 Think of it like Terraform for code architecture. You declare what you want, archway composes it.
 </Aside>
 
-## What Makes It Different
+## How It Works
 
-<CardGrid>
-  <Card title="Composable, not monolithic" icon="puzzle">
-    Pick only what you need. No unused code, no dead imports. 63 capabilities across 10 categories.
-  </Card>
-  <Card title="Architecture enforcement" icon="approve-check-circle">
-    `archway check` validates dependency rules with 11 AST-based detectors. Domain code importing adapter code? Caught.
-  </Card>
-  <Card title="Smart suggestions" icon="star">
-    Adding an HTTP API? archway suggests rate limiting, CORS, and authentication. 18 suggestion rules with cross-referencing.
-  </Card>
-  <Card title="Production patterns built in" icon="setting">
-    RFC 7807 errors, structured logging, PII redaction, graceful shutdown, OpenTelemetry — all wired correctly from day one.
-  </Card>
-</CardGrid>
+Capabilities generate only the code, imports, and configuration they need — nothing more. When you add an HTTP API, archway suggests what else you likely need: health endpoints, request ID propagation, rate limiting, CORS. `archway check` validates your dependency rules with 11 AST-based detectors — domain code importing adapter code gets caught at the command line, not in code review.
 
-## Who Is It For
-
-- **Teams** starting new microservices who want consistent structure across projects
-- **Individual developers** who want production-grade defaults without the setup time
-- **Organizations** that want to enforce architectural standards across their services
-
-## Language Support
-
-| Language | Status | Architectures | Capabilities |
-|----------|--------|---------------|-------------|
-| **Go** | Stable | hexagonal, flat | 63 capabilities |
-| **TypeScript/Node** | Planned | — | — |
-
-archway is built on a **provider model** — each language is a self-contained provider with its own architectures, capabilities, and templates. The composition model, smart suggestions, and `archway check` work identically across all languages.
-
-## What It Is Not
-
-- **Not a framework** — generates plain code with no runtime dependency
-- **Not opinionated about your business logic** — it sets up the infrastructure, you write the domain
-- **Not a code generator that you run repeatedly** — scaffold once, own the code
+<Aside>
+archway generates plain code with no runtime dependency — not a framework. Scaffold once and own the output. It sets up the infrastructure; you write the domain.
+</Aside>
 
 ## Next Steps
 

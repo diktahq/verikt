@@ -1,0 +1,101 @@
+{
+  "generated": "2026-03-17T00:43:26Z",
+  "experiments": [
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-15",
+          "runs": 3
+        }
+      },
+      "id": "EXP-01",
+      "name": "Same task, different architecture",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-15",
+          "runs": 3
+        }
+      },
+      "id": "EXP-02",
+      "name": "Three engineers, one standard",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-15",
+          "runs": 1
+        }
+      },
+      "id": "EXP-03",
+      "name": "Build me a job runner",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-17"
+        }
+      },
+      "id": "EXP-04",
+      "name": "New feature, existing service",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-15",
+          "runs": 1
+        }
+      },
+      "id": "EXP-05",
+      "name": "Does the prompt even matter?",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-15",
+          "runs": 1
+        }
+      },
+      "id": "EXP-06",
+      "name": "Someone else's codebase",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-17"
+        }
+      },
+      "id": "EXP-07",
+      "name": "Three engineers, one standard (consistency)",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-15",
+          "runs": 3
+        }
+      },
+      "id": "EXP-08",
+      "name": "Build me a job runner (anti-pattern prevention)",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-16"
+        }
+      },
+      "id": "EXP-09",
+      "name": "What else do we need?",
+      "status": "complete"
+    }
+  ]
+}

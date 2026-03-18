@@ -1,0 +1,69 @@
+---
+title: "EXP-04 — New Feature, Existing Service"
+description: "Both conditions produced 0 violations when extending a conforming hexagonal service. The existing architecture is sufficient context — the guide adds no measurable improvement."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+When the existing codebase is already well-structured, does the guide still matter? On a conforming hexagonal service, both conditions — with and without the guide — produced 0 violations. The existing architecture constrains the agent's output.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number">0</span>
+    <span class="exp-stat-label">violations — both conditions</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number small">null</span>
+    <span class="exp-stat-label">guide had no effect</span>
+  </div>
+</div>
+
+## What the agent produced
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+0 violations         ✓      0 violations          ✓
+hexagonal shape      ✓      hexagonal shape        ✓
+archway check: PASS         archway check: PASS
+```
+
+Both conditions generated 5 files extending the existing orders-service with cancellation logic in the correct layers.
+
+## Metrics
+
+| | Without guide | With guide |
+|---|---|---|
+| Violations | 0 | 0 |
+| archway check | pass | pass |
+| Hexagonal shape | true | true |
+| Packages | adapter, cmd, domain, port, service | adapter, cmd, domain, port, service |
+| Files generated | 5 | 5 |
+| Input tokens | 3 | 4 |
+| Cache tokens | 0 | **42,708** |
+| Output tokens | 2,819 | 3,179 |
+
+## Finding
+
+**Null result. On a conforming codebase, the guide adds nothing measurable.**
+
+The agent follows the patterns it finds in the embedded fixture — hexagonal structure, correct layer boundaries, existing naming conventions. The existing code is the context. The guide is redundant when the codebase already teaches the agent what it needs to know.
+
+This constrasts sharply with greenfield experiments (EXP-01, EXP-02) where there's no existing code to learn from. The guide's value is highest when the agent has no architectural reference — a new service, or a codebase with mixed patterns.
+
+<Aside type="note">
+n=1. Valid result — fixture was correctly embedded (confirmed by 42,708 cache tokens in the test condition). Previous 2026-03-15 runs were invalid due to fixture not being embedded.
+</Aside>
+
+## Setup
+
+- **Task:** Add order cancellation to an existing conforming hexagonal orders service
+- **Agent:** claude-sonnet-4-6
+- **Fixture:** orders-service (hexagonal, conforming) — Mode B, embedded
+- **Runs:** 1 per condition
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-04)
+
+[→ EXP-05: Does the prompt even matter?](/experiments/exp-05/)

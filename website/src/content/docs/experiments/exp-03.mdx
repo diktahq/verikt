@@ -1,0 +1,97 @@
+---
+title: "EXP-03 — Build Me a Job Runner"
+description: Architecture violations dropped from [6,8,7] to [1,1,1] with the guide. Anti-pattern NEVER rules had no effect when the task explicitly required the pattern.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The job runner task ("run up to 3 concurrently") pulls agents toward naked goroutines and global state — exactly the patterns the guide prohibits. This experiment tests whether NEVER rules hold when the task itself requires the anti-pattern.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number small">[6,8,7]→[1,1,1]</span>
+    <span class="exp-stat-label">arch violations</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number small">unchanged</span>
+    <span class="exp-stat-label">anti-pattern violations</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**Architecture violations across 3 runs**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+Run 1: 6 arch violations    Run 1: 1 arch violation
+Run 2: 8 arch violations    Run 2: 1 arch violation
+Run 3: 7 arch violations    Run 3: 1 arch violation
+```
+
+**Anti-pattern violations across 3 runs**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+~3 AP per run               ~3 AP per run
+(unchanged)                 (unchanged)
+```
+
+**Capabilities wired**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+(agent's discretion)        http-api      ✓ wired
+                            platform      ✓ wired
+                            bootstrap     ✓ wired
+                            health        ⚠ missing
+                            validation    ⚠ missing
+```
+
+**Violations**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+arch violations: 6–8 ✗      arch violations: 1    ~ partial
+naked_goroutine      ✗      naked_goroutine        ✗ (task requires it)
+archway check: FAIL         archway check: FAIL
+```
+
+<Aside type="note">
+The task prompt says "run up to 3 jobs concurrently." The agent produces goroutines because the task demands it — no NEVER rule overrides an explicit task requirement.
+</Aside>
+
+## Metrics
+
+| | Without guide | With guide |
+|---|---|---|
+| Arch violations | [6, 8, 7] | **[1, 1, 1]** |
+| Anti-pattern violations | ~3/run | ~3/run |
+| Pass rate | 0/3 | 0/3 |
+
+## Finding
+
+Two findings, not one.
+
+**Architecture violations: the guide works.** [6,8,7] → [1,1,1] across all 3 runs — consistent improvement, not a fluke.
+
+**Anti-pattern violations: NEVER rules are text hints, not enforcement.** When the task explicitly requires a pattern the guide prohibits, the task wins. The agent produces goroutines because you asked for concurrency.
+
+Enforcement via `archway check` in the CI feedback loop is the only reliable prevention for task-driven anti-patterns. The guide prevents architectural drift. It cannot override what the task demands.
+
+## Setup
+
+- **Task:** Build a job runner in Go — processes jobs, runs up to 3 concurrently
+- **Agent:** claude-sonnet-4-6
+- **Runs:** 3 per condition
+- **Fixture:** job-runner-stub (Mode A — greenfield)
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-03)
+
+[→ EXP-04: Does it hold when adding to an existing service?](/experiments/exp-04/)

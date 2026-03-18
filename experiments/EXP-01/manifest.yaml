@@ -1,0 +1,23 @@
+id: EXP-01
+name: "Same task, different architecture"
+use_case: "Same task, different architecture"
+hypothesis: >
+  Without guide, Claude produces flat structure with architecture violations.
+  With guide, it produces hexagonal structure with zero violations.
+  Guide is served from prompt cache — zero fresh token overhead.
+type: greenfield
+fixture: ~
+fixture_delivery: none
+tool_access: false
+runs: 3
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: violations_arch
+  secondary: [violations_total, passed, hexagonal_shape]
+notes: >
+  Original experiment. Results from 2026-03-13 are valid.
+  EXP-02 repeats this with 3 runs each to measure consistency.

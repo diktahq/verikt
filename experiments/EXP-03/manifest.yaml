@@ -1,0 +1,23 @@
+id: EXP-03
+name: "Build me a job runner"
+use_case: "Build me a job runner"
+hypothesis: >
+  Without guide, agent produces flat cmd/internal structure.
+  With guide, agent produces hexagonal adapter/domain/port/service structure.
+type: greenfield
+fixture: ~
+fixture_delivery: none
+tool_access: false
+runs: 3
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: hexagonal_shape
+  secondary: [violations_arch, violations_total, packages]
+notes: >
+  First run (2026-03-15, n=1): guide reduced violations 6→1 and flipped hexagonal_shape
+  false→true. Not a clean pass — 1 violation remains with guide. Honest result.
+  Needs 2 more runs to satisfy runs=3 requirement.

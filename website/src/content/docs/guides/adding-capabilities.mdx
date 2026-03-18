@@ -1,6 +1,6 @@
 ---
 title: Adding Capabilities
-description: Add new capabilities to an existing Go service with archway add — automatic dependency resolution, conflict detection, and architecture-aware code generation
+description: Add new capabilities to an existing service with archway add — automatic dependency resolution, conflict detection, and architecture-aware code generation
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -13,12 +13,11 @@ The simplest way to add capabilities to an existing project:
 archway add redis
 ```
 
-This will:
-1. Validate the capability exists and check for conflicts
-2. Auto-resolve transitive dependencies
-3. Render new files (skipping any that already exist)
-4. Update your `archway.yaml`
-5. Regenerate AI agent context via `archway guide`
+1. Validates the capability exists and checks for conflicts
+2. Auto-resolves transitive dependencies
+3. Renders new files (skipping any that already exist)
+4. Updates your `archway.yaml`
+5. Regenerates AI agent context via `archway guide`
 
 ### Adding Multiple Capabilities
 

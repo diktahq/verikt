@@ -1,0 +1,222 @@
+=== port/payment_gateway.go ===
+```go
+package port
+
+import "context"
+
+// ChargeInput carries the data required to charge a customer.
+type ChargeInput struct {
+	CustomerID string
+	AmountCents int64
+	OrderID    string
+}
+
+// ChargeResult holds the response from a successful charge.
+type ChargeResult struct {
+	ChargeID string
+}
+
+// PaymentGateway defines the contract for charging customers.
+// The adapter in adapter/payments implements this against the real API.
+type PaymentGateway interface {
+	Charge(ctx context.Context, in ChargeInput) (*ChargeResult, error)
+}
+```
+
+=== adapter/payments/client.go ===
+```go
+package payments
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"github.com/example/orders/port"
+)
+
+const chargeEndpoint = "https://api.payments.example.com/charge"
+
+// Client implements port.PaymentGateway against the payments HTTP API.
+type Client struct {
+	http *http.Client
+}
+
+// NewClient constructs a payments Client using the given HTTP client.
+func NewClient(httpClient *http.Client) port.PaymentGateway {
+	return &Client{http: httpClient}
+}
+
+type chargeRequest struct {
+	CustomerID  string `json:"customer_id"`
+	AmountCents int64  `json:"amount_cents"`
+	OrderID     string `json:"order_id"`
+}
+
+type chargeResponse struct {
+	ChargeID string `json:"charge_id"`
+}
+
+func (c *Client) Charge(ctx context.Context, in port.ChargeInput) (*port.ChargeResult, error) {
+	body, err := json.Marshal(chargeRequest{
+		CustomerID:  in.CustomerID,
+		AmountCents: in.AmountCents,
+		OrderID:     in.OrderID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("payments marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chargeEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("payments build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("payments charge: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("payments charge: unexpected status %d", resp.StatusCode)
+	}
+
+	var result chargeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("payments decode response: %w", err)
+	}
+
+	return &port.ChargeResult{ChargeID: result.ChargeID}, nil
+}
+```
+
+=== service/order_service.go ===
+```go
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+type orderService struct {
+	repo     port.OrderRepository
+	payments port.PaymentGateway
+}
+
+// NewOrderService constructs an OrderService backed by the given repository and payment gateway.
+func NewOrderService(repo port.OrderRepository, payments port.PaymentGateway) port.OrderService {
+	return &orderService{repo: repo, payments: payments}
+}
+
+func (s *orderService) CreateOrder(ctx context.Context, in port.CreateOrderInput) (*domain.Order, error) {
+	order := &domain.Order{
+		ID:         fmt.Sprintf("order-%d", time.Now().UnixNano()),
+		CustomerID: in.CustomerID,
+		TotalCents: in.TotalCents,
+		Status:     domain.StatusPending,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	if err := order.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Save(ctx, order); err != nil {
+		return nil, fmt.Errorf("save order: %w", err)
+	}
+
+	if _, err := s.payments.Charge(ctx, port.ChargeInput{
+		CustomerID:  order.CustomerID,
+		AmountCents: order.TotalCents,
+		OrderID:     order.ID,
+	}); err != nil {
+		return nil, fmt.Errorf("charge customer: %w", err)
+	}
+
+	return order, nil
+}
+
+func (s *orderService) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
+	order, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("find order: %w", err)
+	}
+	return order, nil
+}
+```
+
+=== cmd/orders/main.go ===
+```go
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	adapthttp "github.com/example/orders/adapter/http"
+	"github.com/example/orders/adapter/payments"
+	"github.com/example/orders/adapter/postgres"
+	"github.com/example/orders/service"
+)
+
+func main() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL must be set")
+	}
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	repo := postgres.NewPostgresOrderRepository(db)
+	paymentsClient := payments.NewClient(httpClient)
+	svc := service.NewOrderService(repo, paymentsClient)
+	h := adapthttp.NewHandler(svc)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /orders", h.CreateOrder)
+	mux.HandleFunc("GET /orders/{id}", h.GetOrder)
+
+	addr := ":8080"
+	fmt.Printf("orders service listening on %s\n", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("server: %v", err)
+	}
+}
+```
+
+---
+
+=== RECOMMENDATIONS ===
+
+**circuit-breaker** — The payments client is now a hard dependency in the create-order path. If the payments API slows down or starts returning 500s, every `POST /orders` will block until the context times out, exhausting your goroutine pool and taking down the service with it. A circuit breaker trips after N failures and fast-fails callers, giving the upstream time to recover and protecting your service from cascade failure.
+
+**retry** — Transient network errors happen. Without retry + exponential backoff, a single dropped connection to the payments API returns a 500 to the customer. Pair this with idempotency (below) — retry without idempotency on a payment endpoint means double-charges.
+
+**idempotency** — Right now, if a client retries `POST /orders` after a timeout, you create a second order and issue a second charge against the same customer. You persist the order before charging, so a crash between those two steps leaves an unpaid order in the database. An idempotency key (client-supplied, stored with the order) makes the endpoint safe to retry and gives you a recovery path for the persist-before-charge gap.
+
+**audit-log** — You're charging money. Every charge attempt, success, and failure needs an append-only record: who, how much, when, what the payments API returned. This is non-negotiable for dispute resolution, compliance, and debugging production incidents. The current code loses all of that on the wire.
+
+**timeout** — The `http.Client` has a 10-second timeout, but there's no context deadline on the inbound handler. A slow client can hold a connection open indefinitely. Add a timeout middleware at the HTTP layer so the payments call and DB write are bounded end-to-end, not just per-outbound-hop.
+
+**observability** — You now have two I/O operations per request (DB + payments API). Without distributed tracing and structured logging, debugging a "charge succeeded but order shows pending" incident in production means reading raw logs with no correlation between the two calls. At minimum: request-id propagation through context, structured log fields on every external call result, and latency metrics on the payments adapter.
+
+**graceful** — If the process is killed mid-charge, in-flight requests are dropped without completing. Graceful shutdown drains in-flight handlers before exit, reducing the window where you've persisted an order but not yet charged for it.

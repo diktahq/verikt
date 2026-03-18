@@ -1,0 +1,343 @@
+=== domain/discount.go ===
+```go
+package domain
+
+import "errors"
+
+var ErrDiscountNotFound = errors.New("discount not found")
+
+type Discount struct {
+	Code       string
+	Percentage int
+}
+```
+
+=== domain/order.go ===
+```go
+package domain
+
+import (
+	"errors"
+	"time"
+)
+
+type OrderStatus string
+
+const (
+	StatusPending   OrderStatus = "pending"
+	StatusConfirmed OrderStatus = "confirmed"
+	StatusShipped   OrderStatus = "shipped"
+	StatusCancelled OrderStatus = "cancelled"
+)
+
+var ErrOrderNotFound = errors.New("order not found")
+var ErrInvalidOrder = errors.New("invalid order")
+
+type Order struct {
+	ID              string
+	CustomerID      string
+	TotalCents      int64
+	Status          OrderStatus
+	CreatedAt       time.Time
+	DiscountCode    string
+	DiscountPercent int
+}
+
+func (o *Order) Validate() error {
+	if o.CustomerID == "" {
+		return errors.Join(ErrInvalidOrder, errors.New("customer ID must not be empty"))
+	}
+	if o.TotalCents <= 0 {
+		return errors.Join(ErrInvalidOrder, errors.New("total must be greater than zero"))
+	}
+	return nil
+}
+```
+
+=== port/discount_repository.go ===
+```go
+package port
+
+import (
+	"context"
+
+	"github.com/example/orders/domain"
+)
+
+type DiscountRepository interface {
+	FindByCode(ctx context.Context, code string) (*domain.Discount, error)
+}
+```
+
+=== port/order_service.go ===
+```go
+package port
+
+import (
+	"context"
+
+	"github.com/example/orders/domain"
+)
+
+type CreateOrderInput struct {
+	CustomerID   string
+	TotalCents   int64
+	DiscountCode string
+}
+
+type OrderService interface {
+	CreateOrder(ctx context.Context, in CreateOrderInput) (*domain.Order, error)
+	GetOrder(ctx context.Context, id string) (*domain.Order, error)
+}
+```
+
+=== service/order_service.go ===
+```go
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+type orderService struct {
+	repo         port.OrderRepository
+	discountRepo port.DiscountRepository
+}
+
+func NewOrderService(repo port.OrderRepository, discountRepo port.DiscountRepository) port.OrderService {
+	return &orderService{repo: repo, discountRepo: discountRepo}
+}
+
+func (s *orderService) CreateOrder(ctx context.Context, in port.CreateOrderInput) (*domain.Order, error) {
+	order := &domain.Order{
+		ID:         fmt.Sprintf("order-%d", time.Now().UnixNano()),
+		CustomerID: in.CustomerID,
+		TotalCents: in.TotalCents,
+		Status:     domain.StatusPending,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	if in.DiscountCode != "" {
+		discount, err := s.discountRepo.FindByCode(ctx, in.DiscountCode)
+		if err != nil {
+			if errors.Is(err, domain.ErrDiscountNotFound) {
+				return nil, errors.Join(domain.ErrInvalidOrder, domain.ErrDiscountNotFound)
+			}
+			return nil, fmt.Errorf("find discount: %w", err)
+		}
+		order.DiscountCode = discount.Code
+		order.DiscountPercent = discount.Percentage
+		order.TotalCents = order.TotalCents * int64(100-discount.Percentage) / 100
+	}
+
+	if err := order.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Save(ctx, order); err != nil {
+		return nil, fmt.Errorf("save order: %w", err)
+	}
+
+	return order, nil
+}
+
+func (s *orderService) GetOrder(ctx context.Context, id string) (*domain.Order, error) {
+	order, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("find order: %w", err)
+	}
+	return order, nil
+}
+```
+
+=== adapter/postgres/discount_repository.go ===
+```go
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+type PostgresDiscountRepository struct {
+	db *sql.DB
+}
+
+func NewPostgresDiscountRepository(db *sql.DB) port.DiscountRepository {
+	return &PostgresDiscountRepository{db: db}
+}
+
+func (r *PostgresDiscountRepository) FindByCode(ctx context.Context, code string) (*domain.Discount, error) {
+	const q = `SELECT code, percentage FROM discounts WHERE code = $1`
+
+	row := r.db.QueryRowContext(ctx, q, code)
+
+	var d domain.Discount
+	err := row.Scan(&d.Code, &d.Percentage)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrDiscountNotFound
+		}
+		return nil, fmt.Errorf("postgres find discount: %w", err)
+	}
+
+	return &d, nil
+}
+```
+
+=== adapter/http/handler.go ===
+```go
+package http
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/example/orders/domain"
+	"github.com/example/orders/port"
+)
+
+type Handler struct {
+	svc port.OrderService
+}
+
+func NewHandler(svc port.OrderService) *Handler {
+	return &Handler{svc: svc}
+}
+
+type createOrderRequest struct {
+	CustomerID   string `json:"customer_id"`
+	TotalCents   int64  `json:"total_cents"`
+	DiscountCode string `json:"discount_code,omitempty"`
+}
+
+type orderResponse struct {
+	ID              string `json:"id"`
+	CustomerID      string `json:"customer_id"`
+	TotalCents      int64  `json:"total_cents"`
+	Status          string `json:"status"`
+	CreatedAt       string `json:"created_at"`
+	DiscountCode    string `json:"discount_code,omitempty"`
+	DiscountPercent int    `json:"discount_percent,omitempty"`
+}
+
+func toResponse(o *domain.Order) orderResponse {
+	return orderResponse{
+		ID:              o.ID,
+		CustomerID:      o.CustomerID,
+		TotalCents:      o.TotalCents,
+		Status:          string(o.Status),
+		CreatedAt:       o.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		DiscountCode:    o.DiscountCode,
+		DiscountPercent: o.DiscountPercent,
+	}
+}
+
+func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	var req createOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.svc.CreateOrder(r.Context(), port.CreateOrderInput{
+		CustomerID:   req.CustomerID,
+		TotalCents:   req.TotalCents,
+		DiscountCode: req.DiscountCode,
+	})
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidOrder) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(toResponse(order)) //nolint:errcheck
+}
+
+func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing order id", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.svc.GetOrder(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			http.Error(w, "order not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toResponse(order)) //nolint:errcheck
+}
+```
+
+=== cmd/orders/main.go ===
+```go
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	adapthttp "github.com/example/orders/adapter/http"
+	"github.com/example/orders/adapter/postgres"
+	"github.com/example/orders/service"
+)
+
+func main() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL must be set")
+	}
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	orderRepo := postgres.NewPostgresOrderRepository(db)
+	discountRepo := postgres.NewPostgresDiscountRepository(db)
+	svc := service.NewOrderService(orderRepo, discountRepo)
+	h := adapthttp.NewHandler(svc)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /orders", h.CreateOrder)
+	mux.HandleFunc("GET /orders/{id}", h.GetOrder)
+
+	addr := ":8080"
+	fmt.Printf("orders service listening on %s\n", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("server: %v", err)
+	}
+}
+```
+
+---
+
+One design note: `Validate()` runs after the discount is applied, so `TotalCents` reflects the discounted amount. A 100% discount on any order will fail validation (`total must be greater than zero`). If 100% discounts are a valid use case, move `Validate()` to run against the original amount before applying the discount.

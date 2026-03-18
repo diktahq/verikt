@@ -1,0 +1,54 @@
+---
+interface Props {
+  label?: string;
+  cite: string;
+}
+
+const { label, cite } = Astro.props;
+---
+
+<div class="quote-card not-content">
+  {label && <div class="label">{label}</div>}
+  <blockquote>
+    <slot />
+    <cite>{cite}</cite>
+  </blockquote>
+</div>
+
+<style>
+  .quote-card {
+    background: var(--sl-color-gray-6, #1E1D1B);
+    border: 1px solid rgba(232, 145, 58, 0.08);
+    border-radius: 0.75rem;
+    padding: 1.75rem;
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--sl-color-accent);
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  blockquote {
+    border-left: 3px solid var(--sl-color-accent);
+    padding-left: 1.25rem;
+    margin: 0;
+    font-style: italic;
+    color: var(--sl-color-gray-2);
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+
+  cite {
+    display: block;
+    margin-top: 0.75rem;
+    font-style: normal;
+    font-size: 0.8rem;
+    color: var(--sl-color-gray-3);
+  }
+</style>

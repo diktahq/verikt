@@ -62,7 +62,7 @@ scope:
   - "**/*.go"
 `)
 
-		result, err := RunRules(rulesDir, dir, nil)
+		result, err := RunRules(rulesDir, dir, nil, nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, 1, result.StaleRuleCount(), "stale-rule should be stale")
@@ -87,7 +87,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	// Unknown detector is caught at validation time.
@@ -121,7 +121,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	// Unknown engine is caught at validation time — marked invalid.
@@ -220,7 +220,7 @@ scope:
   - "**/*.rs"
 `)
 
-	result, err := RunRules(rulesDir, dir, nil)
+	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, result.ValidRuleCount(), "2 valid rules (grep + ast)")
@@ -276,7 +276,7 @@ scope:
 
 	// This should not return a top-level error — errors from individual
 	// rules are captured in statuses.
-	result, err := RunRules(rulesDir, projectDir, nil)
+	result, err := RunRules(rulesDir, projectDir, nil, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 }
@@ -303,7 +303,7 @@ scope:
   - "**/*.go"
 `)
 
-	result, err := RunRules(rulesDir, projectDir, nil)
+	result, err := RunRules(rulesDir, projectDir, nil, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 }
