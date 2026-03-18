@@ -1,0 +1,47 @@
+---
+interface Props {
+  command: string;
+}
+
+const { command } = Astro.props;
+---
+
+<div class="solution-card not-content">
+  <div class="card-title"><code>{command}</code></div>
+  <p><slot /></p>
+</div>
+
+<style>
+  .solution-card {
+    background: var(--sl-color-gray-6, #1E1D1B);
+    border: 1px solid rgba(232, 145, 58, 0.08);
+    border-radius: 0.75rem;
+    padding: 1.75rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .solution-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px var(--archway-glow, rgba(232, 145, 58, 0.08));
+  }
+
+  .card-title {
+    margin-bottom: 0.5rem;
+  }
+
+  code {
+    font-family: var(--sl-font-mono);
+    font-size: 0.95rem;
+    color: var(--sl-color-accent);
+    font-weight: 500;
+  }
+
+  p {
+    font-size: 0.9rem;
+    color: var(--sl-color-gray-2);
+    margin: 0;
+    line-height: 1.6;
+  }
+</style>

@@ -1,0 +1,46 @@
+---
+interface Props {
+  agent: string;
+  file: string;
+}
+
+const { agent, file } = Astro.props;
+---
+
+<div class="agent-card">
+  <span class="agent-name">{agent}</span>
+  <code class="agent-file">{file}</code>
+</div>
+
+<style is:global>
+  .agent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.875rem 1rem 0.875rem 1.125rem;
+    background: var(--sl-color-gray-6);
+    border-left: 2px solid var(--sl-color-accent);
+    border-radius: 0 2px 2px 0;
+    box-sizing: border-box;
+    align-self: stretch;
+  }
+
+  .agent-card .agent-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--sl-color-white);
+    letter-spacing: 0.01em;
+  }
+
+  .agent-card .agent-file {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--sl-color-accent);
+    background: transparent;
+    padding: 0;
+    border: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>

@@ -56,9 +56,8 @@ func TestGenerateRules_HexagonalComponentDeps(t *testing.T) {
 	require.True(t, ok, "expected arch-service-isolation rule")
 	assert.NotContains(t, serviceRule.Pattern, "domain")
 	assert.NotContains(t, serviceRule.Pattern, "ports")
-	// Should contain adapters and platform as forbidden.
+	// Should contain adapters as forbidden (platform removed from default components).
 	assert.Contains(t, serviceRule.Pattern, "adapters")
-	assert.Contains(t, serviceRule.Pattern, "platform")
 }
 
 func TestGenerateRules_PostgresCapability(t *testing.T) {

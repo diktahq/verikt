@@ -1,0 +1,108 @@
+---
+// Context quality vs. context size — inverted U curve
+// Shows performance peak at optimal context, degradation at both extremes
+---
+
+<div class="chart-wrap not-content" aria-label="Chart showing agent output quality peaks at optimal context size and degrades with too little or too much context">
+  <svg viewBox="0 0 600 300" xmlns="http://www.w3.org/2000/svg" class="chart-svg">
+
+    <!-- Grid lines -->
+    <line x1="60" y1="20" x2="60" y2="240" stroke="currentColor" stroke-opacity="0.1" stroke-width="1"/>
+    <line x1="60" y1="240" x2="560" y2="240" stroke="currentColor" stroke-opacity="0.1" stroke-width="1"/>
+    <line x1="60" y1="180" x2="560" y2="180" stroke="currentColor" stroke-opacity="0.06" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="60" y1="120" x2="560" y2="120" stroke="currentColor" stroke-opacity="0.06" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="60" y1="60" x2="560" y2="60" stroke="currentColor" stroke-opacity="0.06" stroke-width="1" stroke-dasharray="4,4"/>
+
+    <!-- Curve path: rises from left, peaks around x=280, falls off to right -->
+    <path
+      d="M 80,210 C 120,195 160,140 200,90 C 230,55 260,38 290,36 C 320,34 350,48 380,75 C 420,115 460,165 520,210"
+      fill="none"
+      stroke="#E8913A"
+      stroke-width="2.5"
+      stroke-linecap="round"
+    />
+
+    <!-- Shaded area under curve -->
+    <path
+      d="M 80,210 C 120,195 160,140 200,90 C 230,55 260,38 290,36 C 320,34 350,48 380,75 C 420,115 460,165 520,210 L 520,240 L 80,240 Z"
+      fill="#E8913A"
+      fill-opacity="0.06"
+    />
+
+    <!-- Optimal zone vertical band -->
+    <rect x="230" y="20" width="120" height="220" fill="#E8913A" fill-opacity="0.04" rx="2"/>
+    <line x1="230" y1="20" x2="230" y2="240" stroke="#E8913A" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,3"/>
+    <line x1="350" y1="20" x2="350" y2="240" stroke="#E8913A" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,3"/>
+
+    <!-- Peak dot -->
+    <circle cx="290" cy="36" r="4" fill="#E8913A"/>
+
+    <!-- Axis labels -->
+    <text x="310" y="255" text-anchor="middle" class="chart-label axis-title" font-size="13">Context size (tokens)</text>
+    <text x="22" y="140" text-anchor="middle" class="chart-label axis-title" font-size="13" transform="rotate(-90, 22, 140)">Output quality</text>
+
+    <!-- Zone labels -->
+    <text x="145" y="172" text-anchor="middle" class="chart-label zone-label" font-size="12">Too little</text>
+    <text x="145" y="188" text-anchor="middle" class="chart-label zone-label" font-size="12">context</text>
+
+    <text x="290" y="16" text-anchor="middle" class="chart-label optimal-label" font-size="12">Optimal</text>
+
+    <text x="455" y="152" text-anchor="middle" class="chart-label zone-label" font-size="12">Context noise</text>
+    <text x="455" y="168" text-anchor="middle" class="chart-label zone-label" font-size="12">degrades output</text>
+
+    <!-- archway marker -->
+    <circle cx="290" cy="36" r="8" fill="none" stroke="#E8913A" stroke-width="1.5" stroke-opacity="0.5"/>
+    <text x="332" y="28" class="chart-label archway-label" font-size="12">archway guide</text>
+    <text x="332" y="44" class="chart-label archway-label" font-size="12">targets this zone</text>
+    <line x1="318" y1="36" x2="298" y2="36" stroke="#E8913A" stroke-width="1" stroke-opacity="0.5"/>
+
+  </svg>
+  <p class="chart-caption">Agent output quality as a function of context size. Performance peaks at optimal context — too little leaves the agent guessing, too much introduces noise that degrades response quality.</p>
+</div>
+
+<style>
+  .chart-wrap {
+    margin: 1.5rem 0;
+    max-width: 480px;
+    border: 1px solid rgba(232, 145, 58, 0.1);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    background: var(--sl-color-gray-6, #1E1D1B);
+  }
+
+  .chart-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .chart-label {
+    fill: var(--sl-color-gray-2, #A8A29E);
+    font-family: system-ui, sans-serif;
+  }
+
+  .axis-title {
+    fill: var(--sl-color-gray-3, #78716C);
+  }
+
+  .zone-label {
+    fill: var(--sl-color-gray-3, #78716C);
+  }
+
+  .optimal-label {
+    fill: #E8913A;
+    font-weight: 600;
+  }
+
+  .archway-label {
+    fill: #E8913A;
+  }
+
+  .chart-caption {
+    margin: 1rem 0 0;
+    font-size: 0.8rem;
+    color: var(--sl-color-gray-3);
+    text-align: center;
+    line-height: 1.5;
+  }
+</style>

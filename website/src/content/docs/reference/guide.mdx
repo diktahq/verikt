@@ -1,6 +1,6 @@
 ---
 title: archway guide
-description: Generate architecture context for AI coding agents with archway guide — feed Claude, Cursor, Copilot, and Windsurf your Go service's dependency rules
+description: Generate architecture context for AI coding agents with archway guide — feed Claude, Cursor, Copilot, and Windsurf your service's dependency rules
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -19,7 +19,7 @@ archway guide [flags]
 
 | Flag | Description | Default |
 |------|------------|---------|
-| `--target` | AI tool target (`claude`, `cursor`, `copilot`, `windsurf`, `generic`) | `generic` |
+| `--target` | AI tool target (`all`, `claude`, `cursor`, `copilot`, `windsurf`) | `all` |
 | `--path` | Path to project | `.` |
 | `--output` | Output format (`terminal`, `file`) | `terminal` |
 
@@ -90,10 +90,10 @@ Run `archway guide` in your project root — it reads `archway.yaml` to generate
 
 ## Supported AI Tools
 
-| Tool | Target Flag | Output Format |
-|------|------------|---------------|
-| Claude Code | `--target claude` | CLAUDE.md rules |
-| Cursor | `--target cursor` | .cursorrules |
-| GitHub Copilot | `--target copilot` | Generic context |
-| Windsurf | `--target windsurf` | Generic context |
-| Any | `--target generic` | Plain text |
+| Tool | Target Flag | Output File |
+|------|------------|-------------|
+| All tools | `--target all` (default) | All files below |
+| Claude Code | `--target claude` | `.claude/rules/archway.md` |
+| Cursor | `--target cursor` | `.cursorrules` |
+| GitHub Copilot | `--target copilot` | `.github/copilot-instructions.md` |
+| Windsurf | `--target windsurf` | `.windsurfrules` |

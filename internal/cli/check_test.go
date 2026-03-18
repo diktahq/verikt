@@ -475,3 +475,59 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
+
+func TestFilterCheckerResultByFiles(t *testing.T) {
+	result := &checker.CheckResult{
+		DependencyViolations: []checker.Violation{
+			{File: "domain/order.go", Message: "bad import"},
+			{File: "adapter/http/handler.go", Message: "wrong dep"},
+			{File: "service/order.go", Message: "circular"},
+		},
+		FunctionViolations: []checker.Violation{
+			{File: "domain/order.go", Message: "too long"},
+			{File: "port/repo.go", Message: "too many params"},
+		},
+		AntiPatternViolations: []checker.AntiPattern{
+			{File: "adapter/http/handler.go", Message: "naked goroutine"},
+			{File: "cmd/main.go", Message: "init abuse"},
+		},
+	}
+
+	filtered := filterCheckerResultByFiles(result, []string{"domain/order.go", "adapter/http/handler.go"})
+
+	assert.Len(t, filtered.DependencyViolations, 2, "should keep domain + adapter dep violations")
+	assert.Len(t, filtered.FunctionViolations, 1, "should keep only domain function violation")
+	assert.Len(t, filtered.AntiPatternViolations, 1, "should keep only adapter anti-pattern")
+
+	assert.Equal(t, "domain/order.go", filtered.DependencyViolations[0].File)
+	assert.Equal(t, "adapter/http/handler.go", filtered.DependencyViolations[1].File)
+	assert.Equal(t, "domain/order.go", filtered.FunctionViolations[0].File)
+	assert.Equal(t, "adapter/http/handler.go", filtered.AntiPatternViolations[0].File)
+}
+
+func TestFilterCheckerResultByFiles_EmptyDiff(t *testing.T) {
+	result := &checker.CheckResult{
+		DependencyViolations: []checker.Violation{
+			{File: "domain/order.go", Message: "bad import"},
+		},
+	}
+
+	filtered := filterCheckerResultByFiles(result, nil)
+
+	assert.Empty(t, filtered.DependencyViolations)
+}
+
+func TestFilterRuleResultByFiles(t *testing.T) {
+	result := &rules.RunResult{
+		Violations: []rules.RuleViolation{
+			{File: "domain/order.go", RuleID: "cap-001"},
+			{File: "service/svc.go", RuleID: "cap-002"},
+			{File: "adapter/pg/repo.go", RuleID: "cap-003"},
+		},
+	}
+
+	filtered := filterRuleResultByFiles(result, []string{"service/svc.go"})
+
+	assert.Len(t, filtered.Violations, 1)
+	assert.Equal(t, "service/svc.go", filtered.Violations[0].File)
+}

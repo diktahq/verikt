@@ -1,0 +1,23 @@
+**`idempotency` — 🔴 MUST add, immediately.**
+`CreateOrder` now calls an external payment gateway. If the client retries on a network timeout, you'll double-charge the customer. The payment adapter needs to send an idempotency key (e.g. the order ID) as a request header so the payment provider deduplicates on its end. You also need an idempotency layer on your own `POST /orders` endpoint so that duplicate HTTP requests from the caller don't create two orders in the first place.
+
+**`circuit-breaker` — 🔴 MUST add.**
+The payment gateway is now in the critical path of every order creation. If it slows down or returns errors, every goroutine handling a `POST /orders` request will block until the `10s` timeout fires. Under load, this exhausts your connection pool and takes down the service. A circuit breaker trips after a failure threshold and fails fast, keeping the service responsive while the dependency recovers.
+
+**`retry` — 🟡 SHOULD add, paired with idempotency.**
+Transient network errors to the payment API are inevitable. Without retry, a single dropped packet causes a failed order. With retry (exponential backoff + jitter) and an idempotency key on the request, transient failures are invisible to the caller. Don't add retry without idempotency — you already have the right primitive (order ID) to use as the key.
+
+**`audit-log` — 🔴 MUST add.**
+This service processes financial transactions. Every charge attempt — successful or failed — needs an append-only record: who requested it, what the outcome was, and what the payment provider returned. Without this, you cannot reconcile disputes, satisfy compliance requirements, or debug billing complaints in production.
+
+**`migrations` — 🟡 SHOULD add.**
+The schema just changed: `transaction_id` was added to the `orders` table. There's currently no versioned record of that change, which means deployments are manual, rollbacks are risky, and onboarding a new environment requires tribal knowledge. Add a migrations tool (Goose or Atlas) and version every schema change as a file.
+
+**`uuid` — 🟡 SHOULD add.**
+Order IDs are currently `fmt.Sprintf("order-%d", time.Now().UnixNano())` — not unique under concurrent creation and leaks ordering information. Switch to UUIDv7: time-sortable (preserves B-tree locality), globally unique, and safe to expose externally. The transaction ID from the payment provider is already stored; your own IDs should be equally principled.
+
+**`request-id` — 🟡 SHOULD add.**
+When a payment fails, correlating the inbound HTTP request to the outbound payment API call and the database row requires a shared ID in every log line. Without propagating a request ID from the incoming request through the service and into the payment adapter's outbound headers, debugging a failed charge in production means diffing timestamps across three systems.
+
+**`graceful` — 🟡 SHOULD add.**
+`http.ListenAndServe` returns immediately on `SIGTERM`. Any in-flight `CreateOrder` that has already written to the database but not yet received the payment response will leave a `pending` order with no transaction ID — permanently stuck. Graceful shutdown gives in-flight requests time to complete before the process exits.

@@ -32,7 +32,7 @@ func TestBuildContent_Hexagonal(t *testing.T) {
 	assert.Contains(t, content, "domain")
 	assert.Contains(t, content, "Dependencies: none (innermost layer)")
 	assert.Contains(t, content, "## Anti-patterns to Avoid")
-	assert.Contains(t, content, "NEVER import infrastructure packages from `domain/`")
+	assert.Contains(t, content, "NEVER import infrastructure from `domain/`")
 	assert.Contains(t, content, "http-api")
 	assert.Contains(t, content, "mysql")
 }
@@ -55,9 +55,9 @@ func TestBuildContent_Layered(t *testing.T) {
 	assert.Contains(t, content, "## Layer Rules")
 	assert.Contains(t, content, "Dependencies: none (innermost layer)")
 	assert.Contains(t, content, "## Anti-patterns to Avoid")
-	assert.Contains(t, content, "NEVER let handler bypass service and call repository directly")
-	assert.Contains(t, content, "NEVER put business logic in `internal/handler/`")
-	assert.NotContains(t, content, "NEVER import infrastructure packages from `domain/`")
+	assert.Contains(t, content, "NEVER let handler call repository directly")
+	assert.Contains(t, content, "NEVER put business logic in `handler/`")
+	assert.NotContains(t, content, "NEVER import infrastructure from `domain/`")
 }
 
 func TestBuildContent_LayeredAddingCode(t *testing.T) {
@@ -97,9 +97,9 @@ func TestBuildContent_Clean(t *testing.T) {
 	assert.Contains(t, content, "infrastructure")
 	assert.Contains(t, content, "Dependencies: none (innermost layer)")
 	assert.Contains(t, content, "## Anti-patterns to Avoid")
-	assert.Contains(t, content, "NEVER let `internal/entity/` import from usecase")
-	assert.Contains(t, content, "NEVER let `internal/usecase/` import from infrastructure")
-	assert.NotContains(t, content, "NEVER import infrastructure packages from `domain/`")
+	assert.Contains(t, content, "NEVER let `entity/` import from usecase")
+	assert.Contains(t, content, "NEVER let `usecase/` import from infrastructure")
+	assert.NotContains(t, content, "NEVER import infrastructure from `domain/`")
 }
 
 func TestBuildContent_CleanAddingCode(t *testing.T) {
@@ -129,7 +129,7 @@ func TestBuildContent_Flat(t *testing.T) {
 	assert.Contains(t, content, "Architecture: flat")
 	assert.Contains(t, content, "No layer restrictions")
 	assert.Contains(t, content, "No dependency restrictions")
-	assert.NotContains(t, content, "NEVER import infrastructure packages from `domain/`")
+	assert.NotContains(t, content, "NEVER import infrastructure from `domain/`")
 }
 
 func TestMergeSentinels_NoExistingFile(t *testing.T) {
@@ -596,10 +596,10 @@ func TestGuideTokenCompliance(t *testing.T) {
 	words := len(strings.Fields(content))
 	approxTokens := int(float64(words) * 1.3)
 
-	// Guide should stay under 2800 tokens (INV-001 upper bound for rules files is 1500,
-	// but guide is a generated composite with mode instructions and AI interview protocol
-	// so we allow up to 2800).
-	if approxTokens > 2800 {
+	// Guide should stay under 2900 tokens (INV-001 upper bound for rules files is 1500,
+	// but guide is a generated composite with mode instructions, AI interview protocol,
+	// and codebase mapping table — so we allow up to 2900).
+	if approxTokens > 2900 {
 		t.Errorf("guide output too large: ~%d tokens (%d words); consider trimming", approxTokens, words)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dcsg/archway/internal/config"
 	"github.com/dcsg/archway/internal/scaffold"
 )
 
@@ -350,18 +351,18 @@ func writeDesignQuestions(b *strings.Builder) {
 
 // writeWarnings writes context-specific capability interaction warnings based on installed caps.
 // Uses the same 🔴/🟡 severity format as writeCriticalInteractionWarnings.
-func writeWarnings(b *strings.Builder, installedCaps []string) {
+func writeWarnings(b *strings.Builder, installedCaps []string, overrides config.SeverityOverrides) {
 	warnings := scaffold.CapabilityWarnings(installedCaps)
 	if len(warnings) == 0 {
 		return
 	}
 
-	var must, should []string
+	var must, should []scaffold.CapabilityWarning
 	for _, w := range warnings {
 		if w.Critical {
-			must = append(must, w.Message)
+			must = append(must, w)
 		} else {
-			should = append(should, w.Message)
+			should = append(should, w)
 		}
 	}
 
@@ -370,16 +371,52 @@ func writeWarnings(b *strings.Builder, installedCaps []string) {
 	if len(must) > 0 {
 		b.WriteString("### 🔴 MUST\n\n")
 		for _, w := range must {
-			fmt.Fprintf(b, "- %s\n", w)
+			fmt.Fprintf(b, "- %s\n", w.Message)
+			writeOverrideLines(b, overrides, w.Key)
 		}
 		b.WriteString("\n")
 	}
 	if len(should) > 0 {
 		b.WriteString("### 🟡 SHOULD\n\n")
 		for _, w := range should {
-			fmt.Fprintf(b, "- %s\n", w)
+			fmt.Fprintf(b, "- %s\n", w.Message)
+			writeOverrideLines(b, overrides, w.Key)
 		}
 		b.WriteString("\n")
+	}
+}
+
+// writeOverrideLines appends compact path-qualified severity lines under a warning.
+// Each line shows: severity icon + "in `<glob>`" + " — " + reason.
+// Only emits lines when the override key has entries in overrides.
+func writeOverrideLines(b *strings.Builder, overrides config.SeverityOverrides, key string) {
+	entries, ok := overrides[key]
+	if !ok || len(entries) == 0 {
+		return
+	}
+	for _, e := range entries {
+		icon := severityIcon(e.Severity)
+		if len(e.Paths) == 0 {
+			fmt.Fprintf(b, "  - %s (all paths) — %s\n", icon, e.Reason)
+		} else {
+			for _, p := range e.Paths {
+				fmt.Fprintf(b, "  - %s in `%s` — %s\n", icon, p, e.Reason)
+			}
+		}
+	}
+}
+
+// severityIcon returns the emoji icon for a severity level.
+func severityIcon(severity string) string {
+	switch severity {
+	case "must":
+		return "🔴 MUST"
+	case "should":
+		return "🟡 SHOULD"
+	case "ignore":
+		return "⚪ IGNORE"
+	default:
+		return severity
 	}
 }
 

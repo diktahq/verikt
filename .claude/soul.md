@@ -2,7 +2,7 @@
 
 ## Tagline
 
-Architecture-aware service composer and enforcer.
+The architecture layer for agentic engineering.
 
 ## Vision
 
@@ -22,7 +22,7 @@ Give developers the tools to declare their architecture, compose services from p
 
 ## What This Is
 
-Architecture-aware service composer and enforcer. Scaffolds production-ready services by composing architecture patterns (hexagonal, flat) with capability modules (http-api, grpc, mysql, redis, kafka, etc.), generating both code AND architectural DNA (archway.yaml). Proactively feeds AI agents with architectural context via `archway guide`, so agents write correct code from the first line. Standalone CLI: `archway guide`, `archway new`, `archway check`, `archway analyze`, `archway init`.
+The architecture layer for agentic engineering. Feeds AI agents architectural context before they write the first line (`archway guide`). Scaffolds production-ready services from architecture patterns and capability modules (`archway new`). Detects what's in any existing codebase (`archway analyze`). Enforces structural rules in CI with 11 AST-based detectors (`archway check`). The gap between intended architecture and actual architecture is zero.
 
 ## Product Pillars
 
@@ -67,4 +67,4 @@ Active development. v1 CLI ships with composition-based scaffolding (`archway ne
 ---
 
 *Initialized: 2026-02-14*
-*Updated: 2026-03-09 — added vision, mission, core beliefs, product pillars*
+*Updated: 2026-03-15 — updated tagline and What This Is to "architecture layer for agentic engineering" positioning*

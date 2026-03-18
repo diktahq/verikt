@@ -1,0 +1,79 @@
+---
+title: "EXP-02 — Three Engineers, One Standard"
+description: The guide produced zero variance across 3 runs. Without it — different violations every time. 22.2× variance reduction.
+---
+
+EXP-01 proved the guide changes the outcome in a single run. EXP-02 proves that change is stable. Same task, 3 runs each, measuring whether the guide produces consistent output or just gets lucky once.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number">22.2×</span>
+    <span class="exp-stat-label">variance reduction</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">3/3</span>
+    <span class="exp-stat-label">runs passed with guide</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">0/3</span>
+    <span class="exp-stat-label">runs passed without</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**Violations across 3 runs**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+Run 1: 2 violations  ✗      Run 1: 0 violations   ✓ pass
+Run 2: 1 violation   ✗      Run 2: 0 violations   ✓ pass
+Run 3: 1 violation   ✗      Run 3: 0 violations   ✓ pass
+Variance: 0.22              Variance: 0.00
+```
+
+**Capabilities wired**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+(varies by run)             http-api      ✓ consistent
+                            mysql         ✓ consistent
+                            platform      ✓ consistent
+                            bootstrap     ✓ consistent
+```
+
+**Per-run breakdown (without guide)**
+
+```
+       Dep   Fn   Anti-pattern   Arch   Total   Result
+Run 1   0     0        1          1       2      FAIL
+Run 2   0     0        1          0       1      FAIL
+Run 3   0     0        1          0       1      FAIL
+```
+
+The `uuid_v4_as_key` anti-pattern appeared on every control run — the agent reaches for `uuid.New()` non-deterministically. The architecture violation appeared once (run 1) and not again, creating the variance.
+
+## Metrics
+
+| | Without guide | With guide |
+|---|---|---|
+| Violations | [2, 1, 1] | **[0, 0, 0]** |
+| Variance | 0.22 | **0.00** |
+| Pass rate | 0/3 | **3/3** |
+
+**The guide doesn't make agents better on average — it makes them consistently correct.**
+
+## Setup
+
+- **Task:** Same as EXP-01 — build an order management service, free-form
+- **Agent:** claude-sonnet-4-6 via `claude -p --output-format json`
+- **Runs:** 3 per condition
+- **Primary metric:** variance in violation count across runs
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-02)
+
+[→ EXP-03: Does it replicate on a different task?](/experiments/exp-03/)

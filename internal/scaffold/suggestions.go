@@ -67,6 +67,7 @@ func ComputeSuggestions(selected []string) []Suggestion {
 
 // CapabilityWarning represents a potential issue with the selected capability combination.
 type CapabilityWarning struct {
+	Key      string // the triggering capability (ifHas), used as override key
 	Message  string
 	Critical bool // true = 🔴 MUST, false = 🟡 SHOULD
 }
@@ -118,7 +119,7 @@ func CapabilityWarnings(selected []string) []CapabilityWarning {
 			}
 		}
 		if !hasSome {
-			warnings = append(warnings, CapabilityWarning{Message: rule.message, Critical: rule.critical})
+			warnings = append(warnings, CapabilityWarning{Key: rule.ifHas, Message: rule.message, Critical: rule.critical})
 		}
 	}
 	return warnings

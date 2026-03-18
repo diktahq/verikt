@@ -63,6 +63,7 @@ Use archway new to scaffold projects, archway check to validate architecture rul
 		newGuideCommand(opts),
 		newDecideCommand(opts),
 		newVersionCommand(),
+		newSetupCommand(),
 	)
 
 	return cmd

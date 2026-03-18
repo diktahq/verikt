@@ -3,7 +3,7 @@ title: "Hexagonal vs Flat Architecture: Which Go Architecture Should You Use?"
 description: "Compare Hexagonal (Ports & Adapters) and Flat architecture for Go services — when strict layering is worth the overhead and when a single package is enough."
 ---
 
-import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 Both Hexagonal and Flat are supported by archway. They represent opposite ends of the spectrum: flat is a single package with no imposed structure, hexagonal is a fully layered service with strict dependency rules. The choice comes down to whether the thing you're building is a service or a tool.
 
@@ -94,11 +94,5 @@ If you're starting a service and unsure whether it'll grow, start with flat and 
 
 ## Related
 
-<CardGrid>
-  <Card title="Architecture Patterns" icon="right-arrow">
-    [All 4 architectures compared](/concepts/architectures/)
-  </Card>
-  <Card title="Quick Start" icon="rocket">
-    [Scaffold your first service](/getting-started/cli/)
-  </Card>
-</CardGrid>
+- [All 4 architectures explained](/concepts/architectures/)
+- [Scaffold your first service](/getting-started/cli/)

@@ -1,0 +1,34 @@
+language: go
+architecture: hexagonal
+
+components:
+  - name: domain
+    in: [_internal/flag/**, _internal/flagstate/**, ffcontext/**, model/**]
+  - name: ports
+    in: [retriever/**, exporter/**, notifier/**]
+    may_depend_on: [domain]
+  - name: service
+    in: ["*.go"]
+    may_depend_on: [domain, ports]
+  - name: adapters
+    in: [retriever/*retriever/**, exporter/*exporter/**, notifier/*notifier/**]
+    may_depend_on: [domain, ports, service]
+  - name: internal
+    in: [_internal/**]
+    may_depend_on: [domain]
+
+rules:
+  functions:
+    max_lines: 50
+    max_params: 4
+    max_return_values: 3
+
+check:
+  exclude:
+    - cmd/**
+    - examples/**
+    - website/**
+    - testdata/**
+    - testutils/**
+    - openfeature/**
+    - vendor/**

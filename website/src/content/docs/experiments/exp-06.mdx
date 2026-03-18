@@ -1,0 +1,96 @@
+---
+title: "EXP-06 — Someone Else's Codebase"
+description: Guide alone left 4 violations on an unfamiliar brownfield codebase. Guide + codebase mapping eliminated all of them — and cut tokens by 67%.
+---
+
+The previous experiments all used services the agent built from scratch. This one tests what happens on a real, unfamiliar codebase the agent didn't build — go-feature-flag, ~15k LOC of production Go.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number">4→0</span>
+    <span class="exp-stat-label">violations with mapping</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">−67%</span>
+    <span class="exp-stat-label">tokens with mapping</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">−50%</span>
+    <span class="exp-stat-label">agent turns</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**EXP-06d — flagship: guide-only vs guide + codebase mapping**
+
+```
+Guide only                  Guide + codebase mapping
+─────────────────────       ──────────────────────────────
+4 violations         ✗      0 violations          ✓ pass
+baseline tokens             −67% tokens
+baseline turns              −50% turns
+```
+
+**Violations by type (guide-only condition)**
+
+```
+Dependency violations:  present
+Architecture violations: present
+archway check: FAIL
+```
+
+**Capabilities**
+
+```
+Guide only                  Guide + mapping
+─────────────────────       ──────────────────────────────
+rules without context       rules + where things live
+agent explores first        agent acts immediately
+```
+
+## Metrics (EXP-06d, n=1)
+
+| | Guide only | Guide + mapping |
+|---|---|---|
+| Violations | 4 | **0** |
+| archway check | fail | **pass** |
+| Token usage | baseline | **−67%** |
+| Agent turns | baseline | **−50%** |
+
+## Finding
+
+**The guide tells the agent the rules. The mapping tells it where things live.**
+
+Without the map, the agent works in an unfamiliar codebase by exploring — reading files, tracing imports, figuring out the structure before acting. That exploration costs tokens and turns, and the agent still guesses wrong about where to put new code.
+
+With the map, the agent knows the structure before it starts. It acts immediately, and it acts correctly.
+
+Guide alone is insufficient for brownfield work. Guide + mapping eliminates violations and cuts token usage in half.
+
+## Sub-experiments
+
+Four conditions were tested, escalating from stateless to fully agentic:
+
+- **EXP-06a:** Broad stateless prompt, no tool access — null result (expected)
+- **EXP-06b:** Scoped stateless prompt, no tool access — null result (expected)
+- **EXP-06c:** Agentic with tools, guide vs no-guide
+- **EXP-06d:** Agentic with tools, guide+mapping vs guide-only — flagship result above
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="note">
+n=1 on EXP-06d. Needs 2 more runs. Fixture requires go-feature-flag v1.30.0 cloned into `testdata/go-feature-flag/`.
+</Aside>
+
+## Setup
+
+- **Fixture:** go-feature-flag v1.30.0 (~15k LOC production Go)
+- **Agent:** claude-sonnet-4-6 with file tools
+- **Fixture delivery:** tool-access (Mode C — agent reads codebase directly)
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-06)
+
+[→ EXP-07: Does variance reduction hold on feature additions?](/experiments/exp-07/)

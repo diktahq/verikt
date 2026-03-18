@@ -1,0 +1,27 @@
+language: go
+architecture: hexagonal
+capabilities:
+  - http-api
+
+components:
+  - name: domain
+    in: [domain/**]
+  - name: ports
+    in: [port/**]
+    may_depend_on: [domain]
+  - name: service
+    in: [service/**]
+    may_depend_on: [domain, ports]
+  - name: adapters
+    in: [adapter/**]
+    may_depend_on: [domain, ports, service]
+
+rules:
+  functions:
+    max_lines: 50
+    max_params: 4
+    max_return_values: 2
+
+check:
+  exclude:
+    - cmd/**

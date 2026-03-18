@@ -1,0 +1,23 @@
+id: EXP-01
+name: "Three engineers, one standard (consistency)"
+use_case: "Three engineers, one standard"
+hypothesis: >
+  Guide produces zero variance across 3 runs on a feature-addition task.
+  Control produces non-zero variance.
+type: feature-addition
+fixture: orders-service
+fixture_delivery: embedded
+tool_access: false
+runs: 3
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: variance
+  secondary: [violations_total, passed]
+notes: >
+  Previous runs (2026-03-15) used fixture_delivery=none — all 6 runs passed at 0
+  violations because the fixture itself was conforming and agent output was invisible
+  to archway check. Results are invalid. Must rerun with fixture_delivery=embedded.

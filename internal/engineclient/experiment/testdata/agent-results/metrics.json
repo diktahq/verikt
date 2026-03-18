@@ -1,0 +1,43 @@
+{
+  "delta": {
+    "architecture_enforced": true,
+    "compliance_gain_pct": 100,
+    "cost_delta_usd": -0.05618774999999998,
+    "guide_cache_token_overhead": 17220,
+    "hexagonal_shape_with": true,
+    "hexagonal_shape_without": false,
+    "violations_eliminated": 1
+  },
+  "with_guide": {
+    "cache_read_tokens": 17220,
+    "compliance_pct": 100,
+    "cost_usd": 0.09847125000000001,
+    "duration_api_ms": 22255,
+    "duration_ms": 22296,
+    "files_generated": 7,
+    "input_tokens": 3,
+    "output_tokens": 1970,
+    "passed": true,
+    "total_tokens": 19193,
+    "violations_ap": 0,
+    "violations_dep": 0,
+    "violations_fn": 0,
+    "violations_total": 0
+  },
+  "without_guide": {
+    "cache_read_tokens": 0,
+    "compliance_pct": 0,
+    "cost_usd": 0.154659,
+    "duration_api_ms": 28109,
+    "duration_ms": 28137,
+    "files_generated": 9,
+    "input_tokens": 3,
+    "output_tokens": 2791,
+    "passed": false,
+    "total_tokens": 2794,
+    "violations_ap": 1,
+    "violations_dep": 0,
+    "violations_fn": 0,
+    "violations_total": 1
+  }
+}
