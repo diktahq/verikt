@@ -3,7 +3,7 @@ title: "Layered vs Flat Architecture: Which Go Architecture Should You Use?"
 description: "Compare Layered and Flat architecture for Go services — when the handler-service-repository pattern is worth it, and when a single package is the right call."
 ---
 
-import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 Both Layered and Flat architecture are supported by archway. Layered is the classic Go web service structure — handler, service, repository — with enforced dependency direction. Flat is a single package with no imposed organization. The question is whether your project warrants any formal layering at all.
 
@@ -89,11 +89,5 @@ If you're building something that talks to a database and serves HTTP, start wit
 
 ## Related
 
-<CardGrid>
-  <Card title="Architecture Patterns" icon="right-arrow">
-    [All 4 architectures compared](/concepts/architectures/)
-  </Card>
-  <Card title="Quick Start" icon="rocket">
-    [Scaffold your first service](/getting-started/cli/)
-  </Card>
-</CardGrid>
+- [All 4 architectures explained](/concepts/architectures/)
+- [Scaffold your first service](/getting-started/cli/)

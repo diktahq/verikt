@@ -1,0 +1,13 @@
+**circuit-breaker** — The payments client is now a hard dependency in the create-order path. If the payments API slows down or starts returning 500s, every `POST /orders` will block until the context times out, exhausting your goroutine pool and taking down the service with it. A circuit breaker trips after N failures and fast-fails callers, giving the upstream time to recover and protecting your service from cascade failure.
+
+**retry** — Transient network errors happen. Without retry + exponential backoff, a single dropped connection to the payments API returns a 500 to the customer. Pair this with idempotency (below) — retry without idempotency on a payment endpoint means double-charges.
+
+**idempotency** — Right now, if a client retries `POST /orders` after a timeout, you create a second order and issue a second charge against the same customer. You persist the order before charging, so a crash between those two steps leaves an unpaid order in the database. An idempotency key (client-supplied, stored with the order) makes the endpoint safe to retry and gives you a recovery path for the persist-before-charge gap.
+
+**audit-log** — You're charging money. Every charge attempt, success, and failure needs an append-only record: who, how much, when, what the payments API returned. This is non-negotiable for dispute resolution, compliance, and debugging production incidents. The current code loses all of that on the wire.
+
+**timeout** — The `http.Client` has a 10-second timeout, but there's no context deadline on the inbound handler. A slow client can hold a connection open indefinitely. Add a timeout middleware at the HTTP layer so the payments call and DB write are bounded end-to-end, not just per-outbound-hop.
+
+**observability** — You now have two I/O operations per request (DB + payments API). Without distributed tracing and structured logging, debugging a "charge succeeded but order shows pending" incident in production means reading raw logs with no correlation between the two calls. At minimum: request-id propagation through context, structured log fields on every external call result, and latency metrics on the payments adapter.
+
+**graceful** — If the process is killed mid-charge, in-flight requests are dropped without completing. Graceful shutdown drains in-flight handlers before exit, reducing the window where you've persisted an order but not yet charged for it.

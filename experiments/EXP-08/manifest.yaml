@@ -1,0 +1,24 @@
+id: EXP-02
+name: "Build me a job runner (anti-pattern prevention)"
+use_case: "Build me a job runner"
+hypothesis: >
+  The guide's NEVER rules suppress anti-patterns that feel natural in the task context:
+  naked goroutines, global state, SQL concatenation, UUID v4 keys.
+type: greenfield
+fixture: job-runner-stub
+fixture_delivery: none
+tool_access: false
+runs: 3
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: violations_ap
+  secondary: [violations_total, passed]
+notes: >
+  First run (2026-03-15): guide did not eliminate anti-patterns — both conditions
+  produced 9 AP violations total across 3 runs. Architecture violations dropped
+  from [6,8,7] to [1,1,1] with guide. NEVER rules are text hints, not enforcement.
+  The task description ("run up to 3 concurrently") overrides the prohibition.

@@ -1,0 +1,36 @@
+id: EXP-06
+name: "Someone else's codebase"
+use_case: "Someone else's codebase"
+hypothesis: >
+  Guide alone does not help on a large unfamiliar brownfield codebase.
+  Guide + explicit codebase mapping eliminates violations and reduces cost significantly.
+type: brownfield
+fixture: go-feature-flag
+fixture_delivery: tool-access
+tool_access: claude-only
+runs: 3
+sub_experiments:
+  - id: EXP-06a
+    description: "Broad stateless prompt — expected null (no tool access, no output)"
+    fixture_delivery: none
+  - id: EXP-06b
+    description: "Scoped stateless prompt — expected null (no tool access)"
+    fixture_delivery: none
+  - id: EXP-06c
+    description: "Agentic with tools, guide vs no-guide"
+    fixture_delivery: tool-access
+  - id: EXP-06d
+    description: "Agentic with tools, guide+mapping vs guide-only — flagship"
+    fixture_delivery: tool-access
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: violations_total
+  secondary: [violations_dep, violations_fn, passed]
+notes: >
+  Fixture requires go-feature-flag v1.30.0 cloned into testdata/go-feature-flag/.
+  EXP-06d result (2026-03-15, n=1): guide-only=4 violations, guide+mapping=0 violations,
+  cost reduced 67%, turns halved. Mapping is the missing ingredient.

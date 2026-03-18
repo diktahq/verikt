@@ -13,12 +13,25 @@ jobs:
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.x'
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get install -y musl-tools protobuf-compiler
+      - name: Build engine
+        working-directory: engine
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Place engine binary for embed
+        run: |
+          mkdir -p internal/engineclient/bin
+          cp engine/target/x86_64-unknown-linux-musl/release/archway-engine internal/engineclient/bin/archway-engine-linux-amd64
+          chmod +x internal/engineclient/bin/archway-engine-linux-amd64
       - name: Test
-        run: go test ./...
+        run: go test $(go list ./... | grep -v '/experiments/\|/engineclient/experiment$')
       - name: Vet
-        run: go vet ./...
+        run: go vet $(go list ./... | grep -v '/experiments/\|/engineclient/experiment$')
       - name: Build
-        run: go build ./...
+        run: go build $(go list ./... | grep -v '/experiments/\|/engineclient/experiment$')
 
   lint:
     runs-on: ubuntu-latest
@@ -27,6 +40,19 @@ jobs:
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.x'
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get install -y musl-tools protobuf-compiler
+      - name: Build engine
+        working-directory: engine
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Place engine binary for embed
+        run: |
+          mkdir -p internal/engineclient/bin
+          cp engine/target/x86_64-unknown-linux-musl/release/archway-engine internal/engineclient/bin/archway-engine-linux-amd64
+          chmod +x internal/engineclient/bin/archway-engine-linux-amd64
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: v2.11.3
@@ -42,8 +68,21 @@ jobs:
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.x'
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get install -y musl-tools protobuf-compiler
+      - name: Build engine
+        working-directory: engine
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Place engine binary for embed
+        run: |
+          mkdir -p internal/engineclient/bin
+          cp engine/target/x86_64-unknown-linux-musl/release/archway-engine internal/engineclient/bin/archway-engine-linux-amd64
+          chmod +x internal/engineclient/bin/archway-engine-linux-amd64
       - name: Build archway
-        run: go build ./...
+        run: go build $(go list ./... | grep -v '/experiments/\|/engineclient/experiment$')
       - name: Run template compilation tests
         env:
           ARCHWAY_TEST_GO_VERSION: ${{ matrix.go-version }}

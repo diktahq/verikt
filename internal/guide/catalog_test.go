@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/dcsg/archway/internal/config"
 	"github.com/dcsg/archway/internal/scaffold"
 )
 
@@ -191,7 +192,7 @@ func TestCatalogInBuildContent(t *testing.T) {
 
 func TestWriteWarnings_DangerousCombination(t *testing.T) {
 	var b strings.Builder
-	writeWarnings(&b, []string{"http-api"})
+	writeWarnings(&b, []string{"http-api"}, nil)
 	output := b.String()
 	if !strings.Contains(output, "## Your Stack: Specific Warnings") {
 		t.Error("expected Your Stack: Specific Warnings section")
@@ -203,7 +204,7 @@ func TestWriteWarnings_DangerousCombination(t *testing.T) {
 
 func TestWriteWarnings_SafeCombination(t *testing.T) {
 	var b strings.Builder
-	writeWarnings(&b, []string{"http-api", "rate-limiting", "cors", "health", "observability", "request-id"})
+	writeWarnings(&b, []string{"http-api", "rate-limiting", "cors", "health", "observability", "request-id"}, nil)
 	output := b.String()
 	if strings.Contains(output, "## Interaction Warnings") {
 		t.Errorf("expected no warnings for safe combination, got: %s", output)
@@ -213,7 +214,7 @@ func TestWriteWarnings_SafeCombination(t *testing.T) {
 func TestWriteWarnings_CriticalFirst(t *testing.T) {
 	var b strings.Builder
 	// multi-tenancy without auth triggers critical; http-api without health triggers regular.
-	writeWarnings(&b, []string{"multi-tenancy", "http-api"})
+	writeWarnings(&b, []string{"multi-tenancy", "http-api"}, nil)
 	output := b.String()
 
 	mustIdx := strings.Index(output, "🔴 MUST")
@@ -346,7 +347,7 @@ func TestWriteCriticalInteractionWarnings_AllFiveSHOULDWarnings(t *testing.T) {
 func TestWriteWarnings_CriticalCapProducesMUSTSection(t *testing.T) {
 	var b strings.Builder
 	// http-client without circuit-breaker is Critical=true.
-	writeWarnings(&b, []string{"http-client"})
+	writeWarnings(&b, []string{"http-client"}, nil)
 	output := b.String()
 	if !strings.Contains(output, "### 🔴 MUST") {
 		t.Error("expected ### 🔴 MUST section for critical cap combination")
@@ -359,7 +360,7 @@ func TestWriteWarnings_CriticalCapProducesMUSTSection(t *testing.T) {
 func TestWriteWarnings_NonCriticalCapProducesSHOULDSection(t *testing.T) {
 	var b strings.Builder
 	// http-api without health is Critical=false.
-	writeWarnings(&b, []string{"http-api", "rate-limiting", "cors", "request-id", "observability"})
+	writeWarnings(&b, []string{"http-api", "rate-limiting", "cors", "request-id", "observability"}, nil)
 	output := b.String()
 	if !strings.Contains(output, "### 🟡 SHOULD") {
 		t.Error("expected ### 🟡 SHOULD section for non-critical cap combination")
@@ -372,7 +373,7 @@ func TestWriteWarnings_NoOutputWhenAllSatisfied(t *testing.T) {
 	writeWarnings(&b, []string{
 		"http-client", "circuit-breaker", "retry",
 		"http-api", "health", "rate-limiting", "cors", "observability", "request-id",
-	})
+	}, nil)
 	output := b.String()
 	if strings.Contains(output, "Your Stack: Specific Warnings") {
 		t.Errorf("expected no warnings when all caps satisfied, got: %s", output)
@@ -381,7 +382,7 @@ func TestWriteWarnings_NoOutputWhenAllSatisfied(t *testing.T) {
 
 func TestWriteWarnings_SectionTitle(t *testing.T) {
 	var b strings.Builder
-	writeWarnings(&b, []string{"http-client"})
+	writeWarnings(&b, []string{"http-client"}, nil)
 	output := b.String()
 	if !strings.Contains(output, "## Your Stack: Specific Warnings") {
 		t.Error("expected section title '## Your Stack: Specific Warnings'")
@@ -391,13 +392,56 @@ func TestWriteWarnings_SectionTitle(t *testing.T) {
 func TestWriteWarnings_MixedCriticalAndShouldBothPresent(t *testing.T) {
 	var b strings.Builder
 	// multi-tenancy without auth = Critical; http-api without health = non-critical.
-	writeWarnings(&b, []string{"multi-tenancy", "http-api"})
+	writeWarnings(&b, []string{"multi-tenancy", "http-api"}, nil)
 	output := b.String()
 	if !strings.Contains(output, "### 🔴 MUST") {
 		t.Error("expected ### 🔴 MUST section")
 	}
 	if !strings.Contains(output, "### 🟡 SHOULD") {
 		t.Error("expected ### 🟡 SHOULD section")
+	}
+}
+
+// Tests for severity overrides in writeWarnings.
+
+func TestGuideOutput_WithSeverityOverrides_ShowsPathQualifiedSeverity(t *testing.T) {
+	overrides := config.SeverityOverrides{
+		"http-client": []config.SeverityOverride{
+			{Severity: "should", Reason: "Istio handles this", Paths: []string{"adapter/grpc/**"}},
+			{Severity: "ignore", Reason: "Test doubles", Paths: []string{"adapter/mock/**"}},
+		},
+	}
+	var b strings.Builder
+	writeWarnings(&b, []string{"http-client"}, overrides)
+	output := b.String()
+
+	if !strings.Contains(output, "🟡 SHOULD") {
+		t.Error("expected 🟡 SHOULD override line")
+	}
+	if !strings.Contains(output, "adapter/grpc/**") {
+		t.Error("expected adapter/grpc/** glob in output")
+	}
+	if !strings.Contains(output, "Istio handles this") {
+		t.Error("expected reason 'Istio handles this' in output")
+	}
+	if !strings.Contains(output, "⚪ IGNORE") {
+		t.Error("expected ⚪ IGNORE override line")
+	}
+	if !strings.Contains(output, "adapter/mock/**") {
+		t.Error("expected adapter/mock/** glob in output")
+	}
+	if !strings.Contains(output, "Test doubles") {
+		t.Error("expected reason 'Test doubles' in output")
+	}
+}
+
+func TestGuideOutput_NoOverrides_UnchangedOutput(t *testing.T) {
+	var bWith, bWithout strings.Builder
+	writeWarnings(&bWith, []string{"http-client"}, nil)
+	writeWarnings(&bWithout, []string{"http-client"}, config.SeverityOverrides{})
+
+	if bWith.String() != bWithout.String() {
+		t.Error("empty overrides should produce identical output to nil overrides")
 	}
 }
 

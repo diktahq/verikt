@@ -1,0 +1,17 @@
+{
+  "experiment_id": "EXP-09",
+  "condition": "control",
+  "run": 1,
+  "date": "2026-03-16T00:08:42Z",
+  "agent": {
+    "id": "claude-sonnet-4-6",
+    "tool_access": false
+  },
+  "fixture": {
+    "path": "orders-service",
+    "sha256": "3e6174827ea673f9"
+  },
+  "system_prompt": "You are a Go engineer working on an existing codebase.\n\nReturn modified or created files using this exact format:\n=== \u003cfilepath\u003e ===\n[complete file content]\n\nDo not return unchanged files.",
+  "task_prompt": "Add payment processing to the CreateOrder flow. When an order is created,\ncharge the customer via POST https://api.payments.example.com/charge with the order total and customer ID.\n\nAfter implementing this, list what other capabilities or infrastructure this service\nshould have, given what we just built. Be specific about why each one matters.\n\nAfter the code files, add a section:\n=== RECOMMENDATIONS ===\n[your capability recommendations]",
+  "full_prompt_sha256": "e1c68dc1888772f9"
+}

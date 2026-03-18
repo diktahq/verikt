@@ -3,7 +3,7 @@ title: "Hexagonal vs Layered Architecture: Which Go Architecture Should You Use?
 description: "Compare Hexagonal (Ports & Adapters) and Layered architecture for Go services — dependency rules, complexity, and when each pattern fits."
 ---
 
-import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 Both Hexagonal and Layered are supported by archway. Layered is the most familiar pattern for Go developers coming from web frameworks — handler, service, repository. Hexagonal is stricter, more explicit about integration points, and better at scaling with complexity.
 
@@ -100,11 +100,5 @@ Start with layered if you're not sure. Hexagonal's benefits become concrete when
 
 ## Related
 
-<CardGrid>
-  <Card title="Architecture Patterns" icon="right-arrow">
-    [All 4 architectures compared](/concepts/architectures/)
-  </Card>
-  <Card title="Quick Start" icon="rocket">
-    [Scaffold your first service](/getting-started/cli/)
-  </Card>
-</CardGrid>
+- [All 4 architectures explained](/concepts/architectures/)
+- [Scaffold your first service](/getting-started/cli/)

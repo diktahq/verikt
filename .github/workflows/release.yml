@@ -9,15 +9,92 @@ permissions:
   contents: write
 
 jobs:
+  build-engine:
+    name: Build engine (${{ matrix.artifact }})
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: archway-engine-linux-amd64
+            use_cross: false
+            apt_packages: musl-tools
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            artifact: archway-engine-linux-arm64
+            use_cross: true
+            apt_packages: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: archway-engine-darwin-amd64
+            use_cross: false
+            apt_packages: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: archway-engine-darwin-arm64
+            use_cross: false
+            apt_packages: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install apt packages
+        if: matrix.apt_packages != ''
+        run: sudo apt-get install -y ${{ matrix.apt_packages }}
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --locked
+
+      - name: Build engine (cross)
+        if: matrix.use_cross
+        working-directory: engine
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build engine (native)
+        if: "!matrix.use_cross"
+        working-directory: engine
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload engine binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: engine/target/${{ matrix.target }}/release/archway-engine
+          retention-days: 1
+
   goreleaser:
+    name: GoReleaser
+    needs: build-engine
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.x'
+
+      - name: Download engine binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: engine-artifacts
+
+      - name: Place engine binaries for embed
+        run: |
+          mkdir -p internal/engineclient/bin
+          cp engine-artifacts/archway-engine-linux-amd64/archway-engine  internal/engineclient/bin/archway-engine-linux-amd64
+          cp engine-artifacts/archway-engine-linux-arm64/archway-engine  internal/engineclient/bin/archway-engine-linux-arm64
+          cp engine-artifacts/archway-engine-darwin-amd64/archway-engine internal/engineclient/bin/archway-engine-darwin-amd64
+          cp engine-artifacts/archway-engine-darwin-arm64/archway-engine internal/engineclient/bin/archway-engine-darwin-arm64
+          chmod +x internal/engineclient/bin/*
+
       - uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557fd212fa902bebf # v6.3.0
         with:
           version: ~> v2

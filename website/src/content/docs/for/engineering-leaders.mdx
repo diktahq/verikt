@@ -1,0 +1,87 @@
+---
+title: "For Engineering Leaders"
+description: "When your team adopts AI agents, architecture consistency becomes a team-scale problem. archway enforces it — so code review isn't where you catch architecture violations."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every PR review is an architecture conversation it shouldn't be.
+
+An engineer on your team uses Cursor to add a feature. The code works. The tests pass. But the domain logic is in the handler, the repository is called directly from the service layer, and there's no circuit breaker on the new external call. You catch it in code review. You explain the architecture — again. The engineer fixes it, the PR ships a day later.
+
+Multiply that by five engineers, all using different agents, all starting every session cold.
+
+## The team-scale problem
+
+Individual engineers feel the pain as wasted time. You feel it as compounding inconsistency. When everyone's agent is working from training data patterns instead of your architecture, every PR becomes an opportunity for drift. The reviewers become the architecture enforcers — catching violations at the most expensive point in the development cycle.
+
+This compounds as the team adopts AI agents faster. [O'Reilly's analysis](https://www.oreilly.com/radar/conductors-to-orchestrators-the-future-of-agentic-coding/) of the shift from individual agents to parallel multi-agent workflows makes the stakes concrete: "shared context, memory, and smooth transitions" become required infrastructure — without it, each agent becomes an isolated silo. The architecture problem doesn't shrink as you add more agents. It scales with them.
+
+Teams with high AI adoption merge 98% more PRs — but review times balloon by 91%. Only 48% of developers consistently check AI-assisted code before committing. ([Osmani, *The 80% Problem*](https://addyo.substack.com/p/the-80-problem-in-agentic-coding).) The productivity gain lands in generation. The cost lands in review. Architecture violations caught in code review are the most expensive version of that cost.
+
+## What archway does
+
+`archway guide` generates architecture context files from your `archway.yaml` — one source of truth that covers every AI agent your team uses (Claude Code, Cursor, GitHub Copilot, Windsurf). Every engineer runs `archway guide` and their agent starts with your architecture already loaded.
+
+The files tell the agent: the architecture pattern (hexagonal, clean, layered), the layer boundaries, the capability stack, the dependency rules, the naming conventions. What used to live in a wiki page nobody reads is now in a file every agent reads automatically.
+
+```bash
+archway guide
+# Generated .claude/rules/archway.md (1,247 tokens)
+# Generated .cursorrules (1,247 tokens)
+# Generated .github/copilot-instructions.md (1,247 tokens)
+# Generated .windsurfrules (1,247 tokens)
+```
+
+## Enforcement in CI
+
+`archway check` runs architecture enforcement using 11 AST-based detectors. Wrong-layer dependencies, missing capabilities, capability interaction violations. It runs in your CI pipeline on every PR — the violations are caught before review, not during it.
+
+```yaml
+# GitHub Actions
+- name: Architecture check
+  run: archway check --diff   # only files changed in this PR
+```
+
+Reviewers stop catching architecture violations. They review business logic.
+
+<Aside type="tip">
+`archway check --diff` only analyses files changed in a given PR. Suitable for teams with existing codebases — no need to clean up the entire repo before adopting it.
+</Aside>
+
+## One source of truth
+
+The most common failure mode of manual context files (`CLAUDE.md`, `.cursorrules`) is staleness. Written once, updated never, irrelevant within months.
+
+archway generates context from `archway.yaml` — the same file that drives scaffolding and enforcement. When the architecture evolves, you update `archway.yaml` and run `archway guide`. Every agent context file across your team updates. No wiki page to maintain, no CLAUDE.md to remember to update.
+
+## For existing codebases
+
+`archway analyze` detects your architecture pattern in an existing service and generates an `archway.yaml`. No greenfield requirement.
+
+```bash
+archway analyze          # detects architecture, generates archway.yaml
+archway guide            # generate context for all agents
+archway check            # run enforcement against current codebase
+```
+
+For teams adopting archway mid-flight: start with one service, run `archway analyze`, generate context files, run check in non-blocking mode first to understand the baseline. Tighten from there.
+
+## What the team adopts
+
+archway is a CLI. Engineers install it, run three commands, and their agents get architecture context. No login, no dashboard, no onboarding call. The time-to-value is under 5 minutes.
+
+Team adoption happens organically — one engineer adopts it, their PRs stop triggering architecture conversations, others notice. You don't need to mandate it to see it spread.
+
+## Get started
+
+```bash
+brew install dcsg/tap/archway
+archway guide
+```
+
+One engineer. Five minutes. Their next agent session starts with your architecture already loaded.
+
+→ [Quick Start with AI Agents](/getting-started/ai-agents/) — the full walkthrough for each engineer
+→ [CI Integration guide](/guides/ci-integration/) — how to add `archway check` to your pipeline
+→ [For Engineers](/for/engineers/) — the engineer's perspective on the same problem

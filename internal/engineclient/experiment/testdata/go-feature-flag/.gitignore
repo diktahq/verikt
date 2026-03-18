@@ -1,0 +1,5 @@
+# This fixture is cloned at test time, not committed.
+# See exp12_test.go for setup instructions.
+*
+!.gitignore
+!archway.yaml

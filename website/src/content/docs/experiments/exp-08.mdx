@@ -1,0 +1,103 @@
+---
+title: "EXP-08 — Anti-Pattern Prevention"
+description: Architecture violations dropped [6,8,7]→[1,1,1]. Anti-pattern NEVER rules had no effect — the task explicitly required the prohibited patterns.
+---
+
+This experiment uses the same task and data as [EXP-03](/experiments/exp-03/) but focuses specifically on whether NEVER rules can prevent anti-patterns. The answer: they can't, when the task explicitly requires the pattern.
+
+The guide reduced architecture violations by 7× — but left anti-pattern violations completely unchanged. The task says "run up to 3 concurrently" — the agent produces goroutines because you asked for them.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number">7×</span>
+    <span class="exp-stat-label">arch violations reduced</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">0×</span>
+    <span class="exp-stat-label">anti-pattern violations reduced</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**Architecture violations across 3 runs**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+Run 1: 6  ✗                 Run 1: 1  ~ partial
+Run 2: 8  ✗                 Run 2: 1  ~ partial
+Run 3: 7  ✗                 Run 3: 1  ~ partial
+```
+
+**Anti-pattern violations across 3 runs**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+~3 AP violations/run ✗      ~3 AP violations/run  ✗
+(naked_goroutine,           (naked_goroutine,
+ global_state)               global_state)
+```
+
+**Capabilities wired**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+(agent's discretion)        http-api      ✓ wired
+                            platform      ✓ wired
+                            health        ⚠ missing
+                            validation    ⚠ missing
+```
+
+**Violations**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+arch:         6–8    ✗      arch:         1       ~ partial
+naked_goroutine      ✗      naked_goroutine       ✗
+archway check: FAIL         archway check: FAIL
+```
+
+## Metrics
+
+| | Without guide | With guide |
+|---|---|---|
+| Arch violations | [6, 8, 7] | **[1, 1, 1]** |
+| Anti-pattern violations | ~3/run | ~3/run (unchanged) |
+| Pass rate | 0/3 | 0/3 |
+
+## Finding
+
+Two findings, one experiment.
+
+**Architecture violations: the guide works consistently.** [6,8,7] → [1,1,1] across all 3 runs, no variance. The guide constrains where the agent puts code.
+
+**Anti-pattern violations: NEVER rules are text hints.** The task says "run up to 3 concurrently." The agent produces goroutines because the task demands concurrency. No NEVER rule overrides an explicit task requirement.
+
+This is the boundary of what the guide can prevent. It stops incidental anti-patterns (UUID v4, SQL concatenation that isn't required). It cannot stop anti-patterns that are the task.
+
+Enforcement via `archway check` in CI is the only reliable prevention for task-driven anti-patterns.
+
+**What this means for your team:** Wire `archway check` into CI as a hard gate. The guide prevents architectural drift between sessions. CI catches what the guide can't — patterns the task explicitly required that violate your rules.
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="note">
+n=3 on a single task type (job runner with explicit concurrency requirement). The finding that NEVER rules don't override task requirements may not generalize to anti-patterns that aren't directly demanded by the task.
+</Aside>
+
+## Setup
+
+- **Task:** Build a job runner in Go — processes jobs, runs up to 3 concurrently
+- **Agent:** claude-sonnet-4-6
+- **Runs:** 3 per condition
+- **Fixture:** job-runner-stub (Mode A — greenfield)
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-08)
+
+[→ EXP-09: Does the guide expand what agents recommend?](/experiments/exp-09/)

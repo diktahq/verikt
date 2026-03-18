@@ -1,0 +1,153 @@
+---
+title: Prompt Engineering with archway
+description: How to write prompts that get architecture-correct output from AI agents — once archway guide has loaded your context.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import PromptTable from '../../../components/PromptTable.astro';
+
+`archway guide` loads your architecture into the agent before you write the first prompt. That changes what good prompting looks like. You no longer need to explain your layers, your conventions, or which patterns you follow — the agent already has that context. Your prompts can focus entirely on the work.
+
+## The shift: instructions vs. intent
+
+Without architecture context, a useful prompt looks like this:
+
+```
+Add a GET /orders endpoint. The handler should go in internal/transport/http/,
+call the service in internal/service/, which should call the repository in
+internal/repository/. Use RFC 7807 for errors. Follow the existing pattern
+in orders_handler.go.
+```
+
+With archway context loaded, the same prompt is:
+
+```
+Add a GET /orders endpoint filtered by customer ID, paginated, with RFC 7807 errors.
+```
+
+The agent already knows the layers, the error format, and the existing patterns. You describe what you want — not where to put it.
+
+## Six practices that produce better output
+
+### 1. Trust the guide, don't repeat it
+
+You don't need to explain your architecture if `archway guide` is loaded. Restating it wastes tokens and can introduce conflicts if your restatement differs from the guide. Focus on the *what*, not the *where*.
+
+**Instead of:** "Put the handler in the transport layer, call the service layer, use the repository pattern..."
+
+**Write:** "Add an endpoint that returns a user's order history."
+
+### 2. Give context, not just instructions
+
+A spec or PRD produces significantly better output than a bare instruction. The agent can map requirements to your architecture when it understands the full scope.
+
+**Instead of:** "Add payment processing."
+
+**Write:** "Here's the spec for the payment feature [paste]. Implement the API endpoints in section 3. Flag any missing capabilities before you start."
+
+Asking it to flag missing capabilities before implementing means you learn about `idempotency` and `audit-log` before the code is written — not after.
+
+### 3. Use the architecture vocabulary
+
+The guide teaches the agent what your layer names mean. Use them.
+
+**Instead of:** "Put this in the right place."
+
+**Write:** "This belongs in the domain layer — make sure it doesn't import from the adapter layer."
+
+archway-loaded agents understand terms like adapter layer, port interface, hexagonal boundary, capability stack. Using them precisely produces precise output.
+
+### 4. Ask for validation before implementation
+
+Checking an approach is cheaper than fixing a wrong implementation.
+
+```
+I'm planning to add rate limiting at the handler level using a middleware wrapper.
+Does this fit our architecture, or should it go somewhere else?
+```
+
+The agent validates against your declared layer boundaries before writing a line of code. A 10-second check prevents a 30-minute fix.
+
+### 5. Scope prompts to one concern
+
+A handler, a repository, and a migration in one prompt produces worse results than three focused prompts. The agent tracks more variables and makes more assumptions.
+
+**Better sequencing:**
+1. "Scaffold the repository interface and postgres implementation for orders."
+2. "Add a service method that calls the orders repository with pagination."
+3. "Wire the HTTP handler to the service, with RFC 7807 errors."
+
+Each prompt builds on a verified previous step. Errors stay small and localised.
+
+### 6. Reference capabilities by name
+
+Capability names are precise anchors in the guide. The agent knows exactly what they mean — how they're wired, what they depend on, what interactions to watch for.
+
+**Instead of:** "Add retry logic to the payment client."
+
+**Write:** "Wire the `retry` capability to the payment HTTP client. Check whether we have `idempotency` installed before you do."
+
+The agent will surface the interaction warning (`retry` without `idempotency` risks duplicate payments) because the guide explicitly covers it.
+
+---
+
+## Prompt patterns by workflow
+
+### Starting a session
+
+<PromptTable prompts={[
+  { prompt: "Walk me through this codebase — architecture, layers, and what's installed.", knows: "Explains architecture pattern, layer boundaries, capability stack from the guide. Not from guessing." },
+  { prompt: "I'm new here. What should I know before touching this service?", knows: "Leads with architecture rules, key capabilities, and common anti-patterns to avoid — consistent every time." },
+  { prompt: "What capabilities are installed and what's missing for production readiness?", knows: "Cross-references installed capabilities against smart suggestion rules. Flags gaps with reasoning." },
+]} />
+
+### Day-to-day development
+
+<PromptTable prompts={[
+  { prompt: "Here's the PRD [paste]. Implement the endpoints in section 3. Flag missing capabilities first.", knows: "Maps requirements to declared architecture. Surfaces capability gaps before writing code." },
+  { prompt: "Where should I put this logic?", knows: "Answers based on declared architecture — domain, service, adapter, handler — without needing explanation." },
+  { prompt: "Add background processing for invoice generation.", knows: "Suggests worker capability if not installed. Scaffolds the job in the correct layer." },
+  { prompt: "I need to add payments — what do I need before I start?", knows: "Identifies idempotency and audit-log as required. Explains why. Suggests archway add idempotency audit-log." },
+]} />
+
+### Before submitting a PR
+
+<PromptTable prompts={[
+  { prompt: "Review this change for architecture violations before I submit.", knows: "Runs archway check --diff main. Surfaces violations before the PR is opened." },
+  { prompt: "Does this approach fit our architecture?", knows: "Validates against declared layer boundaries and dependency rules before writing." },
+  { prompt: "Are there any dangerous capability combinations in this change?", knows: "Cross-references against interaction warnings — retry without idempotency, http-client without circuit-breaker." },
+]} />
+
+### Keeping context current
+
+<PromptTable prompts={[
+  { prompt: "I just added kafka — update the architecture context.", knows: "Runs archway add kafka-consumer && archway guide. Context updated in one step." },
+  { prompt: "We refactored the service layer. Does the guide need updating?", knows: "Checks archway.yaml against current structure, suggests updates." },
+]} />
+
+---
+
+## Guide modes
+
+Configure how the agent uses the architecture context in `archway.yaml`:
+
+```yaml
+guide:
+  mode: passive   # passive | audit | prompted
+```
+
+**passive** (default) — The agent answers your question fully, then appends an `## Architecture Notes` section if anything applies. Low friction, always on. Best for day-to-day development.
+
+**audit** — On session start, the agent reads the codebase, cross-references against `archway.yaml`, and leads with an `## Architecture Audit` — violations, missing capabilities, drift — before answering questions. Best for onboarding, pre-release review, team handoffs.
+
+**prompted** — Same as passive, but the generated context file includes a **Suggested Prompts** section with copy-paste queries that unlock the most value from the loaded context. Best for teams new to archway, or when you want to teach others what to ask.
+
+<Aside type="tip">
+Switch to `audit` mode when onboarding a new engineer to a service, or before a major release. It front-loads the architectural review that would otherwise happen across multiple ad-hoc prompts.
+</Aside>
+
+---
+
+→ [Quick Start with AI Agents](/getting-started/ai-agents/) — set up archway guide for the first time
+→ [For Engineers](/for/engineers/) — the full engineer workflow
+→ [Concepts: Agentic Engineering](/concepts/agentic-engineering/) — why architectural context matters at the session level

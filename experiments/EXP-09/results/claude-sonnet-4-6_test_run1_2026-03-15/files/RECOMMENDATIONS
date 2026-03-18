@@ -1,0 +1,13 @@
+**idempotency** — This is the most urgent gap. `CreateOrder` now calls `repo.Save` then `payments.Charge` then `repo.Save` again. If the client retries on a timeout, you create a second order and charge the customer twice. An idempotency key on the `POST /orders` endpoint lets you deduplicate retries at the boundary before any of that runs.
+
+**circuit-breaker** — The payments HTTP client will hang under load if `api.payments.example.com` is slow or down. Without a circuit breaker, every in-flight `CreateOrder` request will block until its context expires, exhausting your goroutine pool and taking down the orders service alongside the payments service. Wrap the `payments.Client` with a circuit breaker (e.g. `sony/gobreaker`).
+
+**retry** — Transient failures from the payments API (network blip, 502) currently surface as hard errors to the caller. Retry with exponential backoff handles these transparently. **Pair this with idempotency** — retry without it causes duplicate charges.
+
+**audit-log** — You are processing financial operations. Every charge attempt, success, and failure needs an append-only record: who, what amount, which order, what the payments API returned, and when. This is both a compliance requirement and the only way to reconcile disputes.
+
+**timeout middleware** — The `http.Client` for payments has a 10-second timeout, but there is no deadline on the inbound HTTP handler itself. A slow payments API holds the handler open indefinitely. Add context-based timeout middleware on `POST /orders` so the whole operation has a bounded wall-clock budget.
+
+**graceful shutdown** — `http.ListenAndServe` does not drain in-flight requests on SIGTERM. During a deploy, any `CreateOrder` request mid-flight gets killed after `repo.Save` but before `payments.Charge` — leaving an order in `pending` with no charge attempt. Graceful shutdown (via `http.Server.Shutdown`) ensures in-flight requests complete before the process exits.
+
+**observability** — With a two-phase write (save → charge → confirm) there are now multiple failure points that are invisible without structured logging and tracing. At minimum you need: a request ID on every `CreateOrder` call, structured log lines at each step with the order ID and outcome, and a metric for payment failures so you can alert on elevated error rates.

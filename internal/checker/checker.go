@@ -51,6 +51,15 @@ func (r *CheckResult) Passed() bool {
 	return r.TotalViolations() == 0
 }
 
+// RecalculateMetrics re-derives RulesPassing from the current slice lengths.
+// Must be called after any filtering operation that removes violations.
+func (r *CheckResult) RecalculateMetrics() {
+	r.RulesPassing = r.RulesChecked - r.TotalViolations()
+	if r.RulesPassing < 0 {
+		r.RulesPassing = 0
+	}
+}
+
 // Compliance returns the ratio of passing rules (0.0 to 1.0).
 func (r *CheckResult) Compliance() float64 {
 	if r.RulesChecked == 0 {
@@ -59,24 +68,349 @@ func (r *CheckResult) Compliance() float64 {
 	return float64(r.RulesPassing) / float64(r.RulesChecked)
 }
 
+// AntiPatternClient is the interface used to run anti-pattern checks via the
+// Rust engine. Satisfied by *engineclient.Client; nil falls back to Go AST.
+type AntiPatternClient interface {
+	CheckAntiPatterns(projectPath string, detectors []string) ([]AntiPattern, error)
+}
+
+// DependencyClient is the interface used to run component dependency checks via
+// the Rust engine. Nil falls back to the Go packages-based implementation.
+type DependencyClient interface {
+	CheckDependencies(projectPath string, components []config.Component) ([]Violation, error)
+}
+
+// MetricClient is the interface used to run function metric checks (max lines,
+// params, return values) via the Rust engine. Nil falls back to Go AST.
+type MetricClient interface {
+	CheckFunctionMetrics(projectPath string, rules config.FunctionRules) ([]Violation, error)
+}
+
 // Check validates a project at the given path against its archway.yaml config.
+// It calls CheckWithEngine(cfg, projectPath, nil, nil, nil).
 func Check(cfg *config.ArchwayConfig, projectPath string) (*CheckResult, error) {
+	return CheckWithEngine(cfg, projectPath, nil, nil, nil)
+}
+
+// CheckWithEngine is like Check but uses the provided engine clients for
+// anti-pattern, dependency, and function metric detection when non-nil.
+// When all three clients are non-nil, go/packages loading is skipped entirely.
+func CheckWithEngine(cfg *config.ArchwayConfig, projectPath string, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
 	result := &CheckResult{
 		ComponentsTotal: len(cfg.Components),
 	}
 
-	// Load and analyze packages.
+	// Engine fast path: all three clients available — skip go/packages entirely.
+	if apClient != nil && depClient != nil && metricClient != nil {
+		return checkWithEngineOnly(cfg, projectPath, result, apClient, depClient, metricClient)
+	}
+
+	// Go packages path (fallback or partial).
 	a := analyzer.New(projectPath)
 	if err := a.LoadPackages(""); err != nil {
 		return nil, fmt.Errorf("load packages: %w", err)
 	}
-
 	depGraph := graph.BuildGraph(a.Packages())
 
 	// Dependency violations.
-	depViolations := graph.LayerViolations(depGraph, cfg.Components)
-	for _, v := range depViolations {
-		result.DependencyViolations = append(result.DependencyViolations, Violation{
+	if depClient != nil {
+		if engineViolations, err := depClient.CheckDependencies(projectPath, cfg.Components); err == nil {
+			result.DependencyViolations = engineViolations
+		} else {
+			result.DependencyViolations = goLayerViolations(depGraph, cfg.Components)
+		}
+	} else {
+		result.DependencyViolations = goLayerViolations(depGraph, cfg.Components)
+	}
+
+	// Component coverage (requires package graph).
+	result.ComponentsCovered = countCoveredComponents(depGraph, cfg.Components)
+
+	// Architecture shape violations (orphan packages + missing components).
+	result.DependencyViolations = append(result.DependencyViolations,
+		checkArchitectureShape(cfg, a.Packages(), projectPath)...)
+
+	// Structure violations.
+	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+
+	// Function violations.
+	if metricClient != nil {
+		if engineViolations, err := metricClient.CheckFunctionMetrics(projectPath, cfg.Rules.Functions); err == nil {
+			result.FunctionViolations = engineViolations
+		} else {
+			result.FunctionViolations = checkFunctions(cfg.Rules.Functions, a.Packages())
+		}
+	} else {
+		result.FunctionViolations = checkFunctions(cfg.Rules.Functions, a.Packages())
+	}
+
+	// Anti-pattern violations.
+	if apClient != nil {
+		if antiPatterns, err := apClient.CheckAntiPatterns(projectPath, nil); err == nil {
+			result.AntiPatternViolations = antiPatterns
+		} else {
+			result.AntiPatternViolations = checkAntiPatterns(a.Packages(), projectPath)
+		}
+	} else {
+		result.AntiPatternViolations = checkAntiPatterns(a.Packages(), projectPath)
+	}
+
+	computeMetrics(cfg, result)
+	return result, nil
+}
+
+// checkWithEngineOnly runs all checks via the Rust engine, skipping go/packages.
+func checkWithEngineOnly(cfg *config.ArchwayConfig, projectPath string, result *CheckResult, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
+	var errs []error
+
+	if violations, err := depClient.CheckDependencies(projectPath, cfg.Components); err == nil {
+		result.DependencyViolations = violations
+	} else {
+		errs = append(errs, fmt.Errorf("dependency check: %w", err))
+	}
+
+	// Component coverage via filesystem (no go/packages needed).
+	result.ComponentsCovered = countCoveredComponentsFS(projectPath, cfg.Components)
+
+	// Architecture shape checks — both filesystem-based, no go/packages needed.
+	result.DependencyViolations = append(result.DependencyViolations,
+		detectMissingComponents(cfg, projectPath)...)
+	result.DependencyViolations = append(result.DependencyViolations,
+		detectOrphanPackagesFS(cfg, projectPath)...)
+
+	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+
+	if violations, err := metricClient.CheckFunctionMetrics(projectPath, cfg.Rules.Functions); err == nil {
+		result.FunctionViolations = violations
+	} else {
+		errs = append(errs, fmt.Errorf("function metric check: %w", err))
+	}
+
+	if antiPatterns, err := apClient.CheckAntiPatterns(projectPath, nil); err == nil {
+		result.AntiPatternViolations = antiPatterns
+	} else {
+		errs = append(errs, fmt.Errorf("anti-pattern check: %w", err))
+	}
+
+	if len(errs) > 0 {
+		// Return partial results with the first error.
+		return result, errs[0]
+	}
+
+	computeMetrics(cfg, result)
+	return result, nil
+}
+
+// checkArchitectureShape runs two checks:
+//  1. Orphan packages — project-local Go packages that match no declared component.
+//  2. Missing components — declared components with no Go files in their paths.
+//
+// Both are reported as "architecture" category violations. Paths matching
+// cfg.Check.Exclude globs are skipped.
+func checkArchitectureShape(cfg *config.ArchwayConfig, pkgs []*packages.Package, projectPath string) []Violation {
+	if len(cfg.Components) == 0 {
+		return nil
+	}
+	violations := make([]Violation, 0, len(cfg.Components))
+	localPaths := projectLocalPkgPaths(pkgs, projectPath, cfg.Check.Exclude)
+	violations = append(violations, detectOrphanPackages(cfg, localPaths)...)
+	violations = append(violations, detectMissingComponents(cfg, projectPath)...)
+	return violations
+}
+
+// projectLocalPkgPaths returns import paths of packages whose source files
+// live under projectPath. This filters out stdlib and third-party dependencies
+// (which for Go live in the module cache outside the project directory).
+// Paths matching any exclude glob are also removed.
+func projectLocalPkgPaths(pkgs []*packages.Package, projectPath string, excludes []string) []string {
+	seen := map[string]bool{}
+	var result []string
+	for _, pkg := range pkgs {
+		if pkg.PkgPath == "" || seen[pkg.PkgPath] {
+			continue
+		}
+		if isExcluded(pkg.PkgPath, excludes) {
+			continue
+		}
+		for _, f := range pkg.GoFiles {
+			if strings.HasPrefix(f, projectPath) {
+				seen[pkg.PkgPath] = true
+				result = append(result, pkg.PkgPath)
+				break
+			}
+		}
+	}
+	return result
+}
+
+// detectOrphanPackages finds project-local packages that match no declared
+// component. These represent unclassified code — likely a flat structure that
+// does not implement the declared architecture.
+func detectOrphanPackages(cfg *config.ArchwayConfig, localPkgPaths []string) []Violation {
+	var violations []Violation
+	for _, pkgPath := range localPkgPaths {
+		matched := false
+		for _, comp := range cfg.Components {
+			if graph.MatchesComponent(pkgPath, comp) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			violations = append(violations, Violation{
+				Category: "architecture",
+				File:     pkgPath,
+				Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", pkgPath, cfg.Architecture),
+				Rule:     "orphan_package",
+				Severity: "error",
+			})
+		}
+	}
+	return violations
+}
+
+// detectMissingComponents finds components declared in archway.yaml that have
+// no Go files in their declared paths. The architecture shape is not implemented.
+func detectMissingComponents(cfg *config.ArchwayConfig, projectPath string) []Violation {
+	var violations []Violation
+	for _, comp := range cfg.Components {
+		if countCoveredComponentsFS(projectPath, []config.Component{comp}) == 0 {
+			violations = append(violations, Violation{
+				Category: "architecture",
+				Message:  fmt.Sprintf("component %q declared in archway.yaml but no Go files found in %v", comp.Name, comp.In),
+				Rule:     "missing_component",
+				Severity: "error",
+			})
+		}
+	}
+	return violations
+}
+
+// detectOrphanPackagesFS is the filesystem-based version of orphan package
+// detection — used when go/packages is not available (engine-only path).
+// It reads go.mod for the module path, walks directories containing .go files,
+// derives import paths, and checks them against declared components.
+func detectOrphanPackagesFS(cfg *config.ArchwayConfig, projectPath string) []Violation {
+	if len(cfg.Components) == 0 {
+		return nil
+	}
+
+	modulePath := readModulePath(projectPath)
+	if modulePath == "" {
+		return nil
+	}
+
+	var violations []Violation
+	seen := map[string]bool{}
+
+	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return err
+		}
+		// Skip symlinked directories — they point outside the project.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+		// Skip hidden dirs, vendor, and testdata.
+		base := d.Name()
+		if base != "." && (strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata") {
+			return filepath.SkipDir
+		}
+
+		rel, err := filepath.Rel(projectPath, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip dirs in check.exclude.
+		var importPath string
+		if rel == "." {
+			importPath = modulePath
+		} else {
+			importPath = modulePath + "/" + filepath.ToSlash(rel)
+		}
+		if isExcluded(importPath, cfg.Check.Exclude) {
+			return filepath.SkipDir
+		}
+
+		// Check if this dir contains any .go files.
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil
+		}
+		hasGo := false
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
+				hasGo = true
+				break
+			}
+		}
+		if !hasGo || seen[importPath] {
+			return nil
+		}
+		seen[importPath] = true
+
+		// Check if import path matches any declared component.
+		matched := false
+		for _, comp := range cfg.Components {
+			if graph.MatchesComponent(importPath, comp) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			violations = append(violations, Violation{
+				Category: "architecture",
+				File:     importPath,
+				Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", importPath, cfg.Architecture),
+				Rule:     "orphan_package",
+				Severity: "error",
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil
+	}
+	return violations
+}
+
+// readModulePath reads the module path from go.mod in projectPath.
+func readModulePath(projectPath string) string {
+	data, err := os.ReadFile(filepath.Join(projectPath, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
+}
+
+// isExcluded returns true if the given path matches any of the exclude globs.
+func isExcluded(pkgPath string, excludes []string) bool {
+	for _, pattern := range excludes {
+		if strings.HasSuffix(pattern, "/**") {
+			prefix := strings.TrimSuffix(pattern, "/**")
+			if strings.Contains(pkgPath, prefix) {
+				return true
+			}
+			continue
+		}
+		if ok, _ := filepath.Match(pattern, pkgPath); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func goLayerViolations(depGraph provider.DependencyGraph, components []config.Component) []Violation {
+	violations := make([]Violation, 0, len(components))
+	for _, v := range graph.LayerViolations(depGraph, components) {
+		violations = append(violations, Violation{
 			Category: "dependency",
 			File:     v.Source,
 			Message:  v.Message,
@@ -84,27 +418,35 @@ func Check(cfg *config.ArchwayConfig, projectPath string) (*CheckResult, error) 
 			Severity: v.Severity,
 		})
 	}
+	return violations
+}
 
-	// Component coverage.
-	result.ComponentsCovered = countCoveredComponents(depGraph, cfg.Components)
+// countCoveredComponentsFS checks component coverage using the filesystem —
+// no go/packages required. A component is covered if any directory matching
+// one of its In patterns exists under projectPath.
+func countCoveredComponentsFS(projectPath string, components []config.Component) int {
+	covered := 0
+	for _, comp := range components {
+		for _, pattern := range comp.In {
+			// Strip trailing /** for directory existence check.
+			dir := strings.TrimSuffix(pattern, "/**")
+			dir = strings.TrimSuffix(dir, "/**")
+			dirPath := filepath.Join(projectPath, filepath.FromSlash(dir))
+			if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
+				covered++
+				break
+			}
+		}
+	}
+	return covered
+}
 
-	// Structure violations.
-	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
-
-	// Function violations.
-	result.FunctionViolations = checkFunctions(cfg.Rules.Functions, a.Packages())
-
-	// Anti-pattern violations.
-	result.AntiPatternViolations = checkAntiPatterns(a.Packages(), projectPath)
-
-	// Compute metrics.
+func computeMetrics(cfg *config.ArchwayConfig, result *CheckResult) {
 	result.RulesChecked = len(cfg.Components) + structureRuleCount(cfg.Rules.Structure) + functionRuleCount(cfg.Rules.Functions)
 	result.RulesPassing = result.RulesChecked - result.TotalViolations()
 	if result.RulesPassing < 0 {
 		result.RulesPassing = 0
 	}
-
-	return result, nil
 }
 
 func countCoveredComponents(depGraph provider.DependencyGraph, components []config.Component) int {

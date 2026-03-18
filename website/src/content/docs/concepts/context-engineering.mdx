@@ -1,0 +1,88 @@
+---
+title: Context Engineering
+description: What context engineering means, why it matters for AI coding agents, and how archway applies it specifically to software architecture.
+---
+
+import ContextQualityChart from '../../../components/ContextQualityChart.astro';
+
+Prompt engineering was about crafting the right words. Context engineering is about curating the right information.
+
+[Anthropic defines it](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) as "the set of strategies for curating and maintaining the optimal set of tokens during LLM inference." [Martin Fowler's site](https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html) puts it more plainly: "curating what the model sees so that you get a better result."
+
+The shift matters because the failure mode changed. Early LLM usage failed at the prompt level — wrong instructions, wrong tone, missing examples. Today's agents fail at the context level — they have the right instructions but the wrong information. An agent working on a service doesn't know your architecture, your layer boundaries, or which capabilities you've wired. It knows how to write code. It doesn't know where your code goes.
+
+## Why more context isn't the answer
+
+<div class="context-split not-content">
+  <div class="context-text">
+    <p>The intuitive fix is to dump everything into the context window. Paste the whole codebase. Add every ADR. Include all the docs.</p>
+    <p>It doesn't work. LLM performance degrades with poorly curated context. An agent given 100,000 tokens of loosely relevant information performs worse than one given 5,000 tokens of precisely relevant information. The constraint isn't size — it's signal-to-noise.</p>
+    <p>Anthropic describes context as a <strong>finite resource with diminishing returns</strong>: "thinking in context means considering the holistic state accessible to the language model and what behaviors that state might produce."</p>
+    <p>The goal is minimal, high-signal context — not maximum coverage.</p>
+  </div>
+  <div class="context-chart">
+    <ContextQualityChart />
+  </div>
+</div>
+
+## The four layers
+
+Context engineering operates across four layers:
+
+**1. System instructions** — What the agent is, what rules it must follow, what conventions to apply. Always present. Loaded before every session. The highest-leverage layer because it shapes every response. <span style="color:var(--sl-color-accent)">← archway operates here.</span>
+
+**2. Tools** — What actions the agent can take: read file, run command, call API, search codebase. Defines the agent's capabilities at runtime.
+
+**3. External data** — Retrieved documents, search results, database records, pulled just-in-time when relevant. Not pre-loaded — fetched as needed to keep the context focused.
+
+**4. Message history** — The conversation so far. Compacted as it grows to prevent context bloat while preserving relevant state.
+
+Good context engineering means knowing which layer each piece of information belongs in, and keeping each layer clean.
+
+Architecture rules belong in layer 1. They're always relevant — every prompt the agent receives is shaped by knowing your layer boundaries, your capability stack, and your dependency rules. This is why `archway guide` generates system instruction files rather than documentation pages: the architecture lives in the layer that runs before every response, not in a file the agent might or might not read.
+
+Architecture context includes:
+- Your architecture pattern (hexagonal, clean, layered, flat) and what it means in practice
+- Layer boundaries — what can import from what, what's forbidden
+- Your capability stack — what's installed, what's not, what the interactions are
+- Naming conventions and structural rules
+- Interaction warnings — dangerous combinations that will cause production incidents
+
+Without this in the system instructions layer, the agent defaults to training data patterns. It puts code where training data says code goes, not where your architecture says it goes.
+
+## archway as architecture-layer context engineering
+
+`archway guide` is context engineering applied specifically to software architecture. It reads your `archway.yaml` — the authoritative source for your architecture and capability declarations — and generates system instruction files for every major AI agent:
+
+```bash
+archway guide
+# Generated .claude/rules/archway.md (1,247 tokens)
+# Generated .cursorrules (1,247 tokens)
+# Generated .github/copilot-instructions.md (1,247 tokens)
+# Generated .windsurfrules (1,247 tokens)
+```
+
+Each file is a precisely curated system instruction — not a documentation dump. It tells the agent the minimum it needs to know to produce architecture-correct output: the pattern, the layers, the capabilities, the rules, the warnings. 1,247 tokens of high-signal context that applies to every prompt in the session.
+
+This is what Fowler's definition describes: "curating what the model sees so that you get a better result." archway curates the architecture layer.
+
+## The gap nobody else fills
+
+Context engineering tools and frameworks (LangChain, Google ADK, Anthropic's guidance) address the general problem — how to manage context across layers, how to compact history, how to retrieve information just-in-time. None of them address the specific problem of architecture context for coding agents.
+
+Manual `CLAUDE.md` and `.cursorrules` files are the current workaround. Engineers write them once, they go stale, and the agent follows outdated rules. They're not generated from a source of truth — they are the source of truth, which means they drift the moment the architecture changes.
+
+archway closes that loop. The `archway.yaml` is the authoritative source. `archway guide` generates from it. When the architecture changes, re-run `archway guide` — every agent context file updates. The context stays current because it's generated, not maintained.
+
+## Further reading
+
+- **Anthropic** — [*Effective Context Engineering for AI Agents*](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+- **Martin Fowler** — [*Context Engineering for Coding Agents*](https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html), February 5, 2026
+- **LangChain** — [*Context Engineering in Agents*](https://docs.langchain.com/oss/python/langchain/context-engineering)
+- **Prompting Guide** — [*Context Engineering Guide*](https://www.promptingguide.ai/guides/context-engineering-guide)
+
+---
+
+→ [Agentic Engineering](/concepts/agentic-engineering/) — the discipline that makes context engineering necessary
+→ [Why archway exists](/concepts/why-archway-exists/) — the architectural beliefs behind the tool
+→ [Quick Start with AI Agents](/getting-started/ai-agents/) — context engineering in practice

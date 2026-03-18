@@ -3,7 +3,7 @@ title: "Clean vs Layered Architecture: Which Go Architecture Should You Use?"
 description: "Compare Clean Architecture and Layered architecture for Go services — entity modeling, dependency rules, and when each pattern is the right fit."
 ---
 
-import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 Both Clean and Layered architecture are supported by archway. They both enforce a top-down dependency direction, but Clean Architecture is more opinionated — it introduces entities, use cases, and a formal ring model, while layered gives you the same directional discipline with a simpler vocabulary.
 
@@ -97,11 +97,5 @@ If you find yourself writing service methods that just call one repository metho
 
 ## Related
 
-<CardGrid>
-  <Card title="Architecture Patterns" icon="right-arrow">
-    [All 4 architectures compared](/concepts/architectures/)
-  </Card>
-  <Card title="Quick Start" icon="rocket">
-    [Scaffold your first service](/getting-started/cli/)
-  </Card>
-</CardGrid>
+- [All 4 architectures explained](/concepts/architectures/)
+- [Scaffold your first service](/getting-started/cli/)

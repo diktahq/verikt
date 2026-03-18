@@ -1,0 +1,59 @@
+---
+const agents = [
+  { agent: "Claude Code",    file: ".claude/rules/archway.md" },
+  { agent: "Cursor",         file: ".cursorrules" },
+  { agent: "GitHub Copilot", file: ".github/copilot-instructions.md" },
+  { agent: "Windsurf",       file: ".windsurfrules" },
+];
+---
+
+<div class="acg">
+  {agents.map(({ agent, file }) => (
+    <div class="acg-card">
+      <span class="acg-name">{agent}</span>
+      <code class="acg-file">{file}</code>
+    </div>
+  ))}
+</div>
+
+<style>
+  .acg {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin: 1rem 0;
+  }
+
+  .acg-card {
+    padding: 0.875rem 1rem 0.875rem 1.125rem;
+    background: var(--sl-color-gray-6);
+    border-left: 2px solid var(--sl-color-accent);
+    border-radius: 0 2px 2px 0;
+  }
+
+  .acg-name {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--sl-color-white);
+    letter-spacing: 0.01em;
+    margin-bottom: 0.4rem;
+  }
+
+  .acg-file {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--sl-color-accent);
+    background: transparent !important;
+    padding: 0 !important;
+    border: none !important;
+    word-break: break-all;
+  }
+
+  @media (max-width: 480px) {
+    .acg {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
