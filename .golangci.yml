@@ -22,6 +22,8 @@ linters:
     - noctx
     - prealloc
   exclusions:
+    paths:
+      - ^experiments/
     rules:
       - path: _test\.go
         linters:

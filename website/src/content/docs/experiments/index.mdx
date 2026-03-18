@@ -1,0 +1,93 @@
+---
+title: Experiments
+description: Controlled experiments measuring how architectural context affects AI agent output — methodology, results, and what didn't work.
+---
+
+archway's claims are backed by experiments, not opinions. Each experiment isolates a single variable, measures the outcome, and reports what happened — including null results and invalid runs. We publish falsified hypotheses alongside validated ones.
+
+Each experiment runs the same agent on the same task. Condition A: no guide — what most teams do today. Condition B: `archway guide` output prepended to the prompt. Same model, one variable.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number">100%</span>
+    <span class="exp-stat-label">architecture compliance with guide</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">22.2×</span>
+    <span class="exp-stat-label">less variance across runs</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">0</span>
+    <span class="exp-stat-label">extra tokens — guide loads from cache</span>
+  </div>
+</div>
+
+## Results
+
+The guide doesn't make agents better on average — it makes them consistently correct.
+
+<div class="exp-list">
+
+<a class="exp-row" href="/experiments/exp-01/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-01</span><span class="exp-badge validated">Validated</span><span class="exp-n">n=3</span></div>
+  <div class="exp-row-name">Same task, different architecture</div>
+  <div class="exp-row-finding">Guide: hexagonal + 100% compliance. Control: flat, 0% compliance.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-02/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-02</span><span class="exp-badge validated">Validated</span><span class="exp-n">n=3</span></div>
+  <div class="exp-row-name">Three engineers, one standard</div>
+  <div class="exp-row-finding">Variance [2,1,1] → [0,0,0]. 22.2× reduction.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-03/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-03</span><span class="exp-badge partial">Partial</span><span class="exp-n">n=3</span></div>
+  <div class="exp-row-name">Build me a job runner</div>
+  <div class="exp-row-finding">Architecture violations [6,8,7] → [1,1,1]. Anti-patterns unchanged.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-04/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-04</span><span class="exp-badge partial">Null result</span><span class="exp-n">n=1</span></div>
+  <div class="exp-row-name">New feature, existing service</div>
+  <div class="exp-row-finding">Both conditions: 0 violations. On a conforming codebase, the existing architecture constrains the agent — the guide adds nothing measurable.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-05/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-05</span><span class="exp-badge partial">Promising</span><span class="exp-n">n=1</span></div>
+  <div class="exp-row-name">Does the prompt even matter?</div>
+  <div class="exp-row-finding">Guide is the dominant variable. Prompt quality secondary.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-06/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-06</span><span class="exp-badge validated">Validated</span><span class="exp-n">n=1</span></div>
+  <div class="exp-row-name">Someone else's codebase</div>
+  <div class="exp-row-finding">Guide-only: 4 violations. Guide + mapping: 0 violations, −67% tokens.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-07/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-07</span><span class="exp-badge partial">Null result</span><span class="exp-n">n=3</span></div>
+  <div class="exp-row-name">Consistency on feature additions</div>
+  <div class="exp-row-finding">Both conditions: [0,0,0] violations, zero variance. On a conforming fixture, the codebase does the teaching — not the guide.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-08/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-08</span><span class="exp-badge partial">Partial</span><span class="exp-n">n=3</span></div>
+  <div class="exp-row-name">Anti-pattern prevention</div>
+  <div class="exp-row-finding">Architecture violations [6,8,7] → [1,1,1]. NEVER rules ignored when task requires the pattern. Same data as EXP-03 — confirms the boundary.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-09/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-09</span><span class="exp-badge validated">Validated</span><span class="exp-n">n=2</span></div>
+  <div class="exp-row-name">Does the guide expand what agents recommend?</div>
+  <div class="exp-row-finding">Without guide: "consider adding retries." With guide: <code>archway add retry circuit-breaker idempotency</code> — and a RECOMMENDATIONS file generated every time.</div>
+</a>
+
+</div>
+
+## Methodology
+
+Every experiment follows the same protocol: same agent, same task, one variable changed. Every run persists the full prompt, raw response, and `archway check` output as artifacts. [Full methodology →](/experiments/methodology/)
+
+---
+
+Try it yourself: `brew install dcsg/tap/archway && archway guide` — then open your AI agent. [Quick start →](/getting-started/ai-agents/)

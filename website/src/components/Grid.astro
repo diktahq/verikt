@@ -1,0 +1,29 @@
+---
+interface Props {
+  cols?: 1 | 2 | 3;
+}
+
+const { cols = 2 } = Astro.props;
+---
+
+<div class:list={['archway-grid', `cols-${cols}`, 'not-content']}>
+  <slot />
+</div>
+
+<style>
+  .archway-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .archway-grid > :global(*) {
+    min-height: 0;
+  }
+
+  @media (min-width: 48rem) {
+    .cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>

@@ -1,0 +1,15 @@
+**idempotency** — This is the most urgent gap. `CreateOrder` now has two non-atomic external side effects: the payment charge and the DB write. If the client retries after a network timeout, you charge the customer twice. The payment API needs to receive a stable idempotency key (derived from the request, not `time.Now().UnixNano()`), and `POST /orders` needs to deduplicate at the HTTP layer so repeat requests return the existing order rather than creating a new one.
+
+**retry + circuit-breaker on the payments http.Client** — Right now `payments.Client` uses a bare `&http.Client{}` with no timeout, no retry, and no circuit breaking. A single hung connection to `api.payments.example.com` will block the goroutine indefinitely. A slow payment provider will exhaust your connection pool and cascade failure to all order creation. Add a timeout to the HTTP client, retry with exponential backoff for transient errors (5xx, network), and a circuit breaker to fail fast when the payment service is down.
+
+**timeout middleware** — Related to the above but at the HTTP layer. `POST /orders` now touches both a database and an external HTTP service. Without a request-scoped deadline, a slow caller can hold a goroutine open for as long as both downstream calls take. Add context deadline injection at the handler level.
+
+**audit-log** — You are now processing payments. Every charge attempt — successful or failed — needs an append-only record: customer ID, order ID, amount, transaction ID, timestamp, and outcome. This is not optional for a payment flow. It is required for dispute resolution, fraud investigation, and most compliance frameworks.
+
+**outbox pattern** — The current flow has a silent consistency hole: if the process crashes after the charge succeeds but before the second `repo.Save` (the status confirmation write), the order stays `pending` in the database but the customer has been charged. The transactional outbox pattern solves this by writing the charge intent and confirmation into the same DB transaction as the order, then processing the payment asynchronously with guaranteed delivery.
+
+**migrations** — `transaction_id` was just added to the orders table. Right now that schema change is undocumented and unversioned. Any re-deployment or new environment will be missing it. Add versioned migrations (Goose or Atlas) so schema changes are reproducible and deployable without manual intervention.
+
+**observability** — `CreateOrder` now crosses three systems (DB, payment API, DB again). When it fails in production, you currently have no way to know which step failed, how long each took, or whether payment timeouts are trending upward. Structured logging with request-scoped trace IDs and timing for each external call is the minimum. Distributed tracing is the right answer.
+
+**health + readiness endpoints** — If this runs behind a load balancer or in Kubernetes, the orchestrator needs to know when the service is ready (DB connection established) and when it's live. Without readiness probes, a pod with a broken DB connection continues receiving traffic. Without liveness probes, a deadlocked process is never restarted.

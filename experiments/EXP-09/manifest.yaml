@@ -1,0 +1,24 @@
+id: EXP-03
+name: "What else do we need?"
+use_case: "What else do we need?"
+hypothesis: >
+  After adding a payment call, agent with guide recommends capabilities using archway
+  vocabulary (circuit-breaker, retry+idempotency, timeout). Without guide, recommendations
+  are generic.
+type: feature-addition
+fixture: orders-service
+fixture_delivery: embedded
+tool_access: false
+runs: 3
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: capability_vocabulary_hits
+  secondary: [violations_total, passed]
+notes: >
+  Previous runs (2026-03-15) used fixture_delivery=none — agent had no visibility into
+  the payment code it was extending. Vocabulary hypothesis failed (control already knew
+  the terms). Code violations differed: control=1, test=0. Rerun with embedded fixture.

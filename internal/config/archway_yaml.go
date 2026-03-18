@@ -9,16 +9,52 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SeverityOverride configures a path-scoped severity for a violation rule.
+// Severity must be one of: "must", "should", "ignore".
+// Reason is required and is shown in guide output and check results.
+// Paths are glob patterns (same syntax as component in: fields).
+// An empty Paths slice is a catch-all and matches every file.
+type SeverityOverride struct {
+	Severity string   `yaml:"severity"`
+	Reason   string   `yaml:"reason"`
+	Paths    []string `yaml:"paths,omitempty"`
+}
+
+// SeverityOverrides maps an override key to an ordered list of overrides.
+// Keys match violation Rule or Name fields directly — not capability names.
+//
+// Override key namespace:
+//   - Dependency violations:   violation.Rule  → "dependency", "arch/domain", "arch/handler", …
+//   - Architecture violations: violation.Rule  → "orphan_package", "missing_component"
+//   - Structure violations:    violation.Rule  → "required_dir", "forbidden_dir"
+//   - Function violations:     violation.Rule  → "max_lines", "max_params", "max_return_values"
+//   - Proxy rules:             violation.RuleID → user-defined IDs from .archway/rules/ YAML files
+//   - Anti-patterns:           NOT overridable (hardcoded safety rules)
+//
+// First match wins when evaluating a file path.
+type SeverityOverrides map[string][]SeverityOverride
+
 type ArchwayConfig struct {
-	Language     string               `yaml:"language" json:"language"`
-	Architecture string               `yaml:"architecture" json:"architecture"`
-	Capabilities []string             `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
-	Components   []Component          `yaml:"components" json:"components"`
-	Rules        RulesConfig          `yaml:"rules,omitempty" json:"rules,omitempty"`
-	Extends      []string             `yaml:"extends,omitempty" json:"extends,omitempty"`
-	Templates    TemplateSourceConfig `yaml:"templates,omitempty" json:"templates,omitempty"`
-	Decisions    []Decision           `yaml:"decisions,omitempty" json:"decisions,omitempty"`
-	Guide        GuideConfig          `yaml:"guide" json:"guide"`
+	Language          string               `yaml:"language" json:"language"`
+	Architecture      string               `yaml:"architecture" json:"architecture"`
+	Capabilities      []string             `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	Components        []Component          `yaml:"components" json:"components"`
+	Rules             RulesConfig          `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Check             CheckConfig          `yaml:"check,omitempty" json:"check,omitempty"`
+	Extends           []string             `yaml:"extends,omitempty" json:"extends,omitempty"`
+	Templates         TemplateSourceConfig `yaml:"templates,omitempty" json:"templates,omitempty"`
+	Decisions         []Decision           `yaml:"decisions,omitempty" json:"decisions,omitempty"`
+	Guide             GuideConfig          `yaml:"guide" json:"guide"`
+	SeverityOverrides SeverityOverrides    `yaml:"severity_overrides,omitempty" json:"severity_overrides,omitempty"`
+}
+
+// CheckConfig controls behaviour of `archway check`.
+type CheckConfig struct {
+	// Exclude lists path globs that the checker should ignore entirely.
+	// Use this for generated code, vendored dependencies, or tooling dirs
+	// that legitimately don't belong to any declared component.
+	// Example: ["generated/**", "vendor/**", "tools/**"]
+	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 }
 
 // GuideConfig controls how `archway guide` instructs AI agents.
@@ -153,6 +189,22 @@ func ValidateArchwayYAML(cfg *ArchwayConfig) []error {
 			}
 		}
 	}
+	// Validate severity_overrides entries.
+	validSeverities := map[string]bool{"must": true, "should": true, "ignore": true}
+	for key, overrides := range cfg.SeverityOverrides {
+		for i, o := range overrides {
+			if !validSeverities[o.Severity] {
+				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].severity %q is invalid (must be one of: must, should, ignore)", key, i, o.Severity))
+			}
+			if strings.TrimSpace(o.Reason) == "" {
+				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].reason is required", key, i))
+			}
+			// Warn if a catch-all (no paths) is not the last entry — subsequent entries are unreachable.
+			if len(o.Paths) == 0 && i < len(overrides)-1 {
+				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d] is a catch-all (no paths) but is not the last entry — subsequent entries are unreachable", key, i))
+			}
+		}
+	}
 	return errs
 }
 
@@ -205,12 +257,14 @@ func DefaultArchwayConfig(language, architecture string) *ArchwayConfig {
 			{Name: "ports", In: []string{"port/**"}, MayDependOn: []string{"domain"}},
 			{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "ports"}},
 			{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"ports", "domain"}},
-			{Name: "platform", In: []string{"platform/**"}, MayDependOn: []string{}},
 		}
 		cfg.Rules.Structure = StructureConfig{
 			RequiredDirs:  []string{"cmd/", "domain/", "port/", "adapter/"},
 			ForbiddenDirs: []string{"utils/", "helpers/"},
 		}
+		// cmd/ is the application entry point and wiring layer — outside the
+		// hexagonal architecture boundary. Exclude it from orphan detection.
+		cfg.Check = CheckConfig{Exclude: []string{"cmd/**"}}
 		cfg.Templates = TemplateSourceConfig{Source: "archway/api"}
 	}
 

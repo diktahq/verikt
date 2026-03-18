@@ -3,7 +3,8 @@ title: Quick Start with AI Agents
 description: archway guide feeds your architecture into AI coding agents so they write structurally correct code from the first prompt — no more explaining your architecture every session.
 ---
 
-import { Aside, Steps, Tabs, TabItem, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import AgentCardGrid from '../../../components/AgentCardGrid.astro';
 
 Every time you open a new AI coding session, the agent starts cold. It doesn't know your architecture, your layer boundaries, or which capabilities you've wired. So you explain it. Every session. Or the agent puts things in the wrong place and you spend time correcting it.
 
@@ -12,14 +13,18 @@ Every time you open a new AI coding session, the agent starts cold. It doesn't k
 ## Install
 
 ```bash
-# Homebrew
+# Homebrew (recommended)
 brew install dcsg/tap/archway
 
-# Go install
-go install github.com/dcsg/archway/cmd/archway@latest
+# Install script (macOS/Linux)
+curl -sSL https://archway.dcsg.me/install.sh | bash
 ```
 
 ## The Workflow
+
+<Aside type="tip">
+  **Existing project?** Skip step 1 — go straight to step 2. Run `archway analyze` first if you don't have an `archway.yaml` yet.
+</Aside>
 
 <Steps>
 
@@ -31,13 +36,9 @@ go install github.com/dcsg/archway/cmd/archway@latest
    archway init --ai
    ```
 
-   This prints the AI interview protocol to stdout. Paste it into your AI agent (Claude Code, Cursor, Copilot, Windsurf). The agent will interview you — asking about your service name, architecture, capabilities, and guide mode — then run `archway new` and generate everything.
+   This prints the AI interview protocol to stdout. Paste it into your AI agent. The agent will interview you — asking about your service name, architecture, capabilities, and guide mode — then run `archway new` and generate everything.
 
    No TUI. No switching context. The whole setup happens inside your AI session.
-
-   <Aside type="tip">
-     Already have a project? Skip this step — go straight to `archway guide`.
-   </Aside>
 
 2. **Generate architecture context**
 
@@ -45,45 +46,177 @@ go install github.com/dcsg/archway/cmd/archway@latest
    archway guide
    ```
 
-   archway reads your `archway.yaml` and generates context files for every AI agent — directly in your project.
+   archway reads your `archway.yaml` and generates context files for every supported AI agent — directly in your project.
 
-   <CardGrid>
-     <Card title="Claude Code" icon="document">
-       `.claude/rules/archway.md`
-     </Card>
-     <Card title="Cursor" icon="document">
-       `.cursorrules`
-     </Card>
-     <Card title="GitHub Copilot" icon="document">
-       `.github/copilot-instructions.md`
-     </Card>
-     <Card title="Windsurf" icon="document">
-       `.windsurfrules`
-     </Card>
-   </CardGrid>
+   <AgentCardGrid />
 
-3. **Open your AI agent**
+3. **Open your agent and start prompting**
 
-   Open Claude Code, Cursor, Copilot, or Windsurf in the project directory. The context file is already there — the agent loads it silently on session start.
+   Pick your tool and follow the steps for it:
 
-4. **Write prompts naturally**
+   <Tabs>
 
-   No preamble. Just describe what you want:
+   <TabItem label="Claude Code">
+
+   Claude Code reads `.claude/rules/archway.md` automatically on every session start. No setup needed beyond running `archway guide`.
+
+   Open Claude Code in your project directory:
+
+   ```bash
+   cd your-project
+   claude
+   ```
+
+   Write prompts naturally — no preamble, no context-setting:
 
    ```
    Add a new endpoint to list orders by customer ID
    ```
 
-   The agent already knows your router, your error format, your layer boundaries, and which capabilities you have installed.
+   The agent already knows your layer boundaries, your error format, and which capabilities you have installed.
 
-5. **Commit the generated files**
+   Commit the generated file so every engineer on the team gets the same context:
 
    ```bash
-   git add .claude/rules/archway.md .cursorrules
+   git add .claude/rules/archway.md
    git commit -m "chore: add archway architecture context"
    ```
 
-   Every engineer on the team — and every AI agent they use — gets the same architectural context automatically.
+   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+
+   </TabItem>
+
+   <TabItem label="Cursor">
+
+   Cursor reads `.cursorrules` automatically when you open the project folder. No setup needed beyond running `archway guide`.
+
+   1. Open Cursor
+   2. `File → Open Folder` → select your project directory
+   3. Open the chat panel (`Cmd+L`)
+
+   Write prompts naturally — no preamble, no context-setting:
+
+   ```
+   Add a new endpoint to list orders by customer ID
+   ```
+
+   The agent already knows your layer boundaries, your error format, and which capabilities you have installed.
+
+   Commit the generated file so every engineer on the team gets the same context:
+
+   ```bash
+   git add .cursorrules
+   git commit -m "chore: add archway architecture context"
+   ```
+
+   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+
+   </TabItem>
+
+   <TabItem label="GitHub Copilot">
+
+   GitHub Copilot reads `.github/copilot-instructions.md` automatically. The steps differ slightly between VS Code and JetBrains.
+
+   **VS Code:**
+
+   1. Install the [GitHub Copilot extension](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat)
+   2. Open your project (`File → Open Folder`)
+   3. Open Copilot Chat (`Cmd+Shift+I`)
+   4. Prefix your prompt with `@workspace` — this tells Copilot to index the project files including `.github/copilot-instructions.md`:
+
+   ```
+   @workspace Add a new endpoint to list orders by customer ID
+   ```
+
+   **JetBrains (IntelliJ, GoLand):**
+
+   1. Install the GitHub Copilot plugin (`Settings → Plugins → search "GitHub Copilot"`)
+   2. Open your project
+   3. Open Copilot Chat (`Tools → GitHub Copilot → Open Chat`)
+   4. Write prompts naturally — no prefix needed in JetBrains:
+
+   ```
+   Add a new endpoint to list orders by customer ID
+   ```
+
+   The agent already knows your layer boundaries, your error format, and which capabilities you have installed.
+
+   Commit the generated file so every engineer on the team gets the same context:
+
+   ```bash
+   git add .github/copilot-instructions.md
+   git commit -m "chore: add archway architecture context"
+   ```
+
+   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+
+   </TabItem>
+
+   <TabItem label="Windsurf">
+
+   Windsurf reads `.windsurfrules` automatically when you open the project folder. No setup needed beyond running `archway guide`.
+
+   1. Open Windsurf
+   2. `File → Open Folder` → select your project directory
+   3. Open the Cascade panel (right side)
+
+   Write prompts naturally — no preamble, no context-setting:
+
+   ```
+   Add a new endpoint to list orders by customer ID
+   ```
+
+   The agent already knows your layer boundaries, your error format, and which capabilities you have installed.
+
+   Commit the generated file so every engineer on the team gets the same context:
+
+   ```bash
+   git add .windsurfrules
+   git commit -m "chore: add archway architecture context"
+   ```
+
+   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+
+   </TabItem>
+
+   <TabItem label="Other">
+
+   For any other AI tool (Zed, Aider, Continue, raw API, etc.), `archway guide` still generates all context files. Use `.cursorrules` — it's plain markdown and works as a starting point for any tool.
+
+   ```bash
+   archway guide
+   ```
+
+   This generates `.cursorrules` (among others) — a self-contained markdown file with your full architecture context: layer boundaries, capability stack, dependency rules, and interaction warnings.
+
+   Since your tool has no auto-loading, you need to include the context manually each session:
+
+   **Option A — paste at session start:**
+
+   Copy the contents of `.cursorrules` and paste it as your first message or system prompt before asking anything:
+
+   ```
+   [paste contents of .cursorrules here]
+
+   Now: add a new endpoint to list orders by customer ID
+   ```
+
+   **Option B — file reference (if your tool supports it):**
+
+   If your tool supports referencing files as context (Aider, Continue, etc.), point it at `.cursorrules`:
+
+   ```bash
+   # Aider example
+   aider --read .cursorrules
+
+   # Continue — add .cursorrules to your context window via the @ file picker
+   ```
+
+   There is no automatic loading for unsupported tools. For automatic context injection without manual steps, use Claude Code, Cursor, GitHub Copilot, or Windsurf.
+
+   </TabItem>
+
+   </Tabs>
 
 </Steps>
 
@@ -91,13 +224,10 @@ go install github.com/dcsg/archway/cmd/archway@latest
 
 The generated file gives the agent four things it would otherwise ask you for:
 
-**Your capability catalog** — what's installed and what's available but not yet added, with guidance on when to consider each one.
-
-**Smart suggestions** — dependency rules between capabilities. If you have `http-api`, the agent knows you probably need `health`, `request-id`, and `validation`. It'll flag the gaps proactively.
-
-**Interaction warnings** — dangerous combinations. Using `retry` without `idempotency`? The agent will warn you before you ship a duplicate payment bug.
-
-**Architecture boundary rules** — your specific dependency graph. The agent knows which layers exist, what they're allowed to import, and what constitutes a violation.
+- **Capability catalog** — what's installed and what's available but not yet added.
+- **Dependency rules** — if you have `http-api`, the agent knows you probably need `health`, `request-id`, and `validation`, and flags those gaps proactively.
+- **Interaction warnings** — dangerous combinations like `retry` without `idempotency` are surfaced before you ship a duplicate payment bug.
+- **Dependency graph** — which layers exist, what they're allowed to import, and what a violation looks like.
 
 ## How the Agent Responds
 
@@ -125,31 +255,6 @@ archway guide
 ```
 
 The agent now knows how all of them are wired.
-
-## Don't Have an archway.yaml Yet?
-
-Let your AI agent handle the whole setup:
-
-```bash
-archway init --ai
-```
-
-Paste the output into your agent. It will interview you and scaffold the project — no terminal wizard needed.
-
-Or use the CLI directly:
-
-```bash
-# Interactive TUI wizard
-archway new my-api
-
-# Analyze an existing codebase
-archway analyze .
-archway guide
-```
-
-<Aside type="note">
-  `archway guide` runs automatically as a post-scaffold hook when you use `archway new` — no extra step needed.
-</Aside>
 
 ## Keeping Context Fresh
 
@@ -202,25 +307,6 @@ Best for: teams new to archway, or when you want to teach others what to ask.
 
 ---
 
-<CardGrid>
-  <LinkCard
-    title="Star on GitHub"
-    description="archway is open source and free forever."
-    href="https://github.com/dcsg/archway"
-  />
-  <LinkCard
-    title="Capabilities Matrix"
-    description="Browse all 63 capabilities across 10 categories."
-    href="/reference/capabilities-matrix/"
-  />
-  <LinkCard
-    title="How It Works"
-    description="Understand the composition model behind archway."
-    href="/concepts/how-it-works/"
-  />
-  <LinkCard
-    title="Quick Start with CLI"
-    description="Prefer the terminal wizard? Start here."
-    href="/getting-started/cli/"
-  />
-</CardGrid>
+- [Capabilities Matrix](/reference/capabilities-matrix/) — all 63 capabilities across 10 categories
+- [How It Works](/concepts/how-it-works/) — the composition model behind archway
+- [Quick Start with CLI](/getting-started/cli/) — prefer the terminal wizard? start here

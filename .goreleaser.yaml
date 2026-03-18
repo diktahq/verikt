@@ -5,6 +5,8 @@ project_name: archway
 before:
   hooks:
     - go mod tidy
+    # Engine binaries are pre-built by CI and placed in internal/engineclient/bin/
+    # before GoReleaser runs. See .github/workflows/release.yml.
 
 builds:
   - id: archway
@@ -78,5 +80,7 @@ brews:
     license: Elastic-2.0
     install: |
       bin.install "archway"
+    post_install: |
+      system "#{bin}/archway", "setup"
     test: |
       system "#{bin}/archway", "version"

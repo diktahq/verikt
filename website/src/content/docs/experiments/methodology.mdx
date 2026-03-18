@@ -1,0 +1,233 @@
+---
+title: "Methodology"
+description: "How archway experiments are structured, run, and published — fixture delivery modes, agent abstraction, artifact format, and reproducing instructions."
+---
+
+Every archway experiment follows the same methodology. This page describes how experiments are structured, what artifacts they produce, and how to reproduce them.
+
+## Principles
+
+- **Reproducible** — anyone cloning the repo can run the same experiment and get comparable results
+- **Multi-agent** — the same experiment runs against any LLM, not just Claude
+- **Honest** — null results, failures, and partial results are recorded and published as-is
+- **Auditable** — every input is captured verbatim alongside every output
+
+## Fixture delivery modes
+
+The mode determines how (or whether) the agent sees existing code. This is the most important design decision per experiment.
+
+### Mode A — Greenfield
+
+No existing code. The agent builds from scratch. The only inputs are the system prompt and the task prompt.
+
+`archway check` runs on the full generated project.
+
+Used for: EXP-01, EXP-02, EXP-03, EXP-05, EXP-08.
+
+### Mode B — Embedded fixture
+
+The fixture files are read from a committed fixture directory and embedded verbatim in the prompt. The agent sees the codebase as text. No tool access.
+
+`archway check --diff HEAD` runs after overlaying the agent's output on the fixture. Only violations in the agent's changed files count.
+
+This mode is reproducible across all agents — every LLM can receive text. The embedded content is deterministic: same git SHA = same prompt.
+
+Used for: EXP-04, EXP-07, EXP-09.
+
+### Mode C — Tool access
+
+The fixture is copied to a temp directory. The agent gets `Read/Glob/Grep/Edit/Write` tool access and works directly in that copy. Used for large codebases that can't be embedded in a prompt.
+
+`archway check --diff HEAD` runs after the agent finishes. Only violations in agent-touched files count.
+
+Currently Claude-only — the `--allowedTools` mechanism is specific to `claude -p`.
+
+Used for: EXP-06c, EXP-06d.
+
+## Runs
+
+Every experiment runs **3 times per condition**. For a standard contrast experiment (control vs test): 6 total runs. For a 2×2 like EXP-05: 12 total runs.
+
+Single-run results may be published with an explicit `n=1` note. The harness always targets 3 regardless.
+
+## Agent abstraction
+
+Every stateless experiment (Mode A and B) runs through a single `Agent` interface:
+
+```go
+type Agent interface {
+    ID() string   // "claude-sonnet-4-6", "gpt-4o", "gemini-2.0-flash"
+    Call(ctx context.Context, systemPrompt, userPrompt string) (AgentResponse, error)
+}
+```
+
+Two implementations:
+
+- **`claude-code`** (default) — calls `claude -p` (Claude Code CLI pipe mode). No API key needed.
+- **`openAICompatAgent`** — hits any OpenAI-compatible chat completions endpoint. One implementation covers Anthropic, OpenAI, Google, and Ollama.
+
+Agent selection via environment variables:
+
+```bash
+ARCHWAY_EXPERIMENT_AGENT=1                    # opt-in guard
+ARCHWAY_EXPERIMENT_VENDOR=claude-code         # claude-code | anthropic | openai | google | ollama
+ARCHWAY_EXPERIMENT_MODEL=claude-sonnet-4-6    # model ID
+```
+
+| Vendor | Endpoint |
+|--------|----------|
+| `claude-code` | `claude -p` CLI (no API key) |
+| `anthropic` | `https://api.anthropic.com/v1` |
+| `openai` | `https://api.openai.com/v1` |
+| `google` | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `ollama` | `http://localhost:11434/v1` |
+
+Cost is not tracked. Tokens are recorded per run — cost can be computed offline from token counts and model pricing.
+
+## Artifacts
+
+Every run produces a complete artifact set:
+
+```
+experiments/
+  EXP-01/
+    manifest.yaml              ← hand-written experiment definition
+    results/
+      claude-sonnet-4-6_control_run1_2026-03-15/
+        manifest.json          ← verbatim inputs: prompts, agent, fixture SHA
+        response.txt           ← raw agent output, unmodified
+        files/                 ← generated files parsed from response
+        archway-check.json     ← full archway check output
+        metrics.json           ← violations, tokens, duration, pass/fail
+```
+
+### manifest.yaml
+
+Hand-written, one per experiment. Defines the hypothesis, conditions, fixture, and metrics:
+
+```yaml
+id: EXP-04
+name: "New feature, existing service"
+hypothesis: >
+  Without guide, agent places cancellation logic in the wrong layer.
+  With guide, it follows domain/port/service/adapter boundaries.
+type: feature-addition
+fixture: orders-service
+fixture_delivery: embedded
+runs: 3
+conditions:
+  - id: control
+    guide: false
+  - id: test
+    guide: true
+metrics:
+  primary: violations_arch
+  secondary: [violations_total, passed, hexagonal_shape]
+```
+
+### manifest.json
+
+Generated per run. Captures the exact inputs — prompts, model, fixture SHA:
+
+```json
+{
+  "experiment_id": "EXP-04",
+  "condition": "control",
+  "run": 1,
+  "agent": { "id": "claude-sonnet-4-6" },
+  "fixture": { "path": "orders-service", "sha256": "a3f2c1..." },
+  "system_prompt": "You are a Go engineer...",
+  "task_prompt": "Add order cancellation...",
+  "full_prompt_sha256": "b9d4e2..."
+}
+```
+
+`full_prompt_sha256` is a sha256 of the complete prompt sent to the model. Anyone reproducing the experiment can verify they're sending the same prompt.
+
+### metrics.json
+
+Generated per run. The measured outcome:
+
+```json
+{
+  "violations_dep": 0,
+  "violations_fn": 0,
+  "violations_ap": 0,
+  "violations_arch": 2,
+  "violations_total": 2,
+  "passed": false,
+  "hexagonal_shape": false,
+  "files_generated": 4,
+  "input_tokens": 1247,
+  "output_tokens": 3421,
+  "duration_ms": 34500
+}
+```
+
+## Fixture identity
+
+Each fixture directory is identified by a sha256 of its contents (sorted file paths + file content). This is more stable than a git SHA — it doesn't change when unrelated files change, and it's branch-independent.
+
+## Experiment status
+
+| Status | Meaning |
+|--------|---------|
+| `complete` | Run with correct methodology, results valid |
+| `needs-rerun` | Run but methodology was wrong (see `note`) |
+| `partial` | Some agents run, not all |
+| `not-run` | Never executed |
+
+## Experiment map
+
+| Experiment | Type | Mode | Status |
+|------------|------|------|--------|
+| EXP-01 | greenfield | A | complete |
+| EXP-02 | greenfield | A | complete |
+| EXP-03 | greenfield | A | complete |
+| EXP-04 | feature-addition | B | complete (null result) |
+| EXP-05 | greenfield | A | complete |
+| EXP-06a/b | brownfield-stateless | A | complete (intentional null) |
+| EXP-06c | brownfield | C | complete |
+| EXP-06d | brownfield | C | complete |
+| EXP-07 | feature-addition | B | complete (null result) |
+| EXP-08 | greenfield | A | complete |
+| EXP-09 | feature-addition | B | complete |
+
+## Reproducing a run
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="note">
+The experiment harness currently lives in `internal/engineclient/experiment/`. This path will change when the engine is extracted to a standalone package in v0.3.0. A stable `archway experiment run EXP-01` command will replace these instructions at that point.
+</Aside>
+
+```bash
+# Build archway
+go build -o ./bin/archway ./cmd/archway/
+
+# Run via Claude Code CLI (default — no API key needed)
+ARCHWAY_EXPERIMENT_AGENT=1 \
+go test -run TestEXP01 -v -timeout 300s ./internal/engineclient/experiment/
+
+# Run with Anthropic API directly
+ARCHWAY_EXPERIMENT_AGENT=1 \
+ARCHWAY_EXPERIMENT_VENDOR=anthropic \
+ARCHWAY_EXPERIMENT_MODEL=claude-sonnet-4-6 \
+ANTHROPIC_API_KEY=your-key \
+go test -run TestEXP01 -v -timeout 300s ./internal/engineclient/experiment/
+
+# Run with GPT-4o
+ARCHWAY_EXPERIMENT_AGENT=1 \
+ARCHWAY_EXPERIMENT_VENDOR=openai \
+ARCHWAY_EXPERIMENT_MODEL=gpt-4o \
+OPENAI_API_KEY=your-key \
+go test -run TestEXP01 -v -timeout 300s ./internal/engineclient/experiment/
+
+# Run with a local model via Ollama
+ARCHWAY_EXPERIMENT_AGENT=1 \
+ARCHWAY_EXPERIMENT_VENDOR=ollama \
+ARCHWAY_EXPERIMENT_MODEL=llama3.1:70b \
+go test -run TestEXP01 -v -timeout 600s ./internal/engineclient/experiment/
+```
+
+Replace `TestEXP01` with the test function for the experiment you want to run. Results are written to `experiments/EXP-XX/results/` and `experiments/index.json` is updated. Commit both.

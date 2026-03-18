@@ -6,24 +6,115 @@
 /* ── Tokens ── */
 
 :root {
-	--sl-color-accent-low: #1a1a2e;
-	--sl-color-accent: #6c63ff;
-	--sl-color-accent-high: #e0deff;
+	--sl-color-accent-low: #1E1A14;
+	--sl-color-accent: #E8913A;
+	--sl-color-accent-high: #F5D4A8;
 	--sl-text-h1: clamp(2rem, 4vw, 2.5rem);
 	--sl-text-h2: clamp(1.5rem, 3vw, 1.875rem);
 	--sl-content-width: 65rem;
-	--archway-glow: rgba(108, 99, 255, 0.08);
+	--sl-color-bg: #111110;
+	--archway-glow: rgba(232, 145, 58, 0.08);
+
+	/* Structural Amber — warm gray scale (dark mode: foreground=light, background=dark)
+	   Per [[color-temperature]]: warm tones = near, dense, earthy — reinforces "infrastructure" brand.
+	   Per [[functional-color]]: tinted backgrounds reduce monotony and fatigue on docs sites.
+	   Per [[concord-of-colors]]: monochromatic-warm bias = expressive, opinionated product.
+	   Token semantics: white=foreground, black=background, gray-1=near-foreground → gray-7=near-background */
+	--sl-color-white: #E8E4DE;
+	--sl-color-gray-1: #D6D0C8;
+	--sl-color-gray-2: #A8A29E;
+	--sl-color-gray-3: #78716C;
+	--sl-color-gray-4: #57534E;
+	--sl-color-gray-5: #3D3A36;
+	--sl-color-gray-6: #1E1D1B;
+	--sl-color-gray-7: #171614;
+	--sl-color-black: #111110;
+
+	/* Starlight semantic colors — replace rainbow with amber family */
+	--sl-color-purple-low: hsl(30, 30%, 16%);
+	--sl-color-purple: hsl(30, 65%, 55%);
+	--sl-color-purple-high: hsl(30, 80%, 75%);
+	--sl-color-blue-low: hsl(25, 25%, 16%);
+	--sl-color-blue: hsl(25, 55%, 50%);
+	--sl-color-blue-high: hsl(25, 70%, 72%);
+	--sl-color-green-low: hsl(45, 25%, 16%);
+	--sl-color-green: hsl(45, 60%, 55%);
+	--sl-color-green-high: hsl(45, 75%, 75%);
+	--sl-color-orange-low: hsl(20, 35%, 16%);
+	--sl-color-orange: hsl(20, 80%, 58%);
+	--sl-color-orange-high: hsl(20, 85%, 78%);
+	--sl-color-red-low: hsl(10, 30%, 16%);
+	--sl-color-red: hsl(10, 70%, 55%);
+	--sl-color-red-high: hsl(10, 80%, 75%);
 }
 
 :root[data-theme='light'] {
-	--sl-color-accent-low: #ede9ff;
-	--sl-color-accent: #5b52d9;
-	--sl-color-accent-high: #2d2678;
-	--archway-glow: rgba(91, 82, 217, 0.06);
+	--sl-color-accent-low: #FFF5E8;
+	--sl-color-accent: #8F5819;
+	--sl-color-accent-high: #5C3D1A;
+	--sl-color-bg: #FAF8F5;
+	--archway-glow: rgba(196, 122, 46, 0.06);
+
+	/* Structural Amber — warm gray scale (light mode: foreground=dark, background=light)
+	   Token semantics FLIP: white=darkest foreground, black=lightest background */
+	--sl-color-white: #1E1A14;
+	--sl-color-gray-1: #3D3A36;
+	--sl-color-gray-2: #57534E;
+	--sl-color-gray-3: #78716C;
+	--sl-color-gray-4: #A8A29E;
+	--sl-color-gray-5: #D6D0C8;
+	--sl-color-gray-6: #EBE7E1;
+	--sl-color-gray-7: #F5F2ED;
+	--sl-color-black: #FAF8F5;
+
+	/* Starlight semantic colors — amber family */
+	--sl-color-purple-low: hsl(30, 45%, 92%);
+	--sl-color-purple: hsl(30, 65%, 42%);
+	--sl-color-purple-high: hsl(30, 70%, 30%);
+	--sl-color-blue-low: hsl(25, 40%, 92%);
+	--sl-color-blue: hsl(25, 55%, 38%);
+	--sl-color-blue-high: hsl(25, 60%, 28%);
+	--sl-color-green-low: hsl(45, 40%, 92%);
+	--sl-color-green: hsl(45, 55%, 40%);
+	--sl-color-green-high: hsl(45, 65%, 28%);
+	--sl-color-orange-low: hsl(20, 45%, 92%);
+	--sl-color-orange: hsl(20, 70%, 42%);
+	--sl-color-orange-high: hsl(20, 75%, 30%);
+	--sl-color-red-low: hsl(10, 40%, 92%);
+	--sl-color-red: hsl(10, 65%, 42%);
+	--sl-color-red-high: hsl(10, 70%, 30%);
 }
 
 /* ══════════════════════════════════════════════════
-   SPLASH / HOMEPAGE
+   AGENT CARD GRID
+   ══════════════════════════════════════════════════ */
+
+.agent-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.625rem;
+  margin-block: 1rem;
+}
+
+.agent-card-grid .agent-card {
+  align-self: stretch !important;
+  box-sizing: border-box !important;
+}
+
+.agent-card-grid .agent-file {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+@media (max-width: 40rem) {
+  .agent-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   SPLASH / HOMEPAGE HERO
    ══════════════════════════════════════════════════ */
 
 /* Hero: force single column, centered, no dead image column */
@@ -51,42 +142,97 @@
 	justify-content: center !important;
 }
 
-/* Title — large, confident */
-[data-has-hero] .hero h1 {
-	font-size: clamp(2.75rem, 7vw, 4rem) !important;
+/* Hero CTA buttons — match preview: 0.75rem 1.75rem padding, 0.9rem font */
+[data-has-hero] .hero .actions a {
+	padding: 0.6rem 1.5rem !important;
+	font-size: 0.875rem !important;
+	border-radius: 0.5rem;
+}
+
+[data-has-hero] .hero .actions a.primary {
+	background: var(--sl-color-accent) !important;
+	color: #111 !important;
+	border: none !important;
+	font-weight: 600;
+	transition: background 0.2s;
+}
+
+[data-has-hero] .hero .actions a.primary:hover {
+	background: #F0A050 !important;
+}
+
+[data-has-hero] .hero .actions a:not(.primary) {
+	background: transparent !important;
+	color: var(--sl-color-gray-2) !important;
+	border: 1px solid rgba(232, 145, 58, 0.25) !important;
+	transition: border-color 0.2s, color 0.2s;
+}
+
+[data-has-hero] .hero .actions a:not(.primary):hover {
+	border-color: var(--sl-color-accent) !important;
+	color: var(--sl-color-accent) !important;
+}
+
+/* Wordmark — large, above the headline */
+[data-has-hero] .hero h1 .hero-wordmark {
+	display: block;
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-size: clamp(3rem, 6vw, 4rem);
 	font-weight: 700;
+	letter-spacing: -0.02em;
+	margin-bottom: 0.75rem;
+	line-height: 1;
+	font-style: normal !important;
+}
+
+/* Hero h1 — override the global serif h1 for the splash page */
+[data-has-hero] .hero h1 {
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-size: clamp(1.5rem, 4vw, 2rem) !important;
+	font-weight: 700 !important;
+	font-style: normal !important;
 	letter-spacing: -0.035em;
 	line-height: 1.1;
 }
 
-/* Tagline — distinct italic serif, reads like a confident descriptor */
+/* Tagline container — reset Starlight's italic serif, allow children to style independently */
 [data-has-hero] .hero .tagline {
-	font-family: 'DM Serif Display', 'Georgia', serif !important;
-	font-size: clamp(1.3rem, 3vw, 1.65rem) !important;
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-style: normal !important;
+	font-size: 1rem !important;
+	color: var(--sl-color-gray-2) !important;
+	white-space: normal !important;
+	max-width: 72ch;
+	margin-inline: auto;
+	line-height: 1.7;
+	opacity: 1;
+}
+
+/* Pain line — italic serif, stands alone */
+[data-has-hero] .hero .tagline .hero-pain {
+	display: block;
+	font-family: 'DM Serif Display', 'Georgia', serif;
 	font-style: italic;
-	font-weight: 400;
+	font-size: clamp(1.2rem, 2.5vw, 1.5rem);
 	color: var(--sl-color-accent-high);
 	line-height: 1.4;
-	max-width: none;
-	white-space: nowrap;
-	margin-inline: auto;
-	letter-spacing: 0.01em;
+	margin-bottom: 1.5rem;
 	opacity: 0.95;
 }
 
-/* Hero description — below the tagline, back to system sans-serif */
+/* Hero description — grounding paragraph */
 p.hero-description {
 	all: unset !important;
 	display: block !important;
 	font-family: system-ui, -apple-system, sans-serif !important;
 	font-style: normal !important;
-	font-size: clamp(1rem, 2vw, 1.15rem) !important;
+	font-size: clamp(0.95rem, 2vw, 1.05rem) !important;
 	color: var(--sl-color-gray-2) !important;
 	font-weight: 400 !important;
 	line-height: 1.7 !important;
-	max-width: 52ch !important;
+	max-width: 72ch !important;
 	margin-inline: auto !important;
-	margin-top: 1rem !important;
+	margin-top: 0 !important;
 	white-space: normal !important;
 	letter-spacing: 0 !important;
 	text-align: center !important;
@@ -98,27 +244,243 @@ p.hero-description {
 	margin-inline: auto;
 }
 
-/* Intro paragraphs below hero — centered, single line each */
-[data-has-hero] .sl-markdown-content > p:first-of-type,
-[data-has-hero] .sl-markdown-content > p:nth-of-type(2) {
-	font-size: 1.05rem;
-	line-height: 1.7;
-	color: var(--sl-color-gray-2);
+/* ══════════════════════════════════════════════════
+   HOMEPAGE SECTIONS — override ALL Starlight defaults
+   Uses double-class specificity to beat global rules
+   ══════════════════════════════════════════════════ */
+
+/* Section spacing and dividers */
+[data-has-hero] .sl-markdown-content .homepage-section {
+	padding-top: 3rem;
+	padding-bottom: 1rem;
+	border-top: 1px solid rgba(232, 145, 58, 0.06);
+}
+
+[data-has-hero] .sl-markdown-content .homepage-section:first-child {
+	border-top: none;
+}
+
+/* Heading wrappers in homepage sections — reset ALL Starlight heading behavior */
+[data-has-hero] .homepage-section .sl-heading-wrapper {
+	margin: 0 !important;
+	gap: 0 !important;
+}
+
+/* Kill the margin-top that Starlight adds between non-heading + heading-wrapper */
+[data-has-hero] .sl-markdown-content .homepage-section :is(.sl-heading-wrapper) {
+	margin-top: 0 !important;
+}
+
+/* Hide anchor links on homepage — they still work on hover for a11y but we suppress the icon */
+[data-has-hero] .homepage-section .sl-heading-wrapper .sl-anchor-link {
+	display: none !important;
+}
+
+/* h2 wrappers — override Starlight's font-size at the wrapper level */
+[data-has-hero] .homepage-section .sl-heading-wrapper.level-h2 {
+	font-size: 0.75rem !important;
+	line-height: 1.4 !important;
+	margin-bottom: 0.75rem !important;
+}
+
+/* h2 elements — small uppercase amber label */
+[data-has-hero] .homepage-section .sl-heading-wrapper h2 {
+	display: block !important;
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-style: normal !important;
+	text-transform: uppercase !important;
+	letter-spacing: 0.08em !important;
+	font-size: inherit !important;
+	font-weight: 600 !important;
+	color: var(--sl-color-accent) !important;
+	border: none !important;
+	border-bottom: none !important;
+	padding: 0 !important;
+	margin: 0 !important;
+}
+
+/* h3 wrappers — override Starlight's font-size at the wrapper level */
+[data-has-hero] .homepage-section .sl-heading-wrapper.level-h3 {
+	font-size: 1.35rem !important;
+	line-height: 1.3 !important;
+	margin-bottom: 0.75rem !important;
+}
+
+/* h3 elements — bold sans-serif subheading */
+[data-has-hero] .homepage-section .sl-heading-wrapper h3 {
+	display: block !important;
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-style: normal !important;
+	font-size: inherit !important;
+	font-weight: 700 !important;
+	letter-spacing: -0.02em !important;
+	color: var(--sl-color-white) !important;
+	text-transform: none !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: none !important;
+}
+
+/* Paragraphs in homepage sections — full width */
+[data-has-hero] .sl-markdown-content .homepage-section p {
 	max-width: none;
-	margin-inline: auto;
+	font-size: 1rem;
+	line-height: 1.8;
+	color: var(--sl-color-gray-2);
+}
+
+/* Emphasis text */
+[data-has-hero] .sl-markdown-content .homepage-section .emphasis {
+	color: var(--sl-color-white, var(--sl-color-text));
+	font-weight: 500;
+}
+
+/* Strong text */
+[data-has-hero] .sl-markdown-content .homepage-section strong {
+	color: var(--sl-color-white, var(--sl-color-text));
+	font-weight: 600;
+}
+
+/* ── Footer CTA ── */
+[data-has-hero] .footer-cta {
 	text-align: center;
+	padding: 4rem 0 2rem;
+	border-top: 1px solid rgba(232, 145, 58, 0.06);
 }
 
-/* Formula block — center it, no overflow */
-[data-has-hero] .sl-markdown-content > .expressive-code:first-of-type {
-	max-width: 48rem;
+/* Code block inner pre — square top corners when header is present (outer frame provides the radius) */
+.expressive-code .frame.has-title pre,
+.expressive-code .frame.is-terminal pre {
+	border-top-left-radius: 0 !important;
+	border-top-right-radius: 0 !important;
+}
+
+/* Footer CTA code block — compact, centered, not full width */
+[data-has-hero] .footer-cta .expressive-code {
+	max-width: 24rem;
 	margin-inline: auto;
 }
 
-[data-has-hero] .sl-markdown-content > .expressive-code:first-of-type pre {
-	white-space: pre-wrap;
-	word-break: break-word;
-	overflow-x: hidden;
+
+[data-has-hero] .footer-cta .tagline-repeat {
+	font-family: 'DM Serif Display', 'Georgia', serif;
+	font-weight: 400;
+	font-style: italic;
+	font-size: 1.5rem;
+	color: var(--sl-color-accent-high);
+	margin-bottom: 1.5rem;
+}
+
+[data-has-hero] .footer-cta .links {
+	display: flex;
+	gap: 1.5rem;
+	justify-content: center;
+	margin-top: 1.5rem;
+}
+
+[data-has-hero] .footer-cta .links a {
+	color: var(--sl-color-gray-2);
+	text-decoration: none;
+	font-size: 0.85rem;
+	font-weight: 500;
+	transition: color 0.15s;
+}
+
+[data-has-hero] .footer-cta .links a:hover {
+	color: var(--sl-color-accent);
+}
+
+/* ── Agent prompt block ── */
+[data-has-hero] .agent-prompt {
+	background: var(--sl-color-gray-6, #1E1D1B);
+	border: 1px solid rgba(232, 145, 58, 0.08);
+	border-radius: 0.5rem;
+	padding: 1rem 1.5rem;
+	font-family: var(--sl-font-mono);
+	font-size: 0.9rem;
+	color: var(--sl-color-white, var(--sl-color-text));
+	margin: 1rem 0;
+}
+
+/* ── Guide link ── */
+[data-has-hero] .evidence-cta {
+	margin-top: 1.5rem;
+}
+
+[data-has-hero] .evidence-cta a {
+	color: var(--sl-color-accent);
+	text-decoration: none;
+	font-weight: 600;
+	font-size: 1rem;
+}
+
+[data-has-hero] .evidence-cta a:hover {
+	text-decoration: underline;
+}
+
+[data-has-hero] .evidence-cta .sub {
+	color: var(--sl-color-gray-3);
+	font-size: 0.85rem;
+	margin-left: 0.5rem;
+}
+
+[data-has-hero] .guide-link {
+	margin-top: 1rem;
+}
+
+[data-has-hero] .guide-link a {
+	color: var(--sl-color-accent);
+	text-decoration: none;
+	font-weight: 500;
+}
+
+[data-has-hero] .guide-link a:hover {
+	text-decoration: underline;
+}
+
+[data-has-hero] .guide-link .sub {
+	color: var(--sl-color-gray-3);
+	font-size: 0.85rem;
+}
+
+/* ══════════════════════════════════════════════════
+   TYPOGRAPHY
+   ══════════════════════════════════════════════════ */
+
+/* Monospace — JetBrains Mono for all code */
+:root {
+	--sl-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* H1 on inner docs pages — serif, carries brand from homepage */
+.sl-markdown-content h1 {
+	font-family: 'DM Serif Display', 'Georgia', serif;
+	font-weight: 400;
+	letter-spacing: -0.02em;
+	line-height: 1.15;
+}
+/* But NOT on the splash hero — that stays sans-serif */
+[data-has-hero] .hero h1 {
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-style: normal !important;
+}
+
+/* ══════════════════════════════════════════════════
+   SIDEBAR
+   ══════════════════════════════════════════════════ */
+
+/* Slightly smaller sidebar text */
+.sidebar-content {
+	font-size: 0.85rem;
+}
+
+/* Section headings — uppercase, tracked */
+.sidebar-content details > summary,
+nav.sidebar .group-label span {
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	font-size: 0.7rem;
+	font-weight: 600;
 }
 
 /* ══════════════════════════════════════════════════
@@ -157,6 +519,20 @@ p.hero-description {
 pre {
 	font-size: 0.9rem;
 	border-radius: 0.5rem;
+	font-family: var(--sl-font-mono);
+}
+
+/* Light mode — warm dark background for code blocks (matches dark mode) */
+:root[data-theme='light'] .expressive-code pre,
+:root[data-theme='light'] .expressive-code .frame {
+	background-color: #1E1A14 !important;
+}
+
+:root[data-theme='light'] .expressive-code {
+	--ec-frm-edBg: #1E1A14;
+	--ec-frm-trmBg: #1E1A14;
+	--ec-frm-edTabBarBg: #171614;
+	--ec-frm-trmTtlBg: #171614;
 }
 
 /* Badges */
@@ -165,18 +541,22 @@ pre {
 	font-weight: 600;
 }
 
-/* Search bar — wider */
+/* Search bar */
 site-search button[data-open-modal] {
-	max-width: 36rem !important;
+	max-width: 22rem !important;
 	width: 100% !important;
 }
 
-/* Category (h2) vs subcategory (h3) — clear visual hierarchy */
+/* Category (h2) vs subcategory (h3) — clear visual hierarchy
+   These apply to INNER pages only. Homepage sections override them above. */
 .sl-markdown-content > h2 {
 	margin-top: 3.5rem;
 	padding-bottom: 0.75rem;
 	border-bottom: 2px solid var(--sl-color-accent);
 	font-size: var(--sl-text-h2);
+	font-style: normal !important;
+	font-family: system-ui, -apple-system, sans-serif !important;
+	font-weight: 700 !important;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
@@ -201,4 +581,194 @@ th {
 	font-size: 0.75rem;
 	letter-spacing: 0.05em;
 	font-weight: 600;
+}
+
+/* Context engineering — text/chart two-column layout */
+.context-split {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 1.5rem;
+	align-items: center;
+	margin: 1rem 0;
+}
+
+@media (min-width: 52rem) {
+	.context-split {
+		grid-template-columns: 1fr 1fr;
+		gap: 2rem;
+	}
+}
+
+.context-text p {
+	margin: 0 0 0.875rem;
+	font-size: 0.95rem;
+	line-height: 1.7;
+	color: var(--sl-color-gray-2);
+}
+
+.context-text p:last-child {
+	margin-bottom: 0;
+}
+
+.context-chart .chart-wrap {
+	max-width: 100%;
+	margin: 0;
+}
+
+/* ── Header — constrain to content width on wide screens ── */
+
+@media (min-width: 72rem) {
+	header.header {
+		padding-inline: calc((100% - var(--sl-content-width)) / 2) !important;
+	}
+}
+
+/* ── Experiment Stat Cards ── */
+
+.exp-stats {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	gap: 1rem;
+	margin: 2rem 0;
+}
+
+.exp-stat {
+	padding: 1.25rem 1.5rem;
+	background: var(--sl-color-gray-6);
+	border: none !important;
+	border-radius: 0 4px 4px 0;
+	box-shadow: inset 3px 0 0 0 var(--sl-color-accent);
+	margin-top: 0 !important;
+}
+
+.exp-stat-number {
+	display: block;
+	font-size: 2rem;
+	font-weight: 700;
+	color: var(--sl-color-accent);
+	line-height: 1;
+	margin-bottom: 0.4rem;
+	font-family: 'JetBrains Mono', monospace;
+}
+
+.exp-stat-number.small {
+	font-size: 1.4rem;
+}
+
+.exp-stat-label {
+	display: block;
+	font-size: 0.8rem;
+	color: var(--sl-color-gray-2);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+/* ── Experiment Index List ── */
+
+.exp-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin: 1rem 0;
+}
+
+.exp-row {
+	display: block;
+	padding: 0.875rem 1rem 0.875rem 1.125rem;
+	background: var(--sl-color-gray-6);
+	border: none !important;
+	border-radius: 0 4px 4px 0;
+	box-shadow: inset 3px 0 0 0 var(--sl-color-accent);
+	text-decoration: none;
+	color: inherit;
+	transition: background 0.15s;
+}
+
+.exp-row:hover {
+	background: var(--sl-color-gray-5);
+}
+
+.exp-row-meta {
+	display: flex;
+	align-items: center;
+	gap: 0.625rem;
+	margin-bottom: 0.3rem;
+}
+
+.exp-id {
+	font-family: 'JetBrains Mono', monospace;
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--sl-color-accent);
+}
+
+.exp-badge {
+	font-size: 0.7rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	padding: 0.1rem 0.4rem;
+	border-radius: 3px;
+}
+
+.exp-badge.validated { background: rgba(34,197,94,0.15); color: #4ade80; }
+.exp-badge.partial   { background: rgba(234,179,8,0.15);  color: #facc15; }
+.exp-badge.invalid   { background: rgba(239,68,68,0.15);  color: #f87171; }
+
+.exp-n {
+	font-size: 0.72rem;
+	color: var(--sl-color-gray-3);
+	margin-left: auto;
+}
+
+.exp-row-name {
+	font-size: 0.9rem;
+	font-weight: 600;
+	color: var(--sl-color-white);
+	margin-bottom: 0.2rem;
+}
+
+.exp-row-finding {
+	font-size: 0.82rem;
+	color: var(--sl-color-gray-2);
+	line-height: 1.4;
+}
+
+/* ── Experiment Compare Block (EXP-09) ── */
+
+.exp-compare {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 1rem;
+	margin: 1.5rem 0;
+}
+
+.exp-compare-col {
+	flex: 1;
+	min-width: 200px;
+	padding: 1rem 1.25rem;
+	background: var(--sl-color-gray-6);
+	border: none !important;
+	border-radius: 0 4px 4px 0;
+	box-shadow: inset 3px 0 0 0 var(--sl-color-accent);
+	margin-top: 0 !important;
+}
+
+.exp-compare-label {
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--sl-color-gray-3);
+	margin-bottom: 0.4rem;
+}
+
+.exp-compare-value {
+	font-size: 0.9rem;
+	color: var(--sl-color-white);
+	font-style: italic;
+}
+
+.exp-compare-value code {
+	font-style: normal;
+	font-size: 0.82rem;
 }

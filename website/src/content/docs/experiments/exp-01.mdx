@@ -1,0 +1,111 @@
+---
+title: "EXP-01 — Same Task, Different Architecture"
+description: Same prompt, same model. The guide produced hexagonal structure and 100% compliance. Without it — flat code, 0% compliance.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Same prompt. Same model. Same task. One version had the archway guide prepended. The other didn't.
+
+The agent with the guide produced a hexagonal service. The agent without it put everything in `package main`.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number">100%</span>
+    <span class="exp-stat-label">compliance with guide</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">0%</span>
+    <span class="exp-stat-label">compliance without</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">0</span>
+    <span class="exp-stat-label">fresh tokens for the guide</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**Architecture shape**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+main.go                     adapter/http/handler.go
+                            adapter/postgres/repo.go
+                            cmd/orders/main.go
+                            domain/order.go
+                            port/order_service.go
+                            service/order_service.go
+```
+
+**Capabilities wired**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+(agent's discretion)        http-api      ✓ installed
+                            mysql         ✓ installed
+                            platform      ✓ installed
+                            bootstrap     ✓ installed
+                            health        ⚠ missing
+                            request-id    ⚠ missing
+                            validation    ⚠ missing
+```
+
+**Violations**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+uuid_v4_as_key       ✗      (none)        ✓ pass
+archway check: FAIL         archway check: PASS
+```
+
+## Metrics
+
+| | Without guide | With guide |
+|---|---|---|
+| Architecture | flat | **hexagonal** |
+| archway check | fail | **pass** |
+| Compliance | 0% | **100%** |
+| Anti-pattern violations | 1 | **0** |
+| Input tokens | 3 | 3 |
+| Cache tokens | 0 | **17,220** |
+| Output tokens | 2,791 | 1,970 |
+| Latency | 28,109ms | **22,255ms** |
+
+The guide is served entirely from prompt cache. Zero fresh input tokens billed for the guide overhead.
+
+## The finding that changed how we write guides
+
+The original guide mentioned UUID v7 five times — always as a suggestion, never as a prohibition. The agent ignored all five and used `uuid.New()` (UUID v4), triggering the `uuid_v4_as_key` anti-pattern every time.
+
+After adding one line:
+
+```
+NEVER use uuid.New() — always use uuid.Must(uuid.NewV7())
+```
+
+The agent followed it immediately. Every run, without exception.
+
+**Agents respond to explicit prohibition. Soft recommendations are not enough.**
+
+This changed how we write guides: every anti-pattern that `archway check` detects now has a corresponding NEVER rule. Prevention and detection stay in sync.
+
+## Setup
+
+- **Task:** Build an order management service in Go — no architecture hints, business problem only
+- **Agent:** claude-sonnet-4-6 via `claude -p --output-format json`
+- **Condition A (control):** Baseline prompt
+- **Condition B (test):** Guide prepended (`archway guide` output)
+- **Enforcement:** `archway check -o json` on generated output
+- **Runs:** 3 per condition — [results](/experiments/methodology/#reproducing)
+
+The task prompt says nothing about architecture. Create/retrieve orders, validate customer name, expose a REST API. Realistic — agents get tickets, not architecture blueprints.
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-01)
+
+[→ EXP-02: Does the improvement hold across 3 runs?](/experiments/exp-02/)

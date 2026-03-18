@@ -1,0 +1,18 @@
+You are a Go engineer. Build an order management service in Go.
+
+Requirements:
+- Create orders with a customer name and a total amount in cents
+- Retrieve an order by its ID
+- Validate that customer name is not empty
+- Expose a REST API with POST /orders and GET /orders/{id}
+
+Module name: example.com/experiment
+
+Generate complete, compilable Go code. Choose whatever packages and file structure
+you think is best for a production-quality service.
+
+Return ONLY the file contents using this exact format with no other text:
+=== <filepath> ===
+[complete file content]
+
+Include all files needed for a working implementation.

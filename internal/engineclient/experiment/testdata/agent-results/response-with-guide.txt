@@ -1,0 +1,249 @@
+=== go.mod ===
+module example.com/experiment
+
+go 1.23
+
+require github.com/google/uuid v1.6.0
+
+=== domain/order.go ===
+package domain
+
+import (
+	"errors"
+	"time"
+)
+
+var (
+	ErrOrderNotFound      = errors.New("order not found")
+	ErrEmptyCustomerName  = errors.New("customer name must not be empty")
+	ErrInvalidTotalAmount = errors.New("total amount must be greater than zero")
+)
+
+type Order struct {
+	ID           string
+	CustomerName string
+	TotalCents   int64
+	CreatedAt    time.Time
+}
+
+=== port/order.go ===
+package port
+
+import "example.com/experiment/domain"
+
+type OrderRepository interface {
+	Save(order *domain.Order) error
+	FindByID(id string) (*domain.Order, error)
+}
+
+=== service/order.go ===
+package service
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+
+	"example.com/experiment/domain"
+	"example.com/experiment/port"
+)
+
+type OrderService struct {
+	repo port.OrderRepository
+}
+
+func NewOrderService(repo port.OrderRepository) *OrderService {
+	return &OrderService{repo: repo}
+}
+
+func (s *OrderService) CreateOrder(customerName string, totalCents int64) (*domain.Order, error) {
+	if customerName == "" {
+		return nil, domain.ErrEmptyCustomerName
+	}
+	if totalCents <= 0 {
+		return nil, domain.ErrInvalidTotalAmount
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
+	order := &domain.Order{
+		ID:           id.String(),
+		CustomerName: customerName,
+		TotalCents:   totalCents,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	if err := s.repo.Save(order); err != nil {
+		return nil, err
+	}
+
+	return order, nil
+}
+
+func (s *OrderService) GetOrder(id string) (*domain.Order, error) {
+	return s.repo.FindByID(id)
+}
+
+=== adapter/memrepo/order_repository.go ===
+package memrepo
+
+import (
+	"sync"
+
+	"example.com/experiment/domain"
+)
+
+type OrderRepository struct {
+	mu     sync.RWMutex
+	orders map[string]*domain.Order
+}
+
+func NewOrderRepository() *OrderRepository {
+	return &OrderRepository{
+		orders: make(map[string]*domain.Order),
+	}
+}
+
+func (r *OrderRepository) Save(order *domain.Order) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.orders[order.ID] = order
+	return nil
+}
+
+func (r *OrderRepository) FindByID(id string) (*domain.Order, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	order, ok := r.orders[id]
+	if !ok {
+		return nil, domain.ErrOrderNotFound
+	}
+	return order, nil
+}
+
+=== adapter/httphandler/order_handler.go ===
+package httphandler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"example.com/experiment/domain"
+	"example.com/experiment/service"
+)
+
+type OrderHandler struct {
+	svc *service.OrderService
+}
+
+func NewOrderHandler(svc *service.OrderService) *OrderHandler {
+	return &OrderHandler{svc: svc}
+}
+
+func (h *OrderHandler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /orders", h.createOrder)
+	mux.HandleFunc("GET /orders/{id}", h.getOrder)
+}
+
+type createOrderRequest struct {
+	CustomerName string `json:"customer_name"`
+	TotalCents   int64  `json:"total_cents"`
+}
+
+type orderResponse struct {
+	ID           string `json:"id"`
+	CustomerName string `json:"customer_name"`
+	TotalCents   int64  `json:"total_cents"`
+	CreatedAt    string `json:"created_at"`
+}
+
+func (h *OrderHandler) createOrder(w http.ResponseWriter, r *http.Request) {
+	var req createOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	order, err := h.svc.CreateOrder(req.CustomerName, req.TotalCents)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrEmptyCustomerName), errors.Is(err, domain.ErrInvalidTotalAmount):
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, toResponse(order))
+}
+
+func (h *OrderHandler) getOrder(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing order id")
+		return
+	}
+
+	order, err := h.svc.GetOrder(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			writeError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toResponse(order))
+}
+
+func toResponse(o *domain.Order) orderResponse {
+	return orderResponse{
+		ID:           o.ID,
+		CustomerName: o.CustomerName,
+		TotalCents:   o.TotalCents,
+		CreatedAt:    o.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+=== main.go ===
+package main
+
+import (
+	"log"
+	"net/http"
+
+	"example.com/experiment/adapter/memrepo"
+	"example.com/experiment/adapter/httphandler"
+	"example.com/experiment/service"
+)
+
+func main() {
+	repo := memrepo.NewOrderRepository()
+	svc := service.NewOrderService(repo)
+	handler := httphandler.NewOrderHandler(svc)
+
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	log.Println("listening on :8080")
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
+}

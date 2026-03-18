@@ -14,17 +14,18 @@ import (
 
 // GenerateOptions holds the inputs for guide generation.
 type GenerateOptions struct {
-	ProjectDir      string
-	Target          string
-	Architecture    string
-	Capabilities    []string
-	Components      []config.Component
-	TemplateFS      fs.FS // optional: embedded FS for pattern extraction
-	CatalogOnly     bool  // when true, only output catalog-related sections
-	Decisions       []config.Decision
-	LanguageVersion string          // e.g., "Go 1.26"
-	Features        map[string]bool // detected language features; only true entries are shown
-	GuideMode       string          // "passive" | "audit" | "prompted" (default: "passive")
+	ProjectDir        string
+	Target            string
+	Architecture      string
+	Capabilities      []string
+	Components        []config.Component
+	TemplateFS        fs.FS // optional: embedded FS for pattern extraction
+	CatalogOnly       bool  // when true, only output catalog-related sections
+	Decisions         []config.Decision
+	LanguageVersion   string                   // e.g., "Go 1.26"
+	Features          map[string]bool          // detected language features; only true entries are shown
+	GuideMode         string                   // "passive" | "audit" | "prompted" (default: "passive")
+	SeverityOverrides config.SeverityOverrides // path-scoped severity overrides from archway.yaml
 }
 
 // Generate produces guide files for the specified target(s).
@@ -61,18 +62,25 @@ func Generate(opts GenerateOptions) error {
 // An optional fs.FS can be passed to enable template pattern extraction.
 func GenerateFromConfig(projectDir string, cfg *config.ArchwayConfig, target string, templateFS ...fs.FS) error {
 	opts := GenerateOptions{
-		ProjectDir:   projectDir,
-		Target:       target,
-		Architecture: cfg.Architecture,
-		Capabilities: cfg.Capabilities,
-		Components:   cfg.Components,
-		Decisions:    cfg.Decisions,
-		GuideMode:    cfg.Guide.GuideMode(),
+		ProjectDir:        projectDir,
+		Target:            target,
+		Architecture:      cfg.Architecture,
+		Capabilities:      cfg.Capabilities,
+		Components:        cfg.Components,
+		Decisions:         cfg.Decisions,
+		GuideMode:         cfg.Guide.GuideMode(),
+		SeverityOverrides: cfg.SeverityOverrides,
 	}
 	if len(templateFS) > 0 {
 		opts.TemplateFS = templateFS[0]
 	}
 	return Generate(opts)
+}
+
+// BuildContent generates the full markdown guide content.
+// Exported for use by integration experiments and external tooling.
+func BuildContent(opts GenerateOptions) string {
+	return buildContent(opts)
 }
 
 // buildContent generates the full markdown guide content.
@@ -105,7 +113,7 @@ func buildContent(opts GenerateOptions) string {
 	writeDesignQuestions(&b)
 
 	// Write context-specific warnings and suggestions (based on installed caps).
-	writeWarnings(&b, opts.Capabilities)
+	writeWarnings(&b, opts.Capabilities, opts.SeverityOverrides)
 	writeSuggestions(&b, opts.Capabilities)
 
 	if len(opts.Decisions) > 0 {
@@ -352,6 +360,80 @@ func writeLayerRules(b *strings.Builder, arch string, components []config.Compon
 			b.WriteString("- May depend on: " + strings.Join(c.MayDependOn, ", ") + "\n")
 		}
 		b.WriteString("\n")
+	}
+
+	writeCodebaseMapping(b, components)
+}
+
+// writeCodebaseMapping emits a directory-to-layer mapping table derived from component globs.
+// This is static (from archway.yaml), not dynamic (no filesystem scan). See ADR-008.
+func writeCodebaseMapping(b *strings.Builder, components []config.Component) {
+	if len(components) == 0 {
+		return
+	}
+
+	b.WriteString("## Codebase Mapping\n\n")
+	b.WriteString("When reading or writing code, use this table to know which layer a directory belongs to:\n\n")
+	b.WriteString("| Directory | Layer | Role |\n")
+	b.WriteString("|-----------|-------|------|\n")
+
+	for _, c := range components {
+		for _, glob := range c.In {
+			dir := globToDir(glob)
+			role := layerRole(c.Name, c.MayDependOn)
+			fmt.Fprintf(b, "| `%s` | %s | %s |\n", dir, c.Name, role)
+		}
+	}
+
+	b.WriteString("\nDirectories not listed here are outside the declared architecture. Run `archway check` to identify unmapped directories.\n\n")
+}
+
+// globToDir converts a component glob to a human-readable directory path.
+// "domain/**" → "domain/", "adapter/http/**" → "adapter/http/"
+func globToDir(glob string) string {
+	dir := strings.TrimSuffix(glob, "/**")
+	dir = strings.TrimSuffix(dir, "**")
+	if !strings.HasSuffix(dir, "/") && dir != "" {
+		dir += "/"
+	}
+	if dir == "" {
+		dir = "(root)"
+	}
+	return dir
+}
+
+// layerRole returns a short description of a component's role based on its position.
+func layerRole(name string, deps []string) string {
+	if len(deps) == 0 {
+		return "Innermost layer — no outward dependencies"
+	}
+	switch name {
+	case "domain":
+		return "Business entities and value objects"
+	case "ports", "port":
+		return "Interfaces defining boundaries"
+	case "service":
+		return "Application logic and use cases"
+	case "adapter", "adapters":
+		return "Infrastructure implementations"
+	case "handler":
+		return "HTTP/transport handlers"
+	case "repository":
+		return "Data access implementations"
+	case "model":
+		return "Shared data structures"
+	case "internal":
+		return "Private implementation details"
+	case "entity":
+		return "Enterprise business rules"
+	case "usecase":
+		return "Application business rules"
+	case "interface":
+		return "Interface adapters"
+	case "infrastructure":
+		return "Frameworks and drivers"
+	default:
+		return "Depends on: " + strings.Join(deps, ", ")
 	}
 }
 
@@ -630,33 +712,37 @@ func writeRuleSummaries(b *strings.Builder, projectDir string) {
 func writeAntiPatterns(b *strings.Builder, arch string) {
 	b.WriteString("## Anti-patterns to Avoid\n\n")
 
-	// Common anti-patterns.
-	b.WriteString("- NEVER create `utils/`, `helpers/`, `common/`, or `shared/` packages\n")
-	b.WriteString("- NEVER use init() for business logic\n")
-	b.WriteString("- NEVER ignore errors with `_`\n")
+	// Common anti-patterns: each rule has a positive alternative.
+	b.WriteString("- NEVER create `utils/`, `helpers/`, `common/`, or `shared/` packages — place functions in the package they serve\n")
+	b.WriteString("- NEVER use init() for business logic — use explicit constructors (`NewService(deps)`) from `main()`\n")
+	b.WriteString("- NEVER ignore errors with `_` — handle, wrap, or return: `return fmt.Errorf(\"op: %w\", err)`\n")
+	b.WriteString("- NEVER use `uuid.New()` for entity IDs (B-tree fragmentation) — use UUIDv7: `uuid.Must(uuid.NewV7())`\n")
+	b.WriteString("- NEVER start a naked goroutine — use `errgroup.Go()` or `context.Context` + `sync.WaitGroup` for lifecycle control\n")
+	b.WriteString("- NEVER use `context.Background()` in handlers — propagate `r.Context()` through the call chain\n")
+	b.WriteString("- NEVER concatenate SQL strings (injection risk) — use parameterized queries: `db.QueryContext(ctx, \"SELECT ... WHERE id = $1\", id)`\n")
+	b.WriteString("- NEVER use package-level mutable `var` (data races) — inject state through struct constructors\n")
 
 	if arch == "hexagonal" {
-		b.WriteString("- NEVER import infrastructure packages from `domain/`\n")
-		b.WriteString("- NEVER put business logic in HTTP handlers or adapters\n")
-		b.WriteString("- NEVER depend on concrete implementations; use port interfaces\n")
-		b.WriteString("- NEVER let domain types reference database/transport concerns (SQL tags, JSON tags in domain)\n")
-		b.WriteString("- NEVER bypass the service layer; handlers must not call repositories directly\n")
+		b.WriteString("- NEVER import infrastructure from `domain/` — define interfaces in `port/`, implement in `adapter/`\n")
+		b.WriteString("- NEVER put business logic in handlers or adapters — implement in `service/`, handlers only parse/respond\n")
+		b.WriteString("- NEVER depend on concrete types — accept port interfaces: `NewOrderService(repo port.OrderRepository)`\n")
+		b.WriteString("- NEVER put SQL/JSON tags in domain types — create separate DTOs in `adapter/`\n")
+		b.WriteString("- NEVER bypass the service layer — route: `handler → service → port → adapter`\n")
 	}
 
 	if arch == "clean" {
-		b.WriteString("- NEVER let `internal/entity/` import from usecase, interface, or infrastructure\n")
-		b.WriteString("- NEVER let `internal/usecase/` import from infrastructure\n")
-		b.WriteString("- NEVER put business logic in `internal/interface/` adapters; that is transport only\n")
-		b.WriteString("- NEVER bypass use cases; interface adapters must not call entity methods directly for business operations\n")
-		b.WriteString("- NEVER let infrastructure concerns (SQL tags, HTTP headers) leak into entities or use cases\n")
+		b.WriteString("- NEVER let `entity/` import from usecase, interface, or infrastructure — define interfaces in `entity/`\n")
+		b.WriteString("- NEVER let `usecase/` import from infrastructure — accept repository interfaces as constructor params\n")
+		b.WriteString("- NEVER put business logic in `interface/` adapters — parse request, call use case, format response\n")
+		b.WriteString("- NEVER bypass use cases — route: `adapter → usecase → entity`\n")
+		b.WriteString("- NEVER let SQL/HTTP concerns leak into entities or use cases — map at the adapter boundary\n")
 	}
 
 	if arch == "layered" {
-		b.WriteString("- NEVER put business logic in `internal/handler/`; that is transport only\n")
-		b.WriteString("- NEVER import `internal/handler/` or `internal/service/` from `internal/repository/`\n")
-		b.WriteString("- NEVER import `internal/handler/` or `internal/repository/` from each other directly\n")
-		b.WriteString("- NEVER let handler bypass service and call repository directly\n")
-		b.WriteString("- NEVER put data access (SQL, HTTP clients) in `internal/service/`\n")
+		b.WriteString("- NEVER put business logic in `handler/` — parse request, call service, format response\n")
+		b.WriteString("- NEVER import `handler/` or `service/` from `repository/` — dependencies point downward only\n")
+		b.WriteString("- NEVER let handler call repository directly — mediate through the service layer\n")
+		b.WriteString("- NEVER put data access in `service/` — inject a repository interface, implement in `repository/`\n")
 	}
 
 	b.WriteString("\n")

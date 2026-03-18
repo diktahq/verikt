@@ -1,0 +1,67 @@
+---
+title: "EXP-07 — Consistency on Feature Additions"
+description: "Both conditions produced [0,0,0] violations across 3 runs on a conforming fixture. Zero variance in both — the existing architecture constrains the agent, not the guide."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+EXP-02 proved the guide eliminates variance on greenfield tasks. Does that hold on feature additions? When extending an existing conforming service, both conditions produced zero variance — [0,0,0] violations across 3 runs each. The fixture itself is the dominant variable.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number small">[0,0,0]</span>
+    <span class="exp-stat-label">violations — both conditions</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">0.00</span>
+    <span class="exp-stat-label">variance — both conditions</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**Violations across 3 runs**
+
+```
+Without guide               With guide
+─────────────────────       ──────────────────────────────
+Run 1: 0 violations  ✓      Run 1: 0 violations   ✓
+Run 2: 0 violations  ✓      Run 2: 0 violations   ✓
+Run 3: 0 violations  ✓      Run 3: 0 violations   ✓
+Variance: 0.00              Variance: 0.00
+```
+
+## Metrics
+
+| | Without guide | With guide |
+|---|---|---|
+| Violations | [0, 0, 0] | [0, 0, 0] |
+| Variance | 0.00 | 0.00 |
+| Pass rate | 3/3 | 3/3 |
+
+## Finding
+
+**Null result. On a conforming codebase, both conditions produce zero violations with zero variance.**
+
+The agent learns the architecture from the fixture itself — hexagonal structure, layer boundaries, naming conventions. The guide is redundant when the existing code already teaches the correct patterns. This confirms what EXP-04 found in a single run, now validated across 3 runs.
+
+Contrast with EXP-02 (greenfield): without existing code to reference, the guide is the only architectural signal. That's where it matters. On feature additions to a clean codebase, the codebase does the teaching.
+
+**What this means:** The guide's highest value is on greenfield services and codebases with inconsistent patterns. For clean, conforming services, the architecture speaks for itself.
+
+<Aside type="note">
+n=3 per condition. Valid runs — fixture correctly embedded (confirmed by cache tokens in test conditions: 11,997 / 93,160 / 93,043). Previous 2026-03-15 runs were invalid due to fixture not being embedded.
+</Aside>
+
+## Setup
+
+- **Task:** Add a discount system to an existing conforming hexagonal orders service
+- **Agent:** claude-sonnet-4-6
+- **Fixture:** orders-service (hexagonal, conforming) — Mode B, embedded
+- **Runs:** 3 per condition
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-07)
+
+[→ EXP-08: Do NEVER rules stop anti-patterns?](/experiments/exp-08/)

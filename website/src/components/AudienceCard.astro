@@ -1,0 +1,57 @@
+---
+interface Props {
+  title: string;
+  href: string;
+}
+
+const { title, href } = Astro.props;
+---
+
+<a href={href} class="audience-card not-content">
+  <h4>{title} <span class="arrow">→</span></h4>
+  <p><slot /></p>
+</a>
+
+<style>
+  .audience-card {
+    display: block;
+    background: var(--sl-color-gray-6, #1E1D1B);
+    border: 1px solid rgba(232, 145, 58, 0.08);
+    border-radius: 0.75rem;
+    padding: 2rem;
+    text-decoration: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .audience-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px var(--archway-glow, rgba(232, 145, 58, 0.08));
+    border-color: rgba(232, 145, 58, 0.2);
+  }
+
+  h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--sl-color-white, var(--sl-color-gray-1));
+    margin: 0 0 0.75rem;
+  }
+
+  .arrow {
+    color: var(--sl-color-accent);
+    margin-left: 0.25rem;
+    transition: margin-left 0.2s ease;
+  }
+
+  .audience-card:hover .arrow {
+    margin-left: 0.5rem;
+  }
+
+  p {
+    font-size: 0.9rem;
+    color: var(--sl-color-gray-2);
+    margin: 0;
+    line-height: 1.6;
+  }
+</style>
