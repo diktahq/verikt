@@ -33,3 +33,6 @@ docs/internal/
 # Go
 vendor/
 docs/product/plans/
+
+# Release artifacts (downloaded by CI, not committed)
+engine-artifacts/
