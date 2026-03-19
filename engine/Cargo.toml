@@ -10,3 +10,4 @@ license = "MIT"
 [workspace.dependencies]
 prost = "0.13"
 prost-build = "0.13"
+protoc-bin-vendored = "3"
