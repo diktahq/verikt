@@ -17,3 +17,4 @@ petgraph = "0.7"
 
 [build-dependencies]
 prost-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }
