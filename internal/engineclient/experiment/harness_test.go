@@ -19,8 +19,8 @@ type RunConfig struct {
 
 	// Mode A (greenfield): VeriktYAML is used to write the project and generate the guide.
 	VeriktYAML string
-	TaskPrompt  string
-	WithGuide   bool
+	TaskPrompt string
+	WithGuide  bool
 
 	// Mode B (feature-addition): FixtureName names a dir under testdata/.
 	FixtureName string

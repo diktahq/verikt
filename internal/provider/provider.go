@@ -44,7 +44,7 @@ type ScaffoldRequest struct {
 
 type ScaffoldResponse struct {
 	FilesCreated []string `json:"files_created"`
-	VeriktYAML  []byte   `json:"verikt_yaml,omitempty"`
+	VeriktYAML   []byte   `json:"verikt_yaml,omitempty"`
 }
 
 type AnalyzeRequest struct {
