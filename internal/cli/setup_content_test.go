@@ -7,7 +7,7 @@ import (
 
 func TestGlobalRulesContent_ContainsSentinel(t *testing.T) {
 	content := GlobalRulesContent("0.2.0")
-	sentinel := "<!-- archway:global:v0.2.0 -->"
+	sentinel := "<!-- verikt:global:v0.2.0 -->"
 	if !strings.Contains(content, sentinel) {
 		t.Errorf("expected sentinel %q in content", sentinel)
 	}
@@ -47,7 +47,7 @@ func TestGlobalRulesContent_Under800Tokens(t *testing.T) {
 func TestGlobalRulesContent_SentinelIsFirstLine(t *testing.T) {
 	content := GlobalRulesContent("0.2.0")
 	firstLine := strings.SplitN(content, "\n", 2)[0]
-	expected := "<!-- archway:global:v0.2.0 -->"
+	expected := "<!-- verikt:global:v0.2.0 -->"
 	if firstLine != expected {
 		t.Errorf("expected sentinel as first line, got: %q", firstLine)
 	}
@@ -56,11 +56,11 @@ func TestGlobalRulesContent_SentinelIsFirstLine(t *testing.T) {
 func TestGlobalRulesContent_ContainsCommands(t *testing.T) {
 	content := GlobalRulesContent("0.2.0")
 	requiredCommands := []string{
-		"archway new",
-		"archway guide",
-		"archway check",
-		"archway init",
-		"archway analyze",
+		"verikt new",
+		"verikt guide",
+		"verikt check",
+		"verikt init",
+		"verikt analyze",
 	}
 	for _, cmd := range requiredCommands {
 		if !strings.Contains(content, cmd) {

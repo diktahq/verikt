@@ -24,9 +24,9 @@ Without the outbox pattern, a crash between committing to the database and publi
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap postgres,event-bus,outbox
+verikt new my-service --language go --cap postgres,event-bus,outbox
 # or add to an existing service:
-archway add outbox
+verikt add outbox
 ```
 
 ## Related Capabilities

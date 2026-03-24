@@ -5,6 +5,7 @@ mod antipatterns;
 mod grep;
 mod import_graph;
 mod metrics;
+mod typescript_imports;
 
 use pb::{
     EngineRequest, EngineResponse, PingResult,
@@ -66,6 +67,9 @@ fn error_response(message: String) -> EngineResponse {
     }
 }
 
+/// Maximum message size: 64 MiB. Rejects oversized payloads before allocating.
+const MAX_MSG_SIZE: usize = 64 * 1024 * 1024;
+
 /// Read a length-prefixed protobuf message from stdin.
 /// Wire format: 4-byte little-endian u32 length, then N bytes of protobuf.
 fn read_message() -> io::Result<EngineRequest> {
@@ -74,6 +78,13 @@ fn read_message() -> io::Result<EngineRequest> {
     let mut len_buf = [0u8; 4];
     stdin.read_exact(&mut len_buf)?;
     let len = u32::from_le_bytes(len_buf) as usize;
+
+    if len > MAX_MSG_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("message too large: {len} bytes (max {MAX_MSG_SIZE})"),
+        ));
+    }
 
     let mut msg_buf = vec![0u8; len];
     stdin.read_exact(&mut msg_buf)?;

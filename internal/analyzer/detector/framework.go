@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"strings"
 
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/provider"
 	"golang.org/x/tools/go/packages"
 )
 

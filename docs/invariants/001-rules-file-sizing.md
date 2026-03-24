@@ -5,7 +5,7 @@
 
 ## Constraint
 
-Generated rules files (from `archway guide`) MUST stay within these bounds:
+Generated rules files (from `verikt guide`) MUST stay within these bounds:
 
 - **15-25 instructions** maximum per file
 - **500-1,500 tokens** per file
@@ -29,7 +29,7 @@ Research on LLM instruction following (2025-2026 frontier models) shows:
 
 - Bloated rules files (50+ instructions) will have lower total compliance than focused ones
 - Users will experience inconsistent AI agent behavior
-- The value proposition of `archway guide` degrades
+- The value proposition of `verikt guide` degrades
 
 ## Enforcement
 

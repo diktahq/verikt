@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/rules"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/rules"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -276,32 +276,32 @@ func TestCheckPrintCombinedJSON_MultipleViolationTypes(t *testing.T) {
 // --- printCombinedTerminal ---
 
 func TestCheckPrintCombinedTerminal_NilCheckerResult(t *testing.T) {
-	cfg := &config.ArchwayConfig{Architecture: "hexagonal"}
+	cfg := &config.VeriktConfig{Architecture: "hexagonal"}
 	flags := &checkFlags{}
 
 	out := captureStdout(t, func() {
 		printCombinedTerminal(nil, nil, nil, cfg, flags)
 	})
 
-	assert.Contains(t, out, "Archway Check — hexagonal")
+	assert.Contains(t, out, "verikt Check — hexagonal")
 	// Should not contain component info when checkerResult is nil.
 	assert.NotContains(t, out, "Components:")
 }
 
 func TestCheckPrintCombinedTerminal_NilRuleResult(t *testing.T) {
-	cfg := &config.ArchwayConfig{Architecture: "flat"}
+	cfg := &config.VeriktConfig{Architecture: "flat"}
 	flags := &checkFlags{}
 
 	out := captureStdout(t, func() {
 		printCombinedTerminal(nil, nil, nil, cfg, flags)
 	})
 
-	assert.Contains(t, out, "Archway Check — flat")
+	assert.Contains(t, out, "verikt Check — flat")
 	assert.NotContains(t, out, "PROXY RULES")
 }
 
 func TestCheckPrintCombinedTerminal_StagedModeTip(t *testing.T) {
-	cfg := &config.ArchwayConfig{Architecture: "test"}
+	cfg := &config.VeriktConfig{Architecture: "test"}
 	flags := &checkFlags{staged: true}
 
 	out := captureStdout(t, func() {
@@ -309,11 +309,11 @@ func TestCheckPrintCombinedTerminal_StagedModeTip(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Tip: Add to .git/hooks/pre-commit:")
-	assert.Contains(t, out, "archway check --staged")
+	assert.Contains(t, out, "verikt check --staged")
 }
 
 func TestCheckPrintCombinedTerminal_NoStagedTipByDefault(t *testing.T) {
-	cfg := &config.ArchwayConfig{Architecture: "test"}
+	cfg := &config.VeriktConfig{Architecture: "test"}
 	flags := &checkFlags{staged: false}
 
 	out := captureStdout(t, func() {
@@ -324,14 +324,14 @@ func TestCheckPrintCombinedTerminal_NoStagedTipByDefault(t *testing.T) {
 }
 
 func TestCheckPrintCombinedTerminal_EmptyArchitectureFallback(t *testing.T) {
-	cfg := &config.ArchwayConfig{Architecture: ""}
+	cfg := &config.VeriktConfig{Architecture: ""}
 	flags := &checkFlags{}
 
 	out := captureStdout(t, func() {
 		printCombinedTerminal(nil, nil, nil, cfg, flags)
 	})
 
-	assert.Contains(t, out, "Archway Check — project")
+	assert.Contains(t, out, "verikt Check — project")
 }
 
 // --- getStagedFiles parsing ---

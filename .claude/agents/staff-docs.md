@@ -64,7 +64,7 @@ For gap detection:
   • POST /webhooks — not in docs/api.md
   • DATABASE_POOL_SIZE env var — not in README
   • redis service added to docker-compose — not in docs/infrastructure.md
-Run /keel:docs to review and fix.
+Run /edikt:docs to review and fix.
 ```
 
 For audits, produce a structured report:
@@ -93,4 +93,4 @@ For audits, produce a structured report:
 - One clear finding is worth ten vague warnings
 - If a doc gap is intentional (internal API, WIP), note it as accepted — don't keep flagging it
 
-If you detect a decision worth capturing as an ADR or invariant, suggest the appropriate keel command.
+If you detect a decision worth capturing as an ADR or invariant, suggest the appropriate edikt command.

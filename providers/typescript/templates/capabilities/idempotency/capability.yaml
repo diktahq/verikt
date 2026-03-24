@@ -1,0 +1,5 @@
+name: idempotency
+description: "Idempotency keys — Redis-backed store prevents duplicate side effects on retry"
+suggests:
+  - redis
+  - retry

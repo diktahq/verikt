@@ -1,0 +1,38 @@
+language: go
+architecture: hexagonal
+capabilities:
+  - http-api
+  - mysql
+  - observability
+components:
+  - name: domain
+    in: ["domain/**"]
+    may_depend_on: []
+  - name: ports
+    in: ["port/**"]
+    may_depend_on: [domain]
+  - name: service
+    in: ["service/**"]
+    may_depend_on: [domain, ports]
+  - name: adapters
+    in: ["adapter/**"]
+    may_depend_on: [ports, domain]
+  - name: platform
+    in: ["platform/**"]
+    may_depend_on: []
+rules:
+  naming:
+    - pattern: "adapter/*repo/*"
+      must_end_with: "Repo"
+  structure:
+    required_dirs: [cmd/, domain/, adapter/, port/]
+    forbidden_dirs: [utils/, helpers/]
+  functions:
+    max_lines: 80
+    max_params: 4
+
+extends:
+  - verikt/api-strict
+
+templates:
+  source: verikt/api

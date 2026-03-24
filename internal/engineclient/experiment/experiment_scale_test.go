@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +30,7 @@ func TestScale_RuleCount(t *testing.T) {
 
 	// Go baseline: one full check pass (packages.Load + AST walk).
 	goStart := time.Now()
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: config.FunctionRules{MaxLines: 50}},
 	}
@@ -60,16 +60,16 @@ func TestScale_RuleCount(t *testing.T) {
 }
 
 // TestScale_ProjectSize benchmarks both paths as project size grows.
-// Controlled via ARCHWAY_EXPERIMENT_LARGE_PROJECT env var (path to a large Go project).
+// Controlled via VERIKT_EXPERIMENT_LARGE_PROJECT env var (path to a large Go project).
 func TestScale_ProjectSize(t *testing.T) {
-	projectPath := os.Getenv("ARCHWAY_EXPERIMENT_LARGE_PROJECT")
+	projectPath := os.Getenv("VERIKT_EXPERIMENT_LARGE_PROJECT")
 	if projectPath == "" {
-		t.Skip("set ARCHWAY_EXPERIMENT_LARGE_PROJECT to enable project size scaling test")
+		t.Skip("set VERIKT_EXPERIMENT_LARGE_PROJECT to enable project size scaling test")
 	}
 
 	client := newEngineClient(t)
 	rules := config.FunctionRules{MaxLines: 50, MaxParams: 5}
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: rules},
 	}
@@ -92,10 +92,10 @@ func TestScale_ProjectSize(t *testing.T) {
 }
 
 // TestScale_OSS_Chi benchmarks both paths on gorilla/mux or go-chi/chi.
-// Requires ARCHWAY_EXPERIMENT_OSS=1 and network access to clone repos.
+// Requires VERIKT_EXPERIMENT_OSS=1 and network access to clone repos.
 func TestScale_OSS_Chi(t *testing.T) {
-	if os.Getenv("ARCHWAY_EXPERIMENT_OSS") == "" {
-		t.Skip("set ARCHWAY_EXPERIMENT_OSS=1 to enable OSS project experiments")
+	if os.Getenv("VERIKT_EXPERIMENT_OSS") == "" {
+		t.Skip("set VERIKT_EXPERIMENT_OSS=1 to enable OSS project experiments")
 	}
 
 	projectPath := cloneOrSkip(t, "https://github.com/go-chi/chi.git", "chi")
@@ -104,8 +104,8 @@ func TestScale_OSS_Chi(t *testing.T) {
 
 // TestScale_OSS_Zap benchmarks both paths on uber-go/zap.
 func TestScale_OSS_Zap(t *testing.T) {
-	if os.Getenv("ARCHWAY_EXPERIMENT_OSS") == "" {
-		t.Skip("set ARCHWAY_EXPERIMENT_OSS=1 to enable OSS project experiments")
+	if os.Getenv("VERIKT_EXPERIMENT_OSS") == "" {
+		t.Skip("set VERIKT_EXPERIMENT_OSS=1 to enable OSS project experiments")
 	}
 
 	projectPath := cloneOrSkip(t, "https://github.com/uber-go/zap.git", "zap")
@@ -114,8 +114,8 @@ func TestScale_OSS_Zap(t *testing.T) {
 
 // TestScale_OSS_Mux benchmarks both paths on gorilla/mux.
 func TestScale_OSS_Mux(t *testing.T) {
-	if os.Getenv("ARCHWAY_EXPERIMENT_OSS") == "" {
-		t.Skip("set ARCHWAY_EXPERIMENT_OSS=1 to enable OSS project experiments")
+	if os.Getenv("VERIKT_EXPERIMENT_OSS") == "" {
+		t.Skip("set VERIKT_EXPERIMENT_OSS=1 to enable OSS project experiments")
 	}
 
 	projectPath := cloneOrSkip(t, "https://github.com/gorilla/mux.git", "mux")
@@ -126,7 +126,7 @@ func runOSSExperiment(t *testing.T, name, projectPath string) {
 	t.Helper()
 	client := newEngineClient(t)
 	rules := config.FunctionRules{MaxLines: 50, MaxParams: 5}
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: rules},
 	}

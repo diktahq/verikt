@@ -1,0 +1,28 @@
+import pRetry, { type Options } from 'p-retry'
+
+export interface RetryOptions {
+  retries?: number        // max attempts (default: 3)
+  minTimeout?: number     // ms before first retry (default: 500)
+  maxTimeout?: number     // ms cap between retries (default: 5000)
+  onFailedAttempt?: (error: Error & { attemptNumber: number; retriesLeft: number }) => void
+}
+
+// withRetry wraps an async operation with exponential backoff.
+// Only retries on transient errors — permanent failures (e.g. 4xx) should not be retried.
+//
+// Usage:
+//   const result = await withRetry(() => fetch('https://api.example.com/data'))
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: RetryOptions = {},
+): Promise<T> {
+  const retryOptions: Options = {
+    retries: options.retries ?? 3,
+    minTimeout: options.minTimeout ?? 500,
+    maxTimeout: options.maxTimeout ?? 5_000,
+    onFailedAttempt: options.onFailedAttempt ?? ((err) => {
+      console.warn(`[retry] attempt ${err.attemptNumber} failed, ${err.retriesLeft} retries left`, err.message)
+    }),
+  }
+  return pRetry(fn, retryOptions)
+}

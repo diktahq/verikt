@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/provider"
 )
 
 type JSONFormatter struct{}

@@ -5,7 +5,7 @@ description: "Compare Clean Architecture and Flat architecture for Go services �
 
 import { Aside } from '@astrojs/starlight/components';
 
-Both Clean and Flat architecture are supported by archway. Clean Architecture imposes Uncle Bob's ring model — entities, use cases, interface adapters, infrastructure. Flat imposes nothing. The choice is whether your project needs any formal structure at all.
+Both Clean and Flat architecture are supported by verikt. Clean Architecture imposes Uncle Bob's ring model — entities, use cases, interface adapters, infrastructure. Flat imposes nothing. The choice is whether your project needs any formal structure at all.
 
 ## At a Glance
 
@@ -36,7 +36,7 @@ internal/infrastructure/     → Database, external services, config
 | interface | usecase, entity |
 | infrastructure | interface, usecase, entity |
 
-`archway check` enforces these rules in CI. If an entity imports from infrastructure, it's caught immediately. The structure is designed to keep business logic testable and infrastructure-independent regardless of how the service grows.
+`verikt check` enforces these rules in CI. If an entity imports from infrastructure, it's caught immediately. The structure is designed to keep business logic testable and infrastructure-independent regardless of how the service grows.
 
 ## Flat Architecture
 
@@ -54,7 +54,7 @@ The lack of structure is a deliberate feature for the use cases flat is designed
 ## Key Differences
 
 - **Structure overhead**: Clean has 4 defined layers with strict rules. Flat has none.
-- **Dependency enforcement**: Clean enforces import boundaries via `archway check`. Flat has no rules to enforce.
+- **Dependency enforcement**: Clean enforces import boundaries via `verikt check`. Flat has no rules to enforce.
 - **Testability**: Clean Architecture isolates entities and use cases from infrastructure, making them trivially testable. Flat mixes everything, which is fine for small programs and a problem for larger ones.
 - **Growth**: Clean Architecture holds up as the codebase grows. Flat accumulates coupling quickly and becomes difficult to restructure.
 - **Entry point**: Clean Architecture has a meaningful distinction between what the system does (entity/usecase) and how it does it (infrastructure). Flat has no such distinction.
@@ -75,14 +75,14 @@ The lack of structure is a deliberate feature for the use cases flat is designed
 - There's no meaningful domain logic to isolate from infrastructure
 - You need to ship something quickly without structural decisions slowing you down
 
-## Scaffold Either with archway
+## Scaffold Either with verikt
 
 ```bash
 # Clean Architecture
-archway new my-service --arch clean
+verikt new my-service --language go --arch clean
 
 # Flat
-archway new my-tool --arch flat
+verikt new my-tool --language go --arch flat
 ```
 
 <Aside type="tip">

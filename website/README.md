@@ -1,4 +1,4 @@
-# Archway Documentation Site
+# verikt Documentation Site
 
 Built with [Astro](https://astro.build) + [Starlight](https://starlight.astro.build).
 

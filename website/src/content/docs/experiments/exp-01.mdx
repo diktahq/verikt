@@ -5,7 +5,7 @@ description: Same prompt, same model. The guide produced hexagonal structure and
 
 import { Aside } from '@astrojs/starlight/components';
 
-Same prompt. Same model. Same task. One version had the archway guide prepended. The other didn't.
+Same prompt. Same model. Same task. One version had the verikt guide prepended. The other didn't.
 
 The agent with the guide produced a hexagonal service. The agent without it put everything in `package main`.
 
@@ -59,7 +59,7 @@ Without guide               With guide
 Without guide               With guide
 ─────────────────────       ──────────────────────────────
 uuid_v4_as_key       ✗      (none)        ✓ pass
-archway check: FAIL         archway check: PASS
+verikt check: FAIL         verikt check: PASS
 ```
 
 ## Metrics
@@ -67,7 +67,7 @@ archway check: FAIL         archway check: PASS
 | | Without guide | With guide |
 |---|---|---|
 | Architecture | flat | **hexagonal** |
-| archway check | fail | **pass** |
+| verikt check | fail | **pass** |
 | Compliance | 0% | **100%** |
 | Anti-pattern violations | 1 | **0** |
 | Input tokens | 3 | 3 |
@@ -91,21 +91,21 @@ The agent followed it immediately. Every run, without exception.
 
 **Agents respond to explicit prohibition. Soft recommendations are not enough.**
 
-This changed how we write guides: every anti-pattern that `archway check` detects now has a corresponding NEVER rule. Prevention and detection stay in sync.
+This changed how we write guides: every anti-pattern that `verikt check` detects now has a corresponding NEVER rule. Prevention and detection stay in sync.
 
 ## Setup
 
 - **Task:** Build an order management service in Go — no architecture hints, business problem only
 - **Agent:** claude-sonnet-4-6 via `claude -p --output-format json`
 - **Condition A (control):** Baseline prompt
-- **Condition B (test):** Guide prepended (`archway guide` output)
-- **Enforcement:** `archway check -o json` on generated output
+- **Condition B (test):** Guide prepended (`verikt guide` output)
+- **Enforcement:** `verikt check -o json` on generated output
 - **Runs:** 3 per condition — [results](/experiments/methodology/#reproducing)
 
 The task prompt says nothing about architecture. Create/retrieve orders, validate customer name, expose a REST API. Realistic — agents get tickets, not architecture blueprints.
 
 [→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
 
-[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-01)
+[→ Artifacts on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-01)
 
 [→ EXP-02: Does the improvement hold across 3 runs?](/experiments/exp-02/)

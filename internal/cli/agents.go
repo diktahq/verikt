@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 )
 
-// AIAgent represents a supported AI coding agent that archway can register with.
+// AIAgent represents a supported AI coding agent that verikt can register with.
 type AIAgent struct {
 	Name      string // "Claude Code", "Cursor", "Windsurf"
 	ConfigDir string // expanded path to ~/.claude etc.
 	RulesDir  string // expanded path to ~/.claude/rules etc.
-	RulesFile string // "archway.md"
+	RulesFile string // "verikt.md"
 }
 
 var supportedAgents = []struct {
@@ -24,19 +24,19 @@ var supportedAgents = []struct {
 		name:      "Claude Code",
 		configDir: ".claude",
 		rulesDir:  filepath.Join(".claude", "rules"),
-		rulesFile: "archway.md",
+		rulesFile: "verikt.md",
 	},
 	{
 		name:      "Cursor",
 		configDir: ".cursor",
 		rulesDir:  filepath.Join(".cursor", "rules"),
-		rulesFile: "archway.md",
+		rulesFile: "verikt.md",
 	},
 	{
 		name:      "Windsurf",
 		configDir: ".windsurf",
 		rulesDir:  filepath.Join(".windsurf", "rules"),
-		rulesFile: "archway.md",
+		rulesFile: "verikt.md",
 	},
 }
 

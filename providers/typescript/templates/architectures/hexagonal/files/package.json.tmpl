@@ -1,0 +1,31 @@
+{
+  "name": "{{.PackageName}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "{{- if .Features.native_ts}}node --watch src/index.ts{{- else}}tsx watch src/index.ts{{- end}}",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">={{.NodeVersion}}.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^{{.NodeVersion}}",
+    {{- if not .Features.native_ts}}
+    "tsx": "^4",
+    {{- end}}
+    "typescript": "^5",
+    "vitest": "^2"
+  }
+}

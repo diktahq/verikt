@@ -1,0 +1,30 @@
+---
+title: About verikt
+description: "verikt is built by Daniel Gomes — 14+ years building software, now building the discipline layer for AI-assisted engineering."
+---
+
+## What verikt is
+
+verikt is Agentic Engineering Infrastructure — the tooling layer that makes AI-driven development reliable, consistent, and predictable at the architecture level. Declare your architecture once in `verikt.yaml`, and every agent session starts with your exact rules loaded.
+
+The workflow is Declare-Distribute-Enforce: `verikt guide` distributes your architecture to every AI agent (Claude Code, Cursor, Copilot, Windsurf). `verikt new` scaffolds services from architecture + capabilities. `verikt analyze` detects patterns in existing codebases. `verikt check` enforces the rules in CI.
+
+## Why it exists
+
+AI agents write correct syntax. They don't remember your architecture. Every session starts cold — no knowledge of your layer boundaries, your dependency rules, or the decisions you made three months ago. The result is code that compiles, passes review, and quietly violates the structure you intended.
+
+That's the gap verikt closes. One command generates your architecture context for Claude Code, Cursor, Copilot, and Windsurf. The rules travel with the code, not a Confluence page.
+
+## Who built it
+
+I'm Daniel Gomes — 14 years building software, now focused on agentic software engineering. I research the problems AI agents have in practice and build the tooling that brings consistency and engineering discipline to them. verikt is the architecture layer of that work.
+
+[dcsg.me](https://dcsg.me) · [GitHub](https://github.com/dcsg)
+
+## How it's built
+
+Open-source Go CLI with an embedded Rust analysis engine (tree-sitter) for import graph enforcement. 65 Go capabilities, 39 TypeScript capabilities. Claims are backed by 10 published experiments with raw data — not opinions about what should work.
+
+## Open source
+
+verikt is free forever. The full source is at [github.com/diktahq/verikt](https://github.com/diktahq/verikt). A paid cloud platform is planned for v3+.

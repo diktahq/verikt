@@ -1,0 +1,5 @@
+name: observability
+description: "OpenTelemetry tracing and metrics — auto-instrumented via @opentelemetry/sdk-node"
+suggests:
+  - platform
+  - request-id

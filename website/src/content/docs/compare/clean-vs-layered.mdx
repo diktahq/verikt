@@ -5,7 +5,7 @@ description: "Compare Clean Architecture and Layered architecture for Go service
 
 import { Aside } from '@astrojs/starlight/components';
 
-Both Clean and Layered architecture are supported by archway. They both enforce a top-down dependency direction, but Clean Architecture is more opinionated — it introduces entities, use cases, and a formal ring model, while layered gives you the same directional discipline with a simpler vocabulary.
+Both Clean and Layered architecture are supported by verikt. They both enforce a top-down dependency direction, but Clean Architecture is more opinionated — it introduces entities, use cases, and a formal ring model, while layered gives you the same directional discipline with a simpler vocabulary.
 
 ## At a Glance
 
@@ -81,14 +81,14 @@ Dependencies flow top-down. The `model` package is shared across all layers, whi
 - You want a structure that any Go developer can navigate without prior explanation
 - Clean Architecture's entity/usecase distinction feels like unnecessary ceremony for what you're building
 
-## Scaffold Either with archway
+## Scaffold Either with verikt
 
 ```bash
 # Clean Architecture
-archway new my-service --arch clean
+verikt new my-service --language go --arch clean
 
 # Layered
-archway new my-service --arch layered
+verikt new my-service --language go --arch layered
 ```
 
 <Aside type="tip">

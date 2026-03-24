@@ -1,6 +1,6 @@
 ---
 title: Agentic Engineering
-description: What agentic engineering means, where the term comes from, and the infrastructure problem it hasn't solved yet — which is what archway addresses.
+description: What agentic engineering means, where the term comes from, and the infrastructure problem it hasn't solved yet — which is what verikt addresses.
 ---
 
 Andrej Karpathy [coined the term in early February 2026](https://thenewstack.io/vibe-coding-is-passe/), deliberately positioning it against "vibe coding." His definition: "'agentic' because the new default is that you are not writing the code directly 99% of the time, you are orchestrating agents who do and acting as oversight — 'engineering' to emphasise that there is an art & science and expertise to it."
@@ -19,24 +19,24 @@ At the individual level this is friction. At the team level it compounds. O'Reil
 
 Osmani makes a related point about who benefits most from agentic engineering: senior engineers — because they already understand the architecture deeply. Junior developers risk producing code they don't understand. The implication is that agentic engineering amplifies existing architectural knowledge. If that knowledge isn't encoded somewhere the agent can read, it doesn't get amplified — it gets lost.
 
-The discipline of agentic engineering addresses how you work with agents. It doesn't address what agents know about your specific codebase. That's the gap archway fills.
+The discipline of agentic engineering addresses how you work with agents. It doesn't address what agents know about your specific codebase. That's the gap verikt fills.
 
-## What archway adds to the category
+## What verikt adds to the category
 
-Karpathy defined the discipline. archway gives it infrastructure.
+Karpathy defined the discipline. verikt gives it infrastructure.
 
 The emerging term for this infrastructure is **context engineering** — [Anthropic defines it](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) as "the set of strategies for curating and maintaining the optimal set of tokens during LLM inference." [Martin Fowler's site](https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html) puts it more plainly: "curating what the model sees so that you get a better result."
 
-archway is context engineering for software architecture. `archway guide` generates architecture context files from your `archway.yaml` — one command that feeds your exact layer boundaries, capability stack, and dependency rules into every AI agent you use. Not training data patterns. Your patterns.
+verikt is context engineering for software architecture. `verikt guide` generates architecture context files from your `verikt.yaml` — one command that feeds your exact layer boundaries, capability stack, and dependency rules into every AI agent you use. Not training data patterns. Your patterns.
 
 This is the missing layer. Agentic engineering without architecture context means the rigor you apply at the design stage doesn't survive into the agent session. With it, every session starts from the same architectural ground truth.
 
 Three commands cover the full loop:
 
 ```bash
-archway guide    # feed your architecture to every agent
-archway check    # enforce it in CI
-archway new      # scaffold new services with the right structure from the start
+verikt guide    # feed your architecture to every agent
+verikt check    # enforce it in CI
+verikt new      # scaffold new services with the right structure from the start
 ```
 
 ## The practitioner's view
@@ -51,7 +51,7 @@ Same task, different stability. Without the guide, output varies run to run. Wit
 
 ## Further reading
 
-These are the people who defined the category. archway builds on their framing, not against it:
+These are the people who defined the category. verikt builds on their framing, not against it:
 
 - **Andrej Karpathy** — [The New Stack coverage with full quote](https://thenewstack.io/vibe-coding-is-passe/), February 2026; [original X post](https://x.com/karpathy/status/2019137879310836075)
 - **Addy Osmani** — [*Agentic Engineering*](https://addyosmani.com/blog/agentic-engineering/); [*The 80% Problem in Agentic Coding*](https://addyo.substack.com/p/the-80-problem-in-agentic-coding)
@@ -63,5 +63,5 @@ These are the people who defined the category. archway builds on their framing, 
 ---
 
 → [Context Engineering](/concepts/context-engineering/) — the infrastructure layer agentic engineering requires
-→ [Why archway exists](/concepts/why-archway-exists/) — the beliefs behind the tool
+→ [Why verikt exists](/concepts/why-verikt-exists/) — the beliefs behind the tool
 → [For Engineers](/for/engineers/) — the workflow in practice

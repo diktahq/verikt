@@ -1,14 +1,14 @@
 ---
-title: archway — Your Architecture, in Every Agent Session
-description: AI agents write correct syntax. They don't always remember your architecture. archway generates architecture context for every major AI coding agent — so every session is reliable, every engineer is consistent, and your architecture doesn't drift.
+title: verikt — Your Architecture, in Every Agent Session
+description: AI agents write correct syntax. They don't always remember your architecture. verikt generates architecture context for every major AI coding agent — so every session is reliable, every engineer is consistent, and your architecture doesn't drift.
 template: splash
 hero:
   title: |
-    <span class="hero-wordmark">arch<span style="color:var(--sl-color-accent)">way</span></span>
+    <span class="hero-wordmark">ver<span style="color:var(--sl-color-accent)">ikt</span></span>
     Your architecture, in every agent session.
   tagline: |
     <span class="hero-pain">The agent writes correct syntax. It doesn't remember your architecture.</span>
-    <p class="hero-description">archway generates architecture context for every AI agent you use — so every session starts with your layer boundaries, your capabilities, and your dependency rules already loaded.</p>
+    <p class="hero-description">verikt generates architecture context for every AI agent you use — so every session starts with your layer boundaries, your capabilities, and your dependency rules already loaded.</p>
   actions:
     - text: Get Started
       link: /getting-started/ai-agents/
@@ -42,17 +42,17 @@ At team scale, it compounds. Three engineers, three agents, three different inte
 ## Every agent session starts with your architecture already loaded
 
 <Grid cols={2}>
-  <SolutionCard command="archway guide">
-    Generates context files for Claude Code, Cursor, Copilot, and Windsurf from your archway.yaml. Always current. One command to update.
+  <SolutionCard command="verikt guide">
+    Generates context files for Claude Code, Cursor, Copilot, and Windsurf from your verikt.yaml. Always current. One command to update.
   </SolutionCard>
-  <SolutionCard command="archway.yaml">
+  <SolutionCard command="verikt.yaml">
     One source of truth. Every engineer, every agent, every session. Your architecture as a versioned, commitable artifact — not a document that drifts.
   </SolutionCard>
-  <SolutionCard command="archway check">
+  <SolutionCard command="verikt check">
     Catches violations before they ship. 11 architecture detectors in CI — wrong-layer dependencies, anti-patterns, drift. Not in code review. Not in production.
   </SolutionCard>
-  <SolutionCard command="archway new">
-    Correct structure from day one. Scaffolds from architecture + capabilities, and runs `archway guide` automatically — so your agent has context from the first prompt.
+  <SolutionCard command="verikt new">
+    Correct structure from day one. Scaffolds from architecture + capabilities, and runs `verikt guide` automatically — so your agent has context from the first prompt.
   </SolutionCard>
 </Grid>
 
@@ -67,7 +67,7 @@ At team scale, it compounds. Three engineers, three agents, three different inte
 <PromptTable prompts={[
   { prompt: '"Add a GET /orders endpoint filtered by customer ID, paginated, with RFC 7807 errors."', knows: 'Where the handler goes, which error format to use, how to wire the router — without being told.' },
   { prompt: '"What capabilities am I missing before going to production?"', knows: 'Your installed capabilities, the smart suggestion rules, what\'s missing and why.' },
-  { prompt: '"Does this PR violate our architecture?"', knows: 'Your layer boundaries, dependency rules, and which files changed — runs <code>archway check --diff main</code>.' },
+  { prompt: '"Does this PR violate our architecture?"', knows: 'Your layer boundaries, dependency rules, and which files changed — runs <code>verikt check --diff main</code>.' },
   { prompt: '"I need to handle payments. What do I need?"', knows: 'That <code>idempotency</code> and <code>audit-log</code> are required, why, and how to add them.' },
 ]} />
 
@@ -107,15 +107,15 @@ Teams with high AI adoption merge 98% more PRs — but review times balloon by 9
 
 ## Start right. Stay right.
 
-### Every scaffolded service comes with an `archway.yaml` — the source of truth `archway guide` reads. Your agent has a complete architecture picture from the first prompt.
+### Every scaffolded service comes with a `verikt.yaml` — the source of truth `verikt guide` reads. Your agent has a complete architecture picture from the first prompt.
 
 <Formula>
   <span>Architecture</span> (hexagonal) + <span>Capabilities</span> (http-api, postgres, docker) = <span>Your Service</span>
 </Formula>
 
-Pick an architecture. Pick your capabilities. Get a production-ready service with the structure already correct — and an `archway.yaml` that becomes the source of truth for every agent session.
+Pick an architecture. Pick your capabilities. Get a production-ready service with the structure already correct — and a `verikt.yaml` that becomes the source of truth for every agent session.
 
-63 capabilities across 10 categories. The wizard suggests what's missing.
+Go: 63 capabilities across 10 categories. TypeScript: 39 capabilities with Express, Fastify, or Hono. The wizard suggests what's missing.
 
 | Category | Capabilities |
 |----------|-------------|
@@ -138,19 +138,19 @@ Pick an architecture. Pick your capabilities. Get a production-ready service wit
 
 ```bash
 # Homebrew (runs setup automatically)
-brew install dcsg/tap/archway
+brew install diktahq/tap/verikt
 
 # Or install script (also runs setup automatically)
-curl -sSL https://archway.dcsg.me/install.sh | bash
+curl -sSL https://verikt.dev/install.sh | bash
 
 # Generate architecture context for all AI agents
-archway guide
+verikt guide
 
 # Enforce in CI
-archway check
+verikt check
 ```
 
-Both install paths run `archway setup` automatically — detecting your AI agents and registering archway globally.
+Both install paths run `verikt setup` automatically — detecting your AI agents and registering verikt globally.
 
 Then open your AI agent in the project directory. The context is already there — the agent loads it silently. Write prompts naturally:
 
@@ -175,7 +175,7 @@ The agent already knows your architecture, your layers, and your capabilities.
     Your agent sessions become reliable. Every session starts with your architecture. Stop correcting, start shipping.
   </AudienceCard>
   <AudienceCard title="For Engineering Leaders" href="/for/engineering-leaders/">
-    One archway.yaml. Every engineer. Every agent. Every session. Architecture governance without being the enforcer.
+    One verikt.yaml. Every engineer. Every agent. Every session. Architecture governance without being the enforcer.
   </AudienceCard>
 </Grid>
 
@@ -185,11 +185,31 @@ The agent already knows your architecture, your layers, and your capabilities.
   <div class="tagline-repeat">Your architecture, in every agent session.</div>
 
 ```bash
-brew install dcsg/tap/archway
+brew install diktahq/tap/verikt
 ```
 
   <div class="links">
     <a href="/getting-started/ai-agents/">Quick Start with AI Agents</a>
-    <a href="https://github.com/dcsg/archway">GitHub</a>
+    <a href="https://github.com/diktahq/verikt">GitHub</a>
   </div>
 </div>
+
+<script type="application/ld+json">{JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "verikt",
+  "description": "Your architecture, in every agent session. Generates architecture context for AI coding agents, scaffolds production-ready services, and enforces structural rules in CI.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux, Windows",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "url": "https://verikt.dev",
+  "author": {
+    "@type": "Person",
+    "name": "Daniel Gomes",
+    "url": "https://dcsg.me"
+  }
+})}</script>

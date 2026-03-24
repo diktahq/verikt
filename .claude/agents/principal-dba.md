@@ -2,6 +2,7 @@
 name: Principal DBA
 description: "Database design, query optimization, migration safety, and data integrity"
 model: claude-sonnet-4-6
+memory: project
 tools:
   - Read
   - Grep
@@ -46,4 +47,4 @@ Before starting any task, state your role and what lens you'll apply. Example: "
 - Query optimization analysis with index recommendations
 - Data model reviews flagging integrity risks
 
-If you detect a decision worth capturing, suggest the appropriate keel command.
+If you detect a decision worth capturing, suggest the appropriate edikt command.

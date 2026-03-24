@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/engineclient"
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/engineclient"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 )
 
 // newEngineClient returns a client backed by the embedded engine binary,
@@ -98,7 +98,7 @@ func checkDependencies(t *testing.T, client *engineclient.Client, projectPath st
 	return out
 }
 
-// componentsToImportRules converts archway components to ImportGraphSpec rules.
+// componentsToImportRules converts verikt components to ImportGraphSpec rules.
 func componentsToImportRules(components []config.Component) []*pb.Rule {
 	var rules []*pb.Rule
 	for _, comp := range components {

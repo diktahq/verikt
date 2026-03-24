@@ -1,0 +1,2 @@
+name: uuid
+description: "UUIDv7 primary key helper — time-sortable, index-friendly identifiers"

@@ -6,7 +6,7 @@
 
 ## Context
 
-Archway needs a Go project structure that supports: CLI entry point, multiple internal packages (analyzer, scaffolder, config, output), language providers with embedded templates, and a clean public API surface. The structure must accommodate growth from 1 provider (Go) to many.
+verikt needs a Go project structure that supports: CLI entry point, multiple internal packages (analyzer, scaffolder, config, output), language providers with embedded templates, and a clean public API surface. The structure must accommodate growth from 1 provider (Go) to many.
 
 ## Constraints
 
@@ -19,9 +19,9 @@ Archway needs a Go project structure that supports: CLI entry point, multiple in
 ## Decision
 
 ```
-archway/
+verikt/
   cmd/
-    archway/                 # CLI entry point
+    verikt/                 # CLI entry point
       main.go
 
   internal/
@@ -35,7 +35,7 @@ archway/
       version.go
     config/                  # Viper-based configuration
       config.go
-      archway_yaml.go        # archway.yaml parser
+      verikt_yaml.go        # verikt.yaml parser
     provider/                # Provider interface + registry
       provider.go            # LanguageProvider interface
       registry.go            # Provider discovery + registration
@@ -91,11 +91,11 @@ Providers are designed for future extraction to separate binaries (ADR-001). Kee
 
 ### Why not `pkg/`?
 
-No public Go API is planned for v1. If we add one later (e.g., for programmatic embedding of Archway), it would go in `pkg/archway/`. Not creating it now avoids premature abstraction.
+No public Go API is planned for v1. If we add one later (e.g., for programmatic embedding of verikt), it would go in `pkg/verikt/`. Not creating it now avoids premature abstraction.
 
-### Why `internal/cli/` separate from `cmd/archway/`?
+### Why `internal/cli/` separate from `cmd/verikt/`?
 
-`cmd/archway/main.go` is minimal (just calls CLI root). All command logic lives in `internal/cli/` so it can be tested without building the binary. Each command is a separate file for easy navigation.
+`cmd/verikt/main.go` is minimal (just calls CLI root). All command logic lives in `internal/cli/` so it can be tested without building the binary. Each command is a separate file for easy navigation.
 
 ## Consequences
 

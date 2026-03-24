@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dcsg/archway/internal/analyzer"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/guide"
-	"github.com/dcsg/archway/internal/provider"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/analyzer"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/guide"
+	"github.com/diktahq/verikt/internal/provider"
+	"github.com/diktahq/verikt/internal/scaffold"
 )
 
 // Compile-time interface checks.
@@ -108,34 +108,34 @@ func (p *GoProvider) Scaffold(_ context.Context, req provider.ScaffoldRequest) (
 		}
 	}
 
-	archwayCfg := config.DefaultArchwayConfig("go", architecture)
+	veriktCfg := config.DefaultVeriktConfig("go", architecture)
 	if len(capabilities) > 0 {
-		archwayCfg.Capabilities = capabilities
+		veriktCfg.Capabilities = capabilities
 	}
 	if guideMode := strings.TrimSpace(req.Options["guide_mode"]); guideMode != "" {
-		archwayCfg.Guide.Mode = guideMode
+		veriktCfg.Guide.Mode = guideMode
 	}
-	archwayPath := filepath.Join(req.OutputDir, "archway.yaml")
-	if err := config.SaveArchwayYAML(archwayPath, archwayCfg); err != nil {
+	veriktPath := filepath.Join(req.OutputDir, "verikt.yaml")
+	if err := config.SaveVeriktYAML(veriktPath, veriktCfg); err != nil {
 		return nil, err
 	}
-	archwayBytes, _ := os.ReadFile(archwayPath)
+	veriktBytes, _ := os.ReadFile(veriktPath)
 
 	files := append([]string{}, renderResult.FilesCreated...)
-	files = append(files, archwayPath)
+	files = append(files, veriktPath)
 
 	// Generate project matrix doc.
-	matrixPath, err := generateProjectMatrix(req.OutputDir, architecture, capabilities, archwayCfg)
+	matrixPath, err := generateProjectMatrix(req.OutputDir, architecture, capabilities, veriktCfg)
 	if err == nil && matrixPath != "" {
 		files = append(files, matrixPath)
 	}
 
 	// Generate AI agent architecture guides.
-	if guideErr := guide.GenerateFromConfig(req.OutputDir, archwayCfg, "all", templatesFS); guideErr != nil {
+	if guideErr := guide.GenerateFromConfig(req.OutputDir, veriktCfg, "all", templatesFS); guideErr != nil {
 		return nil, fmt.Errorf("generate guide: %w", guideErr)
 	}
 
-	return &provider.ScaffoldResponse{FilesCreated: files, ArchwayYAML: archwayBytes}, nil
+	return &provider.ScaffoldResponse{FilesCreated: files, VeriktYAML: veriktBytes}, nil
 }
 
 func (p *GoProvider) Analyze(ctx context.Context, req provider.AnalyzeRequest) (*provider.AnalyzeResponse, error) {
@@ -160,7 +160,7 @@ func (p *GoProvider) GetInfo(_ context.Context) (*provider.ProviderInfo, error) 
 		return nil, err
 	}
 	return &provider.ProviderInfo{
-		Name:                   "archway-go-provider",
+		Name:                   "verikt-go-provider",
 		Version:                "v1",
 		Language:               "go",
 		SupportedArchitectures: []string{"hexagonal", "flat", "layered", "clean"},

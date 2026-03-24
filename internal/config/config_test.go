@@ -9,51 +9,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- ArchwayYAML edge cases ---
+// --- VeriktYAML edge cases ---
 
-func TestLoadArchwayYAML_MalformedYAML(t *testing.T) {
+func TestLoadVeriktYAML_MalformedYAML(t *testing.T) {
 	tmp := t.TempDir()
-	path := filepath.Join(tmp, "archway.yaml")
+	path := filepath.Join(tmp, "verikt.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(":\n  bad:\n  - [unmatched"), 0o644))
 
-	_, err := LoadArchwayYAML(path)
+	_, err := LoadVeriktYAML(path)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "parse archway.yaml")
+	assert.Contains(t, err.Error(), "parse verikt.yaml")
 }
 
-func TestLoadArchwayYAML_ValidButEmptyComponents(t *testing.T) {
+func TestLoadVeriktYAML_ValidButEmptyComponents(t *testing.T) {
 	tmp := t.TempDir()
-	path := filepath.Join(tmp, "archway.yaml")
+	path := filepath.Join(tmp, "verikt.yaml")
 	content := "language: go\narchitecture: flat\ncomponents: []\n"
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 
-	cfg, err := LoadArchwayYAML(path)
+	cfg, err := LoadVeriktYAML(path)
 	require.NoError(t, err)
 	assert.Equal(t, "go", cfg.Language)
 	assert.Equal(t, "flat", cfg.Architecture)
 	assert.Empty(t, cfg.Components)
 }
 
-func TestFindArchwayYAML_FileDoesNotExist(t *testing.T) {
+func TestFindVeriktYAML_FileDoesNotExist(t *testing.T) {
 	tmp := t.TempDir()
 
-	_, err := FindArchwayYAML(tmp)
+	_, err := FindVeriktYAML(tmp)
 	assert.Error(t, err)
 }
 
-func TestFindArchwayYAML_FileInCurrentDir(t *testing.T) {
+func TestFindVeriktYAML_FileInCurrentDir(t *testing.T) {
 	tmp := t.TempDir()
-	path := filepath.Join(tmp, "archway.yaml")
+	path := filepath.Join(tmp, "verikt.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("language: go\n"), 0o644))
 
-	found, err := FindArchwayYAML(tmp)
+	found, err := FindVeriktYAML(tmp)
 	require.NoError(t, err)
 	assert.Equal(t, path, found)
 }
 
-func TestLoadArchwayYAML_DuplicateComponentNames(t *testing.T) {
+func TestLoadVeriktYAML_DuplicateComponentNames(t *testing.T) {
 	tmp := t.TempDir()
-	path := filepath.Join(tmp, "archway.yaml")
+	path := filepath.Join(tmp, "verikt.yaml")
 	content := `language: go
 architecture: hexagonal
 components:
@@ -64,18 +64,18 @@ components:
 `
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 
-	cfg, err := LoadArchwayYAML(path)
-	require.NoError(t, err, "LoadArchwayYAML should not validate duplicates")
+	cfg, err := LoadVeriktYAML(path)
+	require.NoError(t, err, "LoadVeriktYAML should not validate duplicates")
 	assert.Len(t, cfg.Components, 2)
 }
 
-func TestLoadArchwayYAML_EmptyArchitecture(t *testing.T) {
+func TestLoadVeriktYAML_EmptyArchitecture(t *testing.T) {
 	tmp := t.TempDir()
-	path := filepath.Join(tmp, "archway.yaml")
+	path := filepath.Join(tmp, "verikt.yaml")
 	content := "language: go\narchitecture: \"\"\n"
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 
-	cfg, err := LoadArchwayYAML(path)
+	cfg, err := LoadVeriktYAML(path)
 	require.NoError(t, err)
 	assert.Empty(t, cfg.Architecture)
 }

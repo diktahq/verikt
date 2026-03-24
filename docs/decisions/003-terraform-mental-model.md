@@ -1,12 +1,12 @@
 # ADR-003: Terraform Mental Model for Code Architecture
 
-**Status:** accepted
+**Status:** superseded by ADR-010
 **Date:** 2026-02-14
 **Deciders:** Daniel Gomes
 
 ## Context
 
-Archway needs a coherent user experience that ties together scaffolding, analysis, migration, and governance. Without a unifying model, these become disconnected features. We need a mental model that users already understand.
+verikt needs a coherent user experience that ties together scaffolding, analysis, migration, and governance. Without a unifying model, these become disconnected features. We need a mental model that users already understand.
 
 ## Constraints
 
@@ -19,22 +19,22 @@ Archway needs a coherent user experience that ties together scaffolding, analysi
 
 ### Option A: Terraform model (init → analyze → plan → apply → check) — CHOSEN
 
-Map Archway concepts directly to Terraform's workflow:
+Map verikt concepts directly to Terraform's workflow:
 
-| Terraform | Archway | Phase |
+| Terraform | verikt | Phase |
 |-----------|---------|-------|
-| `terraform init` | `archway init` / `archway new` | Declare desired state |
-| `terraform show` | `archway analyze` | Understand current state |
-| `terraform plan` | `archway plan` | Diff desired vs actual |
-| `terraform apply` | `archway apply` | Execute changes safely |
-| `terraform validate` | `archway check` | Ongoing compliance |
+| `terraform init` | `verikt init` / `verikt new` | Declare desired state |
+| `terraform show` | `verikt analyze` | Understand current state |
+| `terraform plan` | `verikt plan` | Diff desired vs actual |
+| `terraform apply` | `verikt apply` | Execute changes safely |
+| `terraform validate` | `verikt check` | Ongoing compliance |
 
 **Pros:**
 - Millions of developers know the Terraform workflow
 - Natural narrative: "declare what you want, see what you have, plan changes, apply safely"
-- Declarative config (archway.yaml) is the single source of truth
+- Declarative config (verikt.yaml) is the single source of truth
 - Each command has a clear, single responsibility
-- Greenfield and brownfield converge: both produce archway.yaml as desired state
+- Greenfield and brownfield converge: both produce verikt.yaml as desired state
 
 **Cons:**
 - Not a 1:1 mapping (code architecture != infrastructure)
@@ -84,14 +84,14 @@ Like GoLand: understand code, apply refactorings.
 
 ## Decision
 
-**Option A: Terraform mental model.** The init/analyze/plan/apply/check workflow provides a complete narrative from project creation to ongoing governance. The `archway.yaml` file serves as the declarative desired state, analogous to HCL. Even with only v1 commands (init, new, analyze), the model makes sense — users declare desired state and understand current state, setting the foundation for v2's plan/apply/check.
+**Option A: Terraform mental model.** The init/analyze/plan/apply/check workflow provides a complete narrative from project creation to ongoing governance. The `verikt.yaml` file serves as the declarative desired state, analogous to HCL. Even with only v1 commands (init, new, analyze), the model makes sense — users declare desired state and understand current state, setting the foundation for v2's plan/apply/check.
 
 ## Consequences
 
-- `archway.yaml` is the central artifact — all commands read or write it
-- `archway new` generates archway.yaml alongside code (desired state from day one)
-- `archway init` creates archway.yaml for brownfield projects
-- `archway analyze` produces structured output comparable to archway.yaml format
+- `verikt.yaml` is the central artifact — all commands read or write it
+- `verikt new` generates verikt.yaml alongside code (desired state from day one)
+- `verikt init` creates verikt.yaml for brownfield projects
+- `verikt analyze` produces structured output comparable to verikt.yaml format
 - v2 commands (plan/apply/check) are natural extensions, not bolted-on features
 - Documentation and marketing can use "Terraform for Code Architecture" positioning
 - Must be careful not to over-promise v2 features in v1 messaging

@@ -3,8 +3,8 @@
 package memory
 
 import (
-	"github.com/dcsg/archway/internal/engineclient/experiment/testdata/conforming-hexagonal/domain"
-	"github.com/dcsg/archway/internal/engineclient/experiment/testdata/conforming-hexagonal/port"
+	"github.com/diktahq/verikt/internal/engineclient/experiment/testdata/conforming-hexagonal/domain"
+	"github.com/diktahq/verikt/internal/engineclient/experiment/testdata/conforming-hexagonal/port"
 )
 
 // Repo is an in-memory order repository.

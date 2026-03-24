@@ -213,6 +213,12 @@ func ComposeProject(templateFS fs.FS, architecture string, capabilities []string
 		"sqlite":          "HasSQLite",
 		"saga":            "HasSaga",
 		"email-gateway":   "HasEmail",
+		"auth-jwt":        "HasAuthJWT",
+		"rate-limiting":   "HasRateLimit",
+		"http-client":     "HasHTTPClient",
+		"ci-github":       "HasCIGitHub",
+		"pre-commit":      "HasPreCommit",
+		"devcontainer":    "HasDevContainer",
 	}
 	for _, c := range capabilities {
 		if flag, ok := capFlagMap[c]; ok {

@@ -1,0 +1,5 @@
+name: repository
+description: "Repository pattern — BaseRepository interface in domain, implementation in infrastructure"
+suggests:
+  - postgres
+  - mysql

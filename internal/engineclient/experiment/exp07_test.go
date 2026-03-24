@@ -6,10 +6,10 @@ package experiment
 // Measures variance in violations_total across runs.
 // The guide should produce zero variance; control is expected to vary.
 //
-// Mode B (embedded fixture): archway check --diff HEAD on agent changes only.
+// Mode B (embedded fixture): verikt check --diff HEAD on agent changes only.
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP07 -v -timeout 600s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP07 -v -timeout 600s ./internal/engineclient/experiment/
 
 import (
 	"testing"

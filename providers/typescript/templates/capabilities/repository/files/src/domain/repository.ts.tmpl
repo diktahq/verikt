@@ -1,0 +1,9 @@
+// BaseRepository — generic repository contract.
+// Domain layer depends on this interface; infrastructure layer implements it.
+
+export interface BaseRepository<T, ID> {
+  findById(id: ID): Promise<T | null>
+  findAll(): Promise<T[]>
+  save(entity: T): Promise<T>
+  delete(id: ID): Promise<void>
+}

@@ -56,9 +56,9 @@ func (o *Order) AddItem(product ProductID, qty int, price Money) error {
 }
 ```
 
-The `ddd` capability in archway scaffolds `AggregateRoot`, `ValueObject`, and `DomainEvent` base types you can embed or implement.
+The `ddd` capability in verikt scaffolds `AggregateRoot`, `ValueObject`, and `DomainEvent` base types you can embed or implement.
 
-## How archway Supports It
+## How verikt Supports It
 
 The `ddd` capability scaffolds the foundational DDD building blocks — `AggregateRoot`, `ValueObject`, and `DomainEvent` interfaces and base types. It pairs with `event-bus` for publishing domain events and `repository` for data access. See the [Capabilities](/concepts/capabilities/) page for the full list.
 

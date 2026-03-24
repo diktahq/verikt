@@ -1,6 +1,6 @@
 ---
 title: Architectures
-description: Compare archway's four architecture patterns — hexagonal, layered, clean, and flat — with dependency rules and usage guidance
+description: Compare verikt's four architecture patterns — hexagonal, layered, clean, and flat — with dependency rules and usage guidance
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
@@ -34,10 +34,14 @@ cmd/<name>/          → Entry point
 | service | domain, ports |
 | adapters | ports, domain |
 
-These rules are enforced by `archway check`. If your adapter code imports from another adapter, or your domain imports from service — it's caught immediately.
+These rules are enforced by `verikt check`. If your adapter code imports from another adapter, or your domain imports from service — it's caught immediately.
+
+<Aside type="note">
+TypeScript hexagonal uses `src/domain/`, `src/application/`, `src/infrastructure/`, `src/transport/` — same boundaries, TypeScript conventions.
+</Aside>
 
 <Aside type="tip">
-Every scaffolded project includes an `archway.yaml` with these rules defined. You can customize the rules, add required directories, or set function complexity limits.
+Every scaffolded project includes an `verikt.yaml` with these rules defined. You can customize the rules, add required directories, or set function complexity limits.
 </Aside>
 
 ### When to Use

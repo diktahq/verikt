@@ -2,7 +2,7 @@
 // It may import domain — it must not import service or adapter.
 package port
 
-import "github.com/dcsg/archway/internal/engineclient/experiment/testdata/conforming-hexagonal/domain"
+import "github.com/diktahq/verikt/internal/engineclient/experiment/testdata/conforming-hexagonal/domain"
 
 // OrderRepository is the outbound port for order persistence.
 type OrderRepository interface {

@@ -45,9 +45,9 @@ func (r *fakeOrderRepo) Save(_ context.Context, o *domain.Order) error {
 
 Dependency injection at the composition root connects real adapters in production and fakes in tests.
 
-## How archway Supports It
+## How verikt Supports It
 
-archway's hexagonal architecture scaffold generates `port/inbound.go` and `port/outbound.go` as the interface layer, with `adapter/` for concrete implementations. The `archway.yaml` dependency rules prevent adapters from importing other adapters and enforce the inward-only direction. See [Hexagonal Architecture](/glossary/hexagonal-architecture/) for the full layer breakdown.
+verikt's hexagonal architecture scaffold generates `port/inbound.go` and `port/outbound.go` as the interface layer, with `adapter/` for concrete implementations. The `verikt.yaml` dependency rules prevent adapters from importing other adapters and enforce the inward-only direction. See [Hexagonal Architecture](/glossary/hexagonal-architecture/) for the full layer breakdown.
 
 <Aside type="tip">
 Name port interfaces after what the application needs, not after the technology that implements them. `OrderRepository` is a port name; `PostgresOrderRepository` is an adapter name.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/provider"
 )
 
 func sampleResult() *provider.AnalyzeResponse {

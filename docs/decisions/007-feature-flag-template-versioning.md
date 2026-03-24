@@ -7,7 +7,7 @@
 
 ## Context
 
-archway scaffolds production code from templates. The generated code uses language-specific APIs and patterns that change across language versions. For example:
+verikt scaffolds production code from templates. The generated code uses language-specific APIs and patterns that change across language versions. For example:
 
 - Go 1.24 introduced `os.Root` for kernel-level path traversal protection
 - Go 1.21 introduced the `slices` stdlib package
@@ -16,7 +16,7 @@ archway scaffolds production code from templates. The generated code uses langua
 - PHP 8.1 introduced enums
 - TypeScript 5.0 introduced the `satisfies` operator
 
-Our templates currently hardcode patterns for a single language version. If a user targets Go 1.22, templates using `os.Root` (Go 1.24+) won't compile. This problem exists for every language archway will support (ADR-006 polyglot architecture).
+Our templates currently hardcode patterns for a single language version. If a user targets Go 1.22, templates using `os.Root` (Go 1.24+) won't compile. This problem exists for every language verikt will support (ADR-006 polyglot architecture).
 
 This is not a new problem — Helm, Spring Initializr, Cookiecutter, cargo-generate, and Protobuf Editions all solve variants of it.
 
@@ -88,7 +88,7 @@ Templates and architectures can declare minimum feature requirements:
 requires_features: [slices_package]
 ```
 
-If the detected version lacks a required feature, archway gives a clear error with upgrade instructions rather than generating broken code.
+If the detected version lacks a required feature, verikt gives a clear error with upgrade instructions rather than generating broken code.
 
 ### Provider interface extension
 
@@ -158,10 +158,10 @@ If detection fails (tool not installed), fall back to the manifest's default ver
 
 ### Why not minimum floor only
 
-- Works for a single language (what Rails does), but archway is polyglot
+- Works for a single language (what Rails does), but verikt is polyglot
 - PHP 7→8 and Python 2→3 have massive API surface differences — users legitimately need to target older versions
 - Enterprise environments often can't upgrade freely (compliance, legacy integration)
-- A minimum floor forces users to choose between archway and their language version
+- A minimum floor forces users to choose between verikt and their language version
 
 ## Alternatives Considered
 
@@ -179,7 +179,7 @@ If detection fails (tool not installed), fall back to the manifest's default ver
 
 ### Programmatic contributors (Spring Initializr model)
 - **Pros:** Maximum flexibility, real code instead of template conditionals
-- **Cons:** Massively over-engineered for archway's scale, requires Go code for every version difference, breaks the "templates are the source of truth" principle
+- **Cons:** Massively over-engineered for verikt's scale, requires Go code for every version difference, breaks the "templates are the source of truth" principle
 
 ## Consequences
 
@@ -198,4 +198,4 @@ If detection fails (tool not installed), fall back to the manifest's default ver
 
 ---
 
-*Captured by keel:adr — 2026-03-11*
+*Captured by edikt:adr — 2026-03-11*

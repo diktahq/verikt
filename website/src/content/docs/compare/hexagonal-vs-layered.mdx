@@ -1,11 +1,15 @@
 ---
-title: "Hexagonal vs Layered Architecture: Which Go Architecture Should You Use?"
-description: "Compare Hexagonal (Ports & Adapters) and Layered architecture for Go services — dependency rules, complexity, and when each pattern fits."
+title: "Hexagonal vs Layered Architecture: Which Go & TypeScript Architecture Should You Use?"
+description: "Compare Hexagonal (Ports & Adapters) and Layered architecture — dependency rules, complexity, and when each pattern fits."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Both Hexagonal and Layered are supported by archway. Layered is the most familiar pattern for Go developers coming from web frameworks — handler, service, repository. Hexagonal is stricter, more explicit about integration points, and better at scaling with complexity.
+<Aside type="note">
+Examples show Go. verikt supports the same hexagonal architecture for TypeScript/Node.js projects with equivalent layer boundaries.
+</Aside>
+
+Both Hexagonal and Layered are supported by verikt. Layered is the most familiar pattern for Go developers coming from web frameworks — handler, service, repository. Hexagonal is stricter, more explicit about integration points, and better at scaling with complexity.
 
 ## At a Glance
 
@@ -84,14 +88,14 @@ Dependencies flow top-down: handlers know about services, services know about re
 - You want a structure that new team members can understand in five minutes
 - Hexagonal feels like over-engineering for your service's current and expected complexity
 
-## Scaffold Either with archway
+## Scaffold Either with verikt
 
 ```bash
 # Hexagonal
-archway new my-service --arch hexagonal
+verikt new my-service --language go --arch hexagonal
 
 # Layered
-archway new my-service --arch layered
+verikt new my-service --language go --arch layered
 ```
 
 <Aside type="tip">

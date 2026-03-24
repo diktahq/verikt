@@ -1,36 +1,36 @@
 ---
 title: Adding Capabilities
-description: Add new capabilities to an existing service with archway add — automatic dependency resolution, conflict detection, and architecture-aware code generation
+description: Add new capabilities to an existing service with verikt add — automatic dependency resolution, conflict detection, and architecture-aware code generation
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-## Using `archway add`
+## Using `verikt add`
 
 The simplest way to add capabilities to an existing project:
 
 ```bash
-archway add redis
+verikt add redis
 ```
 
 1. Validates the capability exists and checks for conflicts
 2. Auto-resolves transitive dependencies
 3. Renders new files (skipping any that already exist)
-4. Updates your `archway.yaml`
-5. Regenerates AI agent context via `archway guide`
+4. Updates your `verikt.yaml`
+5. Regenerates AI agent context via `verikt guide`
 
 ### Adding Multiple Capabilities
 
 ```bash
-archway add kafka-consumer observability redis
+verikt add kafka-consumer observability redis
 ```
 
 ### Transitive Dependencies
 
-Some capabilities require others. archway resolves these automatically:
+Some capabilities require others. verikt resolves these automatically:
 
 ```bash
-archway add bff
+verikt add bff
 # Output:
 # Adding capabilities:
 #   + http-api (auto-dependency)
@@ -39,15 +39,15 @@ archway add bff
 
 ### Conflict Detection
 
-If a capability conflicts with one already installed, archway will stop and tell you:
+If a capability conflicts with one already installed, verikt will stop and tell you:
 
 ```bash
-archway add grpc
+verikt add grpc
 # Error: capability "grpc" conflicts with "http-api"
 ```
 
 <Aside type="tip">
-Use `archway check` after adding capabilities to verify your project still passes all architecture rules.
+Use `verikt check` after adding capabilities to verify your project still passes all architecture rules.
 </Aside>
 
 ---
@@ -57,15 +57,16 @@ Use `archway check` after adding capabilities to verify your project still passe
 You can also include capabilities when creating a new project:
 
 ```bash
-archway new my-service \
+verikt new my-service \
+  --language go \
   --arch hexagonal \
   --cap platform,bootstrap,http-api,mysql,redis,docker
 ```
 
-Or use the interactive wizard to explore all 63 capabilities with descriptions and smart suggestions:
+Or use the interactive wizard to explore all capabilities with descriptions and smart suggestions:
 
 ```bash
-archway new my-service
+verikt new my-service --language go
 ```
 
 ---
@@ -99,7 +100,7 @@ capabilities/mysql/
 
 Before adding a capability, check its `capability.yaml` for:
 
-- **`requires`** — Other capabilities that must be present (auto-resolved by `archway add`)
+- **`requires`** — Other capabilities that must be present (auto-resolved by `verikt add`)
 - **`suggests`** — Recommended companions
 - **`conflicts`** — Capabilities that can't coexist
 
@@ -140,7 +141,7 @@ If you prefer to add capabilities by hand:
 
    Add initialization and shutdown code to `internal/bootstrap/bootstrap.go`.
 
-4. **Update archway.yaml**
+4. **Update verikt.yaml**
 
    Add the capability to your project's capability list:
 
@@ -156,11 +157,11 @@ If you prefer to add capabilities by hand:
 5. **Regenerate guide**
 
    ```bash
-   archway guide --target claude
+   verikt guide --target claude
    ```
 
 </Steps>
 
 <Aside type="note">
-`archway add` does all of these steps automatically. Manual addition is useful when you need custom wiring or want to understand the internals.
+`verikt add` does all of these steps automatically. Manual addition is useful when you need custom wiring or want to understand the internals.
 </Aside>

@@ -1,0 +1,2 @@
+name: email-gateway
+description: "Abstract EmailGateway interface with nodemailer SMTP implementation"

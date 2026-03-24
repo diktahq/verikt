@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 )
 
 func TestCheckStructure_RequiredDirs(t *testing.T) {
@@ -135,7 +135,7 @@ func TestCheckResult_ComplianceZeroRulesChecked(t *testing.T) {
 }
 
 func TestDetectOrphanPackages_FlagsUnmatchedPackage(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Components: []config.Component{
 			{Name: "domain", In: []string{"domain/**"}},
@@ -157,7 +157,7 @@ func TestDetectOrphanPackages_FlagsUnmatchedPackage(t *testing.T) {
 }
 
 func TestDetectOrphanPackages_NoViolationWhenMatched(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Components: []config.Component{
 			{Name: "domain", In: []string{"domain/**"}},
@@ -181,7 +181,7 @@ func TestDetectMissingComponents(t *testing.T) {
 	}
 	// port/ dir is missing.
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Components: []config.Component{
 			{Name: "domain", In: []string{"domain/**"}},
 			{Name: "port", In: []string{"port/**"}},
@@ -217,7 +217,7 @@ func TestIsExcluded(t *testing.T) {
 func TestCheck_Integration_FlatProjectAgainstHexagonalConfig(t *testing.T) {
 	projectPath := filepath.Join(testdataDir(t), "flat-project")
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language:     "go",
 		Architecture: "hexagonal",
 		Components: []config.Component{
@@ -279,5 +279,77 @@ func TestFunctionRuleCount(t *testing.T) {
 				t.Errorf("functionRuleCount() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCheckTypeScript_StructureChecks verifies that TypeScript projects run
+// language-agnostic structure checks without requiring go/packages.
+func TestCheckTypeScript_StructureChecks(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "src", "domain"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "src", "application"), 0o755)
+	// src/infrastructure is missing → missing_component violation
+
+	cfg := &config.VeriktConfig{
+		Language:     "typescript",
+		Architecture: "hexagonal",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"src/domain/**"}},
+			{Name: "application", In: []string{"src/application/**"}},
+			{Name: "infrastructure", In: []string{"src/infrastructure/**"}},
+		},
+		Rules: config.RulesConfig{
+			Structure: config.StructureConfig{
+				RequiredDirs: []string{"src/domain"},
+			},
+		},
+	}
+
+	result, err := Check(cfg, dir)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+
+	// Structure check should find src/domain present.
+	if len(result.StructureViolations) != 0 {
+		t.Errorf("expected 0 structure violations, got %d", len(result.StructureViolations))
+	}
+
+	// Missing infrastructure component.
+	foundMissing := false
+	for _, v := range result.DependencyViolations {
+		if v.Rule == "missing_component" {
+			foundMissing = true
+			break
+		}
+	}
+	if !foundMissing {
+		t.Error("expected missing_component violation for infrastructure")
+	}
+}
+
+// TestCheckTypeScript_SkipsGoPackages verifies that Check on a TypeScript project
+// returns without error even when there is no go.mod and no Go source files.
+func TestCheckTypeScript_SkipsGoPackages(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "src", "domain"), 0o755)
+
+	// Write a TypeScript file (no Go files, no go.mod).
+	os.WriteFile(filepath.Join(dir, "src", "domain", "user.ts"), []byte("export class User {}\n"), 0o644)
+
+	cfg := &config.VeriktConfig{
+		Language:     "typescript",
+		Architecture: "hexagonal",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"src/domain/**"}},
+		},
+	}
+
+	result, err := Check(cfg, dir)
+	if err != nil {
+		t.Fatalf("Check() must not error for TypeScript project: %v", err)
+	}
+	if result == nil {
+		t.Fatal("result must not be nil")
 	}
 }

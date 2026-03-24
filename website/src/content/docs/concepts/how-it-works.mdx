@@ -1,15 +1,15 @@
 ---
 title: How It Works
-description: How archway composes services from architecture patterns and capabilities — template rendering, partial injection, and the composition model explained.
+description: How verikt composes services from architecture patterns and capabilities — template rendering, partial injection, and the composition model explained.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-If you want to understand *why* the composition model exists before diving into how it works, start with [Why archway exists](/concepts/why-archway-exists/).
+If you want to understand *why* the composition model exists before diving into how it works, start with [Why verikt exists](/concepts/why-verikt-exists/).
 
 ## The Composition Model
 
-Most service scaffolding gives you files. archway gives you a structure your agents understand, your team can reason about, and your CI can enforce. It does that through two building blocks composed together.
+Most service scaffolding gives you files. verikt gives you a structure your agents understand, your team can reason about, and your CI can enforce. It does that through two building blocks composed together.
 
 ```
 Architecture + Capabilities = Your Service
@@ -40,12 +40,12 @@ Capabilities are **modular features** that plug into your architecture. Each cap
 - A `capability.yaml` manifest with metadata, requirements, and suggestions
 
 <Aside type="note">
-archway ships with **63 capabilities** across 10 categories: transport, data, security, resilience, patterns, observability, infrastructure, platform, quality, and frontend.
+verikt ships with **65 capabilities** across 10 categories: transport, data, security, resilience, patterns, observability, infrastructure, platform, quality, and frontend. TypeScript/Node.js is fully supported with 39 capabilities across all core categories. Some capabilities (`grpc`, `graphql`, `ddd`, `squirrel`, `sqlc`, and others) are Go-only in the current release.
 </Aside>
 
 ## How Composition Works
 
-When you run `archway new`, here's what happens:
+When you run `verikt new`, here's what happens:
 
 <Steps>
 
@@ -67,7 +67,7 @@ When you run `archway new`, here's what happens:
 
 9. **Run hooks** — `go mod tidy`, `git init`, etc.
 
-10. **Generate metadata** — `archway.yaml` and `docs/PROJECT.md`
+10. **Generate metadata** — `verikt.yaml` and `docs/PROJECT.md`
 
 </Steps>
 
@@ -87,12 +87,12 @@ The bootstrap pattern provides four injection points where capabilities wire the
 Capabilities can declare relationships with each other:
 
 - **`requires`** — Must be selected together. `bootstrap` requires `platform`.
-- **`suggests`** — Recommended but optional. archway prompts you in the wizard.
+- **`suggests`** — Recommended but optional. verikt prompts you in the wizard.
 - **`conflicts`** — Cannot coexist.
 
 ## Smart Suggestions
 
-After you select capabilities, archway checks **18 suggestion rules** with cross-referencing and recommends what you might be missing:
+After you select capabilities, verikt checks **18 suggestion rules** with cross-referencing and recommends what you might be missing:
 
 ```
 Based on your selections, you might also want:
@@ -103,12 +103,12 @@ Based on your selections, you might also want:
 ```
 
 <Aside type="caution">
-archway also warns about **problematic combinations** — like using MySQL without migrations, or running an HTTP API without health checks. These are warnings, not blockers.
+verikt also warns about **problematic combinations** — like using MySQL without migrations, or running an HTTP API without health checks. These are warnings, not blockers.
 </Aside>
 
 ## Architecture Enforcement
 
-Every scaffolded project includes an `archway.yaml` that defines component boundaries:
+Every scaffolded project includes an `verikt.yaml` that defines component boundaries:
 
 ```yaml
 components:
@@ -126,6 +126,6 @@ components:
     may_depend_on: [ports, domain]
 ```
 
-Run `archway check` at any time to validate these rules. It uses **11 AST-based detectors** to catch dependency violations, missing directories, function complexity issues, and anti-patterns.
+Run `verikt check` at any time to validate these rules. It uses **11 AST-based detectors** to catch dependency violations, missing directories, function complexity issues, and anti-patterns.
 
 Ready to try it? [Start with AI Agents](/getting-started/ai-agents/) — set up your project without leaving your agent session. Or go to the [CLI Quick Start](/getting-started/cli/) if you prefer the terminal wizard.

@@ -58,7 +58,7 @@ Without guide               With guide
 ─────────────────────       ──────────────────────────────
 arch:         6–8    ✗      arch:         1       ~ partial
 naked_goroutine      ✗      naked_goroutine       ✗
-archway check: FAIL         archway check: FAIL
+verikt check: FAIL         verikt check: FAIL
 ```
 
 ## Metrics
@@ -79,9 +79,9 @@ Two findings, one experiment.
 
 This is the boundary of what the guide can prevent. It stops incidental anti-patterns (UUID v4, SQL concatenation that isn't required). It cannot stop anti-patterns that are the task.
 
-Enforcement via `archway check` in CI is the only reliable prevention for task-driven anti-patterns.
+Enforcement via `verikt check` in CI is the only reliable prevention for task-driven anti-patterns.
 
-**What this means for your team:** Wire `archway check` into CI as a hard gate. The guide prevents architectural drift between sessions. CI catches what the guide can't — patterns the task explicitly required that violate your rules.
+**What this means for your team:** Wire `verikt check` into CI as a hard gate. The guide prevents architectural drift between sessions. CI catches what the guide can't — patterns the task explicitly required that violate your rules.
 
 import { Aside } from '@astrojs/starlight/components';
 
@@ -98,6 +98,6 @@ n=3 on a single task type (job runner with explicit concurrency requirement). Th
 
 [→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
 
-[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-08)
+[→ Artifacts on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-08)
 
 [→ EXP-09: Does the guide expand what agents recommend?](/experiments/exp-09/)

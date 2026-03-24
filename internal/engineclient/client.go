@@ -7,7 +7,7 @@ import (
 	"io"
 	"os/exec"
 
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -141,6 +141,9 @@ func writeMessage(w io.Writer, msg *pb.EngineRequest) error {
 	return err
 }
 
+// maxMsgSize is the maximum protobuf message size accepted from the engine (64 MiB).
+const maxMsgSize = 64 * 1024 * 1024
+
 // readMessage reads a length-prefixed protobuf message.
 func readMessage(r io.Reader) (*pb.EngineResponse, error) {
 	lenBuf := make([]byte, 4)
@@ -148,6 +151,9 @@ func readMessage(r io.Reader) (*pb.EngineResponse, error) {
 		return nil, err
 	}
 	msgLen := binary.LittleEndian.Uint32(lenBuf)
+	if msgLen > maxMsgSize {
+		return nil, fmt.Errorf("engine message too large: %d bytes (max %d)", msgLen, maxMsgSize)
+	}
 
 	msgBuf := make([]byte, msgLen)
 	if _, err := io.ReadFull(r, msgBuf); err != nil {

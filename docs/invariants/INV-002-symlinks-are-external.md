@@ -14,4 +14,4 @@ Symlinks in a project directory typically point to external tooling, generated a
 
 ---
 
-*Captured by keel:invariant — 2026-03-13*
+*Captured by edikt:invariant — 2026-03-13*

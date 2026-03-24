@@ -19,7 +19,7 @@ http:
 
 grpc:
   port: 9090
-  reflection: true
+  reflection: false  # enable in development only — exposes service schema
 {{- end}}
 {{- if .HasKafka}}
 

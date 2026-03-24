@@ -1,0 +1,4 @@
+name: circuit-breaker
+description: "Circuit breaker via opossum — prevents cascade failures from slow external services"
+suggests:
+  - retry

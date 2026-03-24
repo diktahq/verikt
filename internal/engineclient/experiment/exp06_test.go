@@ -18,7 +18,7 @@ package experiment
 //   git clone --branch v1.30.0 --depth 1 https://github.com/thomaspoignant/go-feature-flag go-feature-flag
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP06 -v -timeout 600s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP06 -v -timeout 600s ./internal/engineclient/experiment/
 
 import (
 	"os"

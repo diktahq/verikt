@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://verikt.dev/sitemap-index.xml

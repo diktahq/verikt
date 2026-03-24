@@ -11,11 +11,11 @@ import (
 )
 
 // TestTemplateCompilation scaffolds each architecture into a temp dir and runs `go build ./...`.
-// It only runs when ARCHWAY_TEST_GO_VERSION is set (used in CI template-matrix job).
+// It only runs when VERIKT_TEST_GO_VERSION is set (used in CI template-matrix job).
 func TestTemplateCompilation(t *testing.T) {
-	goVersion := os.Getenv("ARCHWAY_TEST_GO_VERSION")
+	goVersion := os.Getenv("VERIKT_TEST_GO_VERSION")
 	if goVersion == "" {
-		t.Skip("ARCHWAY_TEST_GO_VERSION not set, skipping template compilation test")
+		t.Skip("VERIKT_TEST_GO_VERSION not set, skipping template compilation test")
 	}
 
 	displayVersion := strings.TrimSuffix(goVersion, ".x")

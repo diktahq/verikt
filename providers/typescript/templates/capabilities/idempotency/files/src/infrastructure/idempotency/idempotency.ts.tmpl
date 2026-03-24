@@ -1,0 +1,43 @@
+// IdempotencyStore — prevents duplicate side effects on retry.
+// Use idempotency keys on any operation that must not be duplicated:
+// payments, order creation, email sends, webhook processing.
+
+export interface IdempotencyStore {
+  // check returns the cached result if the key was already processed, null otherwise.
+  check(key: string): Promise<unknown | null>
+  // store saves the result for a key. ttlSeconds controls expiry (default: 24h).
+  store(key: string, result: unknown, ttlSeconds?: number): Promise<void>
+}
+
+// withIdempotency wraps an operation with an idempotency check.
+// If the key was already processed, returns the cached result without re-executing.
+export async function withIdempotency<T>(
+  store: IdempotencyStore,
+  key: string,
+  operation: () => Promise<T>,
+  ttlSeconds = 86_400,  // 24 hours
+): Promise<T> {
+  const cached = await store.check(key)
+  if (cached !== null) return cached as T
+
+  const result = await operation()
+  await store.store(key, result, ttlSeconds)
+  return result
+}
+
+// RedisIdempotencyStore implements IdempotencyStore using ioredis.
+// Requires the redis capability.
+export class RedisIdempotencyStore implements IdempotencyStore {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(private readonly redis: any) {}
+
+  async check(key: string): Promise<unknown | null> {
+    const value = await this.redis.get(`idempotency:${key}`)
+    if (!value) return null
+    return JSON.parse(value) as unknown
+  }
+
+  async store(key: string, result: unknown, ttlSeconds = 86_400): Promise<void> {
+    await this.redis.setex(`idempotency:${key}`, ttlSeconds, JSON.stringify(result))
+  }
+}

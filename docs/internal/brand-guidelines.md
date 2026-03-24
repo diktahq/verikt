@@ -1,20 +1,43 @@
-# archway — Brand Guidelines
+# verikt — Brand Guidelines
 
 ## Name
 
-Always lowercase: **archway** — never "Archway" or "ARCHWAY".
+Always lowercase: **verikt** — never "Verikt" or "VERIKT".
+
+From "verdict" — judgment on compliance. The name signals authority, finality, and architectural truth.
+
+Part of the **dikta** platform:
+- **verikt** (verikt.dev) — architecture validation and scaffolding
+- **edikt** (edikt.dev) — governance layer for agentic engineering
+- **dikta** (dikta.dev) — umbrella platform
+
+GitHub org: **diktahq**. Brand voice: precise, direct, authoritative, forward.
 
 ## Logo / Wordmark
 
 The wordmark splits into two parts:
 
-- **arch** — neutral color (white in dark mode, black in light mode)
-- **way** — accent amber (`#E8913A` dark, `#C47A2E` light)
+- **ver** — neutral color (white in dark mode, black in light mode)
+- **ikt** — accent amber (`#E8913A` dark, `#C47A2E` light)
 
 This applies everywhere the name appears as a visual element:
 - Navbar site title (custom `SiteTitle.astro` component)
-- Hero title on homepage (HTML in frontmatter: `arch<span style="color:var(--sl-color-accent)">way</span>`)
+- Hero title on homepage (HTML in frontmatter: `ver<span style="color:var(--sl-color-accent)">ikt</span>`)
 - Any future marketing material, social images, etc.
+
+## Positioning
+
+**Headline:** "Your architecture, in every agent session."
+
+**Pain line:** "The agent writes correct syntax. It doesn't always remember your architecture."
+
+**Value proposition:** Give AI agents your architecture before they write the first line — so every session is reliable, every engineer is consistent, and your architecture doesn't drift.
+
+**Category:** Agentic Engineering Infrastructure.
+
+**Value pillars:** Reliability, Consistency, Predictability.
+
+See `docs/internal/gtm-positioning.md` for the full positioning framework.
 
 ## Colors
 
@@ -22,7 +45,7 @@ This applies everywhere the name appears as a visual element:
 
 | Token | Dark | Light | Usage |
 |-------|------|-------|-------|
-| Accent | `#E8913A` | `#8F5819` | "way" in logo, links, borders, h3 subcategories. Light mode darkened per [[contrast-of-saturation]]: amber deepened toward brown = "conscientious, dependable" per [[color-associations]], passes AA (5.0:1) on warm cream bg. |
+| Accent | `#E8913A` | `#8F5819` | "ikt" in logo, links, borders, h3 subcategories. Light mode darkened: amber deepened toward brown = "conscientious, dependable", passes AA (5.0:1) on warm cream bg. |
 | Accent low | `#1E1A14` | `#FFF5E8` | Backgrounds, subtle highlights |
 | Accent high | `#F5D4A8` | `#5C3D1A` | Tagline, emphasis text |
 | Background | `#111110` | `#F0EDE8` | Warm page background |
@@ -30,7 +53,7 @@ This applies everywhere the name appears as a visual element:
 
 ### Warm Gray Scale
 
-All grays are warm-tinted toward the amber hue family. Per [[color-temperature]] (Itten): warm tones = near, dense, earthy — reinforces the "infrastructure" brand personality. Per [[functional-color]] (Birren): tinted backgrounds reduce monotony and fatigue on docs sites. No neutral/cool grays.
+All grays are warm-tinted toward the amber hue family. Warm tones = near, dense, earthy — reinforces the "infrastructure" brand personality. No neutral/cool grays.
 
 | Token | Dark | Light | Usage |
 |-------|------|-------|-------|
@@ -65,11 +88,17 @@ Aside semantic colors (tip, caution, danger) use Starlight defaults unless they 
 
 ## Rules
 
-- Never use "Archway" with capital A in docs, website, or marketing
-- The "way" color split is the primary brand element — maintain it in all logo contexts
+- Never capitalize: always **verikt**
+- The "ikt" color split is the primary brand element — maintain it in all logo contexts
 - No emoji in the brand name or tagline
+
+## Implementation
+
+- Website: `website/src/components/SiteTitle.astro` + hero frontmatter HTML
+- CSS tokens: `website/src/styles/custom.css`
 
 ---
 
 *Created 2026-03-11*
 *Updated 2026-03-14 — Structural Amber rebrand*
+*Updated 2026-03-22 — Renamed archway → verikt, added positioning section, updated wordmark split*

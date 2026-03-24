@@ -1,0 +1,2 @@
+name: devcontainer
+description: "VS Code Dev Container — Node 20 + ESLint + Prettier extensions, reproducible dev environment"

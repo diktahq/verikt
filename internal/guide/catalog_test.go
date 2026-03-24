@@ -5,8 +5,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/scaffold"
 )
 
 func testCapFS() fstest.MapFS {

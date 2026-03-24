@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/provider"
 )
 
 func TestImplementsLanguageProvider(t *testing.T) {
@@ -78,13 +78,13 @@ func TestScaffoldWithCapabilities(t *testing.T) {
 		t.Error("expected mysql connection file to exist")
 	}
 
-	// Verify archway.yaml includes capabilities.
-	archwayPath := filepath.Join(out, "archway.yaml")
-	data, err := os.ReadFile(archwayPath)
+	// Verify verikt.yaml includes capabilities.
+	veriktPath := filepath.Join(out, "verikt.yaml")
+	data, err := os.ReadFile(veriktPath)
 	if err != nil {
-		t.Fatalf("read archway.yaml: %v", err)
+		t.Fatalf("read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "http-api") {
-		t.Error("archway.yaml should contain http-api capability")
+		t.Error("verikt.yaml should contain http-api capability")
 	}
 }

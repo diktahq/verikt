@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +67,7 @@ func TestBuildCategoryContent_CorrectGlobs(t *testing.T) {
 
 	assert.Contains(t, content, `"internal/handler/**"`)
 	assert.Contains(t, content, `"adapter/httphandler/**"`)
-	assert.Contains(t, content, "# Archway — HTTP & Transport")
+	assert.Contains(t, content, "# verikt — HTTP & Transport")
 	assert.Contains(t, content, "http-api")
 	assert.Contains(t, content, "## Adding Code")
 }
@@ -141,7 +141,7 @@ func TestSplitCleanup_RemovesOldFile(t *testing.T) {
 	require.NoError(t, os.MkdirAll(rulesDir, 0o755))
 
 	// Create old monolithic file.
-	oldPath := filepath.Join(rulesDir, "archway.md")
+	oldPath := filepath.Join(rulesDir, "verikt.md")
 	require.NoError(t, os.WriteFile(oldPath, []byte("old content"), 0o644))
 
 	opts := GenerateOptions{
@@ -157,8 +157,8 @@ func TestSplitCleanup_RemovesOldFile(t *testing.T) {
 	// Old file should be deleted.
 	assert.NoFileExists(t, oldPath)
 	// New split files should exist.
-	assert.FileExists(t, filepath.Join(rulesDir, "archway-index.md"))
-	assert.FileExists(t, filepath.Join(rulesDir, "archway-http.md"))
+	assert.FileExists(t, filepath.Join(rulesDir, "verikt-index.md"))
+	assert.FileExists(t, filepath.Join(rulesDir, "verikt-http.md"))
 }
 
 func TestCatalogOnly_StaysMonolithic(t *testing.T) {
@@ -176,9 +176,9 @@ func TestCatalogOnly_StaysMonolithic(t *testing.T) {
 	require.NoError(t, err)
 
 	// CatalogOnly uses monolithic output.
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt.md"))
 	// No split files.
-	assert.NoFileExists(t, filepath.Join(dir, ".claude", "rules", "archway-index.md"))
+	assert.NoFileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
 }
 
 func TestGlobsForCategory(t *testing.T) {
@@ -227,7 +227,7 @@ func TestSplitFileTokenCompliance(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "archway-") {
+		if !strings.HasPrefix(e.Name(), "verikt-") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", e.Name()))

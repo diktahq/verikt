@@ -1,0 +1,5 @@
+name: sqlite
+description: "SQLite via better-sqlite3 — embedded database client"
+conflicts:
+  - postgres
+  - mysql

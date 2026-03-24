@@ -37,7 +37,7 @@ Retry-After: 58
 
 ## In Go
 
-archway's `rate-limiting` capability requires `http-api` and scaffolds token bucket middleware:
+verikt's `rate-limiting` capability requires `http-api` and scaffolds token bucket middleware:
 
 ```go
 func RateLimitMiddleware(store RateLimitStore) func(http.Handler) http.Handler {
@@ -61,9 +61,9 @@ func RateLimitMiddleware(store RateLimitStore) func(http.Handler) http.Handler {
 
 Redis is the typical backing store for distributed rate limiting — its `INCR` and expiry operations implement the token bucket efficiently across multiple service instances.
 
-## How archway Supports It
+## How verikt Supports It
 
-The `rate-limiting` capability requires `http-api` and scaffolds per-endpoint token bucket middleware with configurable limits. archway's smart suggestions recommend `rate-limiting` whenever `http-api` is selected. See [Capabilities](/concepts/capabilities/).
+The `rate-limiting` capability requires `http-api` and scaffolds per-endpoint token bucket middleware with configurable limits. verikt's smart suggestions recommend `rate-limiting` whenever `http-api` is selected. See [Capabilities](/concepts/capabilities/).
 
 <Aside type="tip">
 Scope rate limits to authenticated identity, not just IP address. IP-based limits break for clients behind NAT, and they're trivially bypassed by rotating IPs. API key or user ID limits are more accurate and harder to circumvent.

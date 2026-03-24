@@ -4,8 +4,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/provider"
 	"golang.org/x/tools/go/packages"
 )
 

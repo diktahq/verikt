@@ -4,19 +4,19 @@ import (
 	"context"
 	"testing"
 
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestArchitecture_ComponentDependencies validates that the engine can detect
-// layer violations expressed as ImportGraphSpec rules derived from archway.yaml
+// layer violations expressed as ImportGraphSpec rules derived from verikt.yaml
 // component declarations.
 func TestArchitecture_ComponentDependencies(t *testing.T) {
 	client := newTestClient(t)
 	repoRoot := findRepoRoot(t)
 
-	// Simulate a hexagonal archway.yaml with domain and adapter components.
+	// Simulate a hexagonal verikt.yaml with domain and adapter components.
 	// The test codebase has internal/checker/testdata/hexagonal-project/ with:
 	//   domain/     — pure domain (should not import adapter)
 	//   adapter/    — adapters (may import domain)

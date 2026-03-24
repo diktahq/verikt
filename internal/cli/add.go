@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/guide"
-	"github.com/dcsg/archway/internal/provider"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/guide"
+	"github.com/diktahq/verikt/internal/provider"
+	"github.com/diktahq/verikt/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -21,13 +21,13 @@ func newAddCommand(_ *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <capability> [capability...]",
 		Short: "Add capabilities to an existing project",
-		Long: `Add one or more capabilities to an existing Archway project.
+		Long: `Add one or more capabilities to an existing verikt project.
 
 Capabilities are validated against the provider's template FS, conflicts are checked,
 and transitive dependencies are auto-resolved. Existing files are never overwritten.`,
-		Example: `  archway add redis
-  archway add kafka-consumer observability
-  archway add grpc --dry-run`,
+		Example: `  verikt add redis
+  verikt add kafka-consumer observability
+  verikt add grpc --dry-run`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runAdd(args)
@@ -37,14 +37,14 @@ and transitive dependencies are auto-resolved. Existing files are never overwrit
 }
 
 func runAdd(capabilities []string) error {
-	cfgPath, err := config.FindArchwayYAML(".")
+	cfgPath, err := config.FindVeriktYAML(".")
 	if err != nil {
-		return fmt.Errorf("no archway.yaml found — run `archway new` first: %w", err)
+		return fmt.Errorf("no verikt.yaml found — run `verikt new` first: %w", err)
 	}
 
-	cfg, err := config.LoadArchwayYAML(cfgPath)
+	cfg, err := config.LoadVeriktYAML(cfgPath)
 	if err != nil {
-		return fmt.Errorf("load archway.yaml: %w", err)
+		return fmt.Errorf("load verikt.yaml: %w", err)
 	}
 
 	providerImpl, err := provider.Get(cfg.Language)
@@ -152,8 +152,8 @@ func runAdd(capabilities []string) error {
 	}
 
 	// Infer ServiceName from directory name, ModulePath from go.mod.
-	projectDir := strings.TrimSuffix(cfgPath, "/archway.yaml")
-	projectDir = strings.TrimSuffix(projectDir, "\\archway.yaml")
+	projectDir := strings.TrimSuffix(cfgPath, "/verikt.yaml")
+	projectDir = strings.TrimSuffix(projectDir, "\\verikt.yaml")
 	absDir, absErr := filepath.Abs(projectDir)
 	if absErr != nil {
 		return fmt.Errorf("resolve path: %w", absErr)
@@ -203,11 +203,11 @@ func runAdd(capabilities []string) error {
 		}
 	}
 
-	// Update archway.yaml with new capabilities.
+	// Update verikt.yaml with new capabilities.
 	cfg.Capabilities = finalCaps
 	sort.Strings(cfg.Capabilities)
-	if err := config.SaveArchwayYAML(cfgPath, cfg); err != nil {
-		return fmt.Errorf("save archway.yaml: %w", err)
+	if err := config.SaveVeriktYAML(cfgPath, cfg); err != nil {
+		return fmt.Errorf("save verikt.yaml: %w", err)
 	}
 
 	// Regenerate guides.

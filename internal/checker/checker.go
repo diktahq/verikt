@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dcsg/archway/internal/analyzer"
-	"github.com/dcsg/archway/internal/analyzer/graph"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/analyzer"
+	"github.com/diktahq/verikt/internal/analyzer/graph"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/provider"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -86,18 +86,25 @@ type MetricClient interface {
 	CheckFunctionMetrics(projectPath string, rules config.FunctionRules) ([]Violation, error)
 }
 
-// Check validates a project at the given path against its archway.yaml config.
+// Check validates a project at the given path against its verikt.yaml config.
 // It calls CheckWithEngine(cfg, projectPath, nil, nil, nil).
-func Check(cfg *config.ArchwayConfig, projectPath string) (*CheckResult, error) {
+func Check(cfg *config.VeriktConfig, projectPath string) (*CheckResult, error) {
 	return CheckWithEngine(cfg, projectPath, nil, nil, nil)
 }
 
 // CheckWithEngine is like Check but uses the provided engine clients for
 // anti-pattern, dependency, and function metric detection when non-nil.
 // When all three clients are non-nil, go/packages loading is skipped entirely.
-func CheckWithEngine(cfg *config.ArchwayConfig, projectPath string, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
+// TypeScript projects always skip go/packages — the Rust engine handles analysis.
+func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
 	result := &CheckResult{
 		ComponentsTotal: len(cfg.Components),
+	}
+
+	// TypeScript: no Go packages to load. Use engine-only path when available,
+	// or fall back to structure + component coverage checks only.
+	if cfg.Language == "typescript" {
+		return checkTypeScript(cfg, projectPath, result, apClient, depClient, metricClient)
 	}
 
 	// Engine fast path: all three clients available — skip go/packages entirely.
@@ -159,8 +166,28 @@ func CheckWithEngine(cfg *config.ArchwayConfig, projectPath string, apClient Ant
 	return result, nil
 }
 
+// checkTypeScript runs checks for TypeScript projects.
+// It skips Go-specific checks (go/packages, anti-patterns, function metrics) and
+// uses the Rust engine for import graph dependency checks when a client is available.
+func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *CheckResult, _ AntiPatternClient, depClient DependencyClient, _ MetricClient) (*CheckResult, error) {
+	// Structure and coverage checks are language-agnostic.
+	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+	result.ComponentsCovered = countCoveredComponentsFS(projectPath, cfg.Components)
+	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
+
+	// Dependency checks via the Rust engine's TypeScript import graph.
+	if depClient != nil {
+		if violations, err := depClient.CheckDependencies(projectPath, cfg.Components); err == nil {
+			result.DependencyViolations = append(result.DependencyViolations, violations...)
+		}
+	}
+
+	computeMetrics(cfg, result)
+	return result, nil
+}
+
 // checkWithEngineOnly runs all checks via the Rust engine, skipping go/packages.
-func checkWithEngineOnly(cfg *config.ArchwayConfig, projectPath string, result *CheckResult, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
+func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *CheckResult, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
 	var errs []error
 
 	if violations, err := depClient.CheckDependencies(projectPath, cfg.Components); err == nil {
@@ -207,7 +234,7 @@ func checkWithEngineOnly(cfg *config.ArchwayConfig, projectPath string, result *
 //
 // Both are reported as "architecture" category violations. Paths matching
 // cfg.Check.Exclude globs are skipped.
-func checkArchitectureShape(cfg *config.ArchwayConfig, pkgs []*packages.Package, projectPath string) []Violation {
+func checkArchitectureShape(cfg *config.VeriktConfig, pkgs []*packages.Package, projectPath string) []Violation {
 	if len(cfg.Components) == 0 {
 		return nil
 	}
@@ -246,7 +273,7 @@ func projectLocalPkgPaths(pkgs []*packages.Package, projectPath string, excludes
 // detectOrphanPackages finds project-local packages that match no declared
 // component. These represent unclassified code — likely a flat structure that
 // does not implement the declared architecture.
-func detectOrphanPackages(cfg *config.ArchwayConfig, localPkgPaths []string) []Violation {
+func detectOrphanPackages(cfg *config.VeriktConfig, localPkgPaths []string) []Violation {
 	var violations []Violation
 	for _, pkgPath := range localPkgPaths {
 		matched := false
@@ -269,15 +296,15 @@ func detectOrphanPackages(cfg *config.ArchwayConfig, localPkgPaths []string) []V
 	return violations
 }
 
-// detectMissingComponents finds components declared in archway.yaml that have
+// detectMissingComponents finds components declared in verikt.yaml that have
 // no Go files in their declared paths. The architecture shape is not implemented.
-func detectMissingComponents(cfg *config.ArchwayConfig, projectPath string) []Violation {
+func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Violation {
 	var violations []Violation
 	for _, comp := range cfg.Components {
 		if countCoveredComponentsFS(projectPath, []config.Component{comp}) == 0 {
 			violations = append(violations, Violation{
 				Category: "architecture",
-				Message:  fmt.Sprintf("component %q declared in archway.yaml but no Go files found in %v", comp.Name, comp.In),
+				Message:  fmt.Sprintf("component %q declared in verikt.yaml but no Go files found in %v", comp.Name, comp.In),
 				Rule:     "missing_component",
 				Severity: "error",
 			})
@@ -290,7 +317,7 @@ func detectMissingComponents(cfg *config.ArchwayConfig, projectPath string) []Vi
 // detection — used when go/packages is not available (engine-only path).
 // It reads go.mod for the module path, walks directories containing .go files,
 // derives import paths, and checks them against declared components.
-func detectOrphanPackagesFS(cfg *config.ArchwayConfig, projectPath string) []Violation {
+func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Violation {
 	if len(cfg.Components) == 0 {
 		return nil
 	}
@@ -441,7 +468,7 @@ func countCoveredComponentsFS(projectPath string, components []config.Component)
 	return covered
 }
 
-func computeMetrics(cfg *config.ArchwayConfig, result *CheckResult) {
+func computeMetrics(cfg *config.VeriktConfig, result *CheckResult) {
 	result.RulesChecked = len(cfg.Components) + structureRuleCount(cfg.Rules.Structure) + functionRuleCount(cfg.Rules.Functions)
 	result.RulesPassing = result.RulesChecked - result.TotalViolations()
 	if result.RulesPassing < 0 {

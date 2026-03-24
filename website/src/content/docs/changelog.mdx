@@ -1,0 +1,81 @@
+---
+title: Changelog
+description: What shipped in each verikt release — features, fixes, and breaking changes.
+---
+
+## v0.1.0 — 2026-03-23
+
+First public release of verikt. Previously developed as "archway" — renamed to verikt as part of the dikta platform.
+
+### Go Language Provider
+
+63 capabilities across 10 categories. 4 architecture patterns (hexagonal, layered, clean, flat).
+
+Core commands: `verikt new` (scaffold), `verikt add` (add capabilities), `verikt check` (11 AST-based detectors), `verikt guide` (generate AI agent context for Claude Code, Cursor, Copilot, Windsurf).
+
+Smart suggestions, capability warnings, feature-flag template engine, proxy rules, decision gates.
+
+```bash
+verikt new my-api --language go --arch hexagonal \
+  --cap platform,bootstrap,http-api,postgres,docker --no-wizard
+```
+
+### TypeScript/Node.js Provider
+
+39 capabilities across data, resilience, security, patterns, and infrastructure. Two architectures: hexagonal and flat. HTTP framework choice: Express, Fastify, or Hono.
+
+```bash
+verikt new my-ts-api --language typescript --arch hexagonal \
+  --cap platform,bootstrap,http-api,postgres,docker --no-wizard
+```
+
+**ORM choice.** Data capabilities default to Prisma. Drizzle is available as a query-builder alternative:
+
+```bash
+verikt new my-api --language typescript --arch hexagonal \
+  --cap platform,bootstrap,http-api,postgres --set OrmLibrary=drizzle --no-wizard
+```
+
+### Go Query Builders
+
+Two capabilities for structured query building on top of pgx/database-sql:
+
+- **squirrel** — fluent SQL construction with `QB()` factory for PostgreSQL-aware placeholders
+- **sqlc** — compile `.sql` files to type-safe Go functions
+
+### Rust Analysis Engine
+
+Embedded Rust engine using tree-sitter for import graph analysis. Supports both Go and TypeScript via language-specific extractors. Communication via protobuf over stdin/stdout. Cross-compiled for darwin-arm64, darwin-amd64, linux-arm64, linux-amd64.
+
+### Governance Checkpoint
+
+`verikt guide` includes a governance checkpoint — an instruction block that tells agents to verify architecture rules before modifying files and re-check compliance after tool results.
+
+Validated by [EXP-10](/experiments/exp-10/): variance eliminated (0.89 → 0.00), violations reduced 25% on greenfield builds.
+
+### Onboarding
+
+`verikt init` is the single entry point. Detects your project state:
+
+- **Empty directory** → greenfield scaffold wizard (same quality as `verikt new`)
+- **Existing code** → analyzes codebase, then offers: map existing or bubble context (strangler fig)
+
+`/verikt:init` skill for Claude Code mirrors the CLI flow. `verikt setup` installs the skill globally, locally, or both.
+
+### Node.js Version Support
+
+Default Node version: **22** (Active LTS). Node 24 support adds version-gated features via `features.yaml`:
+
+- `native_ts` — drops `tsx` dependency, uses `node --watch` for dev server
+- `es2024` — tsconfig target set to ES2024
+
+### Website
+
+- About page, 3 agent-specific guide pages (Claude Code, Cursor, Copilot)
+- Capability pages, architecture comparisons, glossary
+- 10 experiments documenting architecture context effectiveness
+- robots.txt, per-page OG meta, structured data
+
+```bash
+brew install diktahq/tap/verikt
+```

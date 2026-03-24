@@ -3,9 +3,9 @@ title: Experiments
 description: Controlled experiments measuring how architectural context affects AI agent output — methodology, results, and what didn't work.
 ---
 
-archway's claims are backed by experiments, not opinions. Each experiment isolates a single variable, measures the outcome, and reports what happened — including null results and invalid runs. We publish falsified hypotheses alongside validated ones.
+verikt's claims are backed by experiments, not opinions. Each experiment isolates a single variable, measures the outcome, and reports what happened — including null results and invalid runs. We publish falsified hypotheses alongside validated ones.
 
-Each experiment runs the same agent on the same task. Condition A: no guide — what most teams do today. Condition B: `archway guide` output prepended to the prompt. Same model, one variable.
+Each experiment runs the same agent on the same task. Condition A: no guide — what most teams do today. Condition B: `verikt guide` output prepended to the prompt. Same model, one variable.
 
 <div class="exp-stats">
   <div class="exp-stat">
@@ -79,15 +79,21 @@ The guide doesn't make agents better on average — it makes them consistently c
 <a class="exp-row" href="/experiments/exp-09/">
   <div class="exp-row-meta"><span class="exp-id">EXP-09</span><span class="exp-badge validated">Validated</span><span class="exp-n">n=2</span></div>
   <div class="exp-row-name">Does the guide expand what agents recommend?</div>
-  <div class="exp-row-finding">Without guide: "consider adding retries." With guide: <code>archway add retry circuit-breaker idempotency</code> — and a RECOMMENDATIONS file generated every time.</div>
+  <div class="exp-row-finding">Without guide: "consider adding retries." With guide: <code>verikt add retry circuit-breaker idempotency</code> — and a RECOMMENDATIONS file generated every time.</div>
+</a>
+
+<a class="exp-row" href="/experiments/exp-10/">
+  <div class="exp-row-meta"><span class="exp-id">EXP-10</span><span class="exp-badge validated">Validated</span><span class="exp-n">n=12</span></div>
+  <div class="exp-row-name">Governance checkpoint</div>
+  <div class="exp-row-finding">Variance [2,0,2]→[1,1,1]. 80-token checkpoint eliminates variance, reduces violations 25% on greenfield. Ceiling effect on brownfield.</div>
 </a>
 
 </div>
 
 ## Methodology
 
-Every experiment follows the same protocol: same agent, same task, one variable changed. Every run persists the full prompt, raw response, and `archway check` output as artifacts. [Full methodology →](/experiments/methodology/)
+Every experiment follows the same protocol: same agent, same task, one variable changed. Every run persists the full prompt, raw response, and `verikt check` output as artifacts. [Full methodology →](/experiments/methodology/)
 
 ---
 
-Try it yourself: `brew install dcsg/tap/archway && archway guide` — then open your AI agent. [Quick start →](/getting-started/ai-agents/)
+Try it yourself: `brew install diktahq/tap/verikt && verikt guide` — then open your AI agent. [Quick start →](/getting-started/ai-agents/)

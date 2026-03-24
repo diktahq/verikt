@@ -1,0 +1,10 @@
+# TypeScript / Node.js Feature Matrix
+# Maps Node.js version features to flags used in templates.
+# Same pattern as Go (ADR-008).
+features:
+  - name: native_ts
+    description: "Stable native TypeScript (--strip-types enabled by default)"
+    since: "24"
+  - name: es2024
+    description: "ES2024 target support (Object.groupBy, Promise.withResolvers)"
+    since: "24"

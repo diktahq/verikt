@@ -1,15 +1,15 @@
 package experiment
 
 // Agent experiments: call Claude as a subprocess (via `claude -p`),
-// measure the effect of archway guide context injection on code quality.
+// measure the effect of verikt guide context injection on code quality.
 //
 // Run with:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestAgent -v -timeout 300s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestAgent -v -timeout 300s ./internal/engineclient/experiment/
 //
 // Requirements:
 //   - `claude` CLI in PATH (Claude Code installed)
-//   - `archway` binary built at ./bin/archway (run: go build -o ./bin/archway ./cmd/archway/)
-//   - ARCHWAY_EXPERIMENT_AGENT=1 env var to opt in (calls are not free)
+//   - `verikt` binary built at ./bin/verikt (run: go build -o ./bin/verikt ./cmd/verikt/)
+//   - VERIKT_EXPERIMENT_AGENT=1 env var to opt in (calls are not free)
 
 import (
 	"context"
@@ -103,16 +103,16 @@ func isHexagonalShape(pkgs []string) bool {
 	return true
 }
 
-// agentGuardOrSkip skips the test unless ARCHWAY_EXPERIMENT_AGENT=1.
+// agentGuardOrSkip skips the test unless VERIKT_EXPERIMENT_AGENT=1.
 func agentGuardOrSkip(t *testing.T) {
 	t.Helper()
-	if os.Getenv("ARCHWAY_EXPERIMENT_AGENT") == "" {
-		t.Skip("set ARCHWAY_EXPERIMENT_AGENT=1 to run agent experiments (uses Claude API credits)")
+	if os.Getenv("VERIKT_EXPERIMENT_AGENT") == "" {
+		t.Skip("set VERIKT_EXPERIMENT_AGENT=1 to run agent experiments (default: claude-code via claude -p, no API key needed)")
 	}
 }
 
-// archwayBin returns the path to the archway binary.
-func archwayBin(t *testing.T) string {
+// veriktBin returns the path to the verikt binary.
+func veriktBin(t *testing.T) string {
 	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
@@ -120,9 +120,9 @@ func archwayBin(t *testing.T) string {
 	}
 	// experiment/ → internal/engineclient/ → internal/ → repo root
 	root := filepath.Join(filepath.Dir(filename), "..", "..", "..")
-	bin := filepath.Join(root, "bin", "archway")
+	bin := filepath.Join(root, "bin", "verikt")
 	if _, err := os.Stat(bin); err != nil {
-		t.Fatalf("archway binary not found at %s — run: go build -o ./bin/archway ./cmd/archway/", bin)
+		t.Fatalf("verikt binary not found at %s — run: go build -o ./bin/verikt ./cmd/verikt/", bin)
 	}
 	return bin
 }
@@ -188,11 +188,11 @@ func callClaudeWithTools(t *testing.T, prompt, cwd string) claudeResult {
 }
 
 // runAgentExperimentWithTools copies a fixture to a temp dir, optionally prepends the guide,
-// calls Claude with tool access (Read/Glob/Grep/Edit/Write), and runs archway check.
+// calls Claude with tool access (Read/Glob/Grep/Edit/Write), and runs verikt check.
 // Unlike runAgentExperimentWithFixture, the agent reads and modifies files directly.
 func runAgentExperimentWithTools(t *testing.T, label, fixtureName, taskPrompt string, withGuide bool) agentMetrics {
 	t.Helper()
-	bin := archwayBin(t)
+	bin := veriktBin(t)
 
 	dir := t.TempDir()
 	copyDir(t, testdataPath(t, fixtureName), dir)
@@ -214,16 +214,16 @@ func runAgentExperimentWithTools(t *testing.T, label, fixtureName, taskPrompt st
 	t.Logf("[%s] tokens: input=%d cache_read=%d output=%d",
 		label, cr.Usage.InputTokens, cr.Usage.CacheReadInputTokens, cr.Usage.OutputTokens)
 
-	// Run archway check with --diff HEAD to only see violations in agent-changed files.
-	dep, fn, ap, arch, compliance, passed := runArchwayCheckDiff(t, bin, dir)
+	// Run verikt check with --diff HEAD to only see violations in agent-changed files.
+	dep, fn, ap, arch, compliance, passed := runVeriktCheckDiff(t, bin, dir)
 	total := dep + fn + ap + arch
-	t.Logf("[%s] archway check --diff HEAD: dep=%d fn=%d ap=%d arch=%d total=%d passed=%v",
+	t.Logf("[%s] verikt check --diff HEAD: dep=%d fn=%d ap=%d arch=%d total=%d passed=%v",
 		label, dep, fn, ap, arch, total, passed)
 
 	// Also log full check for reference.
-	depFull, fnFull, apFull, archFull, _, _ := runArchwayCheck(t, bin, dir)
+	depFull, fnFull, apFull, archFull, _, _ := runVeriktCheck(t, bin, dir)
 	totalFull := depFull + fnFull + apFull + archFull
-	t.Logf("[%s] archway check (full): dep=%d fn=%d ap=%d arch=%d total=%d",
+	t.Logf("[%s] verikt check (full): dep=%d fn=%d ap=%d arch=%d total=%d",
 		label, depFull, fnFull, apFull, archFull, totalFull)
 
 	return agentMetrics{
@@ -267,21 +267,21 @@ func gitInit(t *testing.T, dir string) {
 	}
 }
 
-// runArchwayCheckDiff runs `archway check --diff HEAD -o json`.
-func runArchwayCheckDiff(t *testing.T, bin, projectDir string) (int, int, int, int, float64, bool) {
+// runVeriktCheckDiff runs `verikt check --diff HEAD -o json`.
+func runVeriktCheckDiff(t *testing.T, bin, projectDir string) (int, int, int, int, float64, bool) {
 	t.Helper()
 	cmd := exec.CommandContext(context.Background(), bin, "check", "--diff", "HEAD", "-o", "json")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {
-		t.Logf("archway check --diff error: %v", err)
+		t.Logf("verikt check --diff error: %v", err)
 		return 0, 0, 0, 0, 0, false
 	}
 
 	var result checkResult
 	if len(out) > 0 {
 		if jsonErr := json.Unmarshal(out, &result); jsonErr != nil {
-			t.Logf("archway check --diff parse error: %v\noutput: %s", jsonErr, out)
+			t.Logf("verikt check --diff parse error: %v\noutput: %s", jsonErr, out)
 			return 0, 0, 0, 0, 0, false
 		}
 	}
@@ -324,8 +324,8 @@ func parseGeneratedFiles(response string) map[string]string {
 	return files
 }
 
-// writeProject writes generated files to a temp dir alongside a go.mod and archway.yaml.
-func writeProject(t *testing.T, files map[string]string, archway string) string {
+// writeProject writes generated files to a temp dir alongside a go.mod and verikt.yaml.
+func writeProject(t *testing.T, files map[string]string, verikt string) string {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -333,8 +333,8 @@ func writeProject(t *testing.T, files map[string]string, archway string) string 
 	goMod := "module example.com/experiment\n\ngo 1.24\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0644))
 
-	// Write archway.yaml.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "archway.yaml"), []byte(archway), 0644))
+	// Write verikt.yaml.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "verikt.yaml"), []byte(verikt), 0644))
 
 	// Write generated files.
 	for path, content := range files {
@@ -345,7 +345,7 @@ func writeProject(t *testing.T, files map[string]string, archway string) string 
 	return dir
 }
 
-// checkResult matches the `archway check -o json` output schema.
+// checkResult matches the `verikt check -o json` output schema.
 type checkResult struct {
 	Result     string `json:"result"` // "pass" | "fail"
 	Violations []struct {
@@ -354,21 +354,21 @@ type checkResult struct {
 	AntiPatterns []any `json:"anti_patterns"`
 }
 
-// runArchwayCheck runs `archway check -o json` and returns (dep, fn, ap, arch, compliance, passed).
-func runArchwayCheck(t *testing.T, bin, projectDir string) (int, int, int, int, float64, bool) {
+// runVeriktCheck runs `verikt check -o json` and returns (dep, fn, ap, arch, compliance, passed).
+func runVeriktCheck(t *testing.T, bin, projectDir string) (int, int, int, int, float64, bool) {
 	t.Helper()
 	cmd := exec.CommandContext(context.Background(), bin, "check", "-o", "json")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {
-		t.Logf("archway check error: %v", err)
+		t.Logf("verikt check error: %v", err)
 		return 0, 0, 0, 0, 0, false
 	}
 
 	var result checkResult
 	if len(out) > 0 {
 		if jsonErr := json.Unmarshal(out, &result); jsonErr != nil {
-			t.Logf("archway check parse error: %v\noutput: %s", jsonErr, out)
+			t.Logf("verikt check parse error: %v\noutput: %s", jsonErr, out)
 			return 0, 0, 0, 0, 0, false
 		}
 	}
@@ -393,25 +393,25 @@ func runArchwayCheck(t *testing.T, bin, projectDir string) (int, int, int, int, 
 	return dep, fn, ap, arch, compliance, passed
 }
 
-// generateGuide runs `archway guide --target cursor` in dir and returns the guide text.
+// generateGuide runs `verikt guide --target cursor` in dir and returns the guide text.
 func generateGuide(t *testing.T, bin, dir string) string {
 	t.Helper()
 	cmd := exec.CommandContext(context.Background(), bin, "guide", "--target", "cursor")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "archway guide failed: %s", out)
+	require.NoError(t, err, "verikt guide failed: %s", out)
 
 	guidePath := filepath.Join(dir, ".cursorrules")
 	guide, err := os.ReadFile(guidePath)
-	require.NoError(t, err, "guide file not found after archway guide")
+	require.NoError(t, err, "guide file not found after verikt guide")
 	return string(guide)
 }
 
-// generateGuideFromYAML writes an archway.yaml to a temp dir, runs `archway guide`, and returns the text.
-func generateGuideFromYAML(t *testing.T, bin, archwayYAML string) string {
+// generateGuideFromYAML writes an verikt.yaml to a temp dir, runs `verikt guide`, and returns the text.
+func generateGuideFromYAML(t *testing.T, bin, veriktYAML string) string {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "archway.yaml"), []byte(archwayYAML), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "verikt.yaml"), []byte(veriktYAML), 0644))
 	return generateGuide(t, bin, dir)
 }
 
@@ -449,10 +449,10 @@ func testdataPath(t *testing.T, name string) string {
 }
 
 // runAgentExperimentWithFixture copies a fixture to a temp dir, optionally prepends the guide,
-// calls Claude, writes the agent's output files on top of the fixture, and runs archway check.
+// calls Claude, writes the agent's output files on top of the fixture, and runs verikt check.
 func runAgentExperimentWithFixture(t *testing.T, label, fixtureName, taskPrompt string, withGuide bool) agentMetrics {
 	t.Helper()
-	bin := archwayBin(t)
+	bin := veriktBin(t)
 
 	// Copy fixture to fresh temp dir so runs are isolated.
 	dir := t.TempDir()
@@ -485,9 +485,9 @@ func runAgentExperimentWithFixture(t *testing.T, label, fixtureName, taskPrompt 
 		}
 	}
 
-	dep, fn, ap, arch, compliance, passed := runArchwayCheck(t, bin, dir)
+	dep, fn, ap, arch, compliance, passed := runVeriktCheck(t, bin, dir)
 	total := dep + fn + ap + arch
-	t.Logf("[%s] archway check: dep=%d fn=%d ap=%d arch=%d total=%d passed=%v",
+	t.Logf("[%s] verikt check: dep=%d fn=%d ap=%d arch=%d total=%d passed=%v",
 		label, dep, fn, ap, arch, total, passed)
 
 	return agentMetrics{
@@ -513,10 +513,10 @@ func runAgentExperimentWithFixture(t *testing.T, label, fixtureName, taskPrompt 
 	}
 }
 
-// runAgentExperiment runs one full experiment: prompt → Claude → write project → archway check.
-func runAgentExperiment(t *testing.T, label, prompt, archwayYAML string) agentMetrics {
+// runAgentExperiment runs one full experiment: prompt → Claude → write project → verikt check.
+func runAgentExperiment(t *testing.T, label, prompt, veriktYAML string) agentMetrics {
 	t.Helper()
-	bin := archwayBin(t)
+	bin := veriktBin(t)
 
 	t.Logf("[%s] calling Claude...", label)
 	start := time.Now()
@@ -529,11 +529,11 @@ func runAgentExperiment(t *testing.T, label, prompt, archwayYAML string) agentMe
 	t.Logf("[%s] tokens: input=%d cache_read=%d output=%d",
 		label, cr.Usage.InputTokens, cr.Usage.CacheReadInputTokens, cr.Usage.OutputTokens)
 
-	projectDir := writeProject(t, files, archwayYAML)
-	dep, fn, ap, arch, compliance, passed := runArchwayCheck(t, bin, projectDir)
+	projectDir := writeProject(t, files, veriktYAML)
+	dep, fn, ap, arch, compliance, passed := runVeriktCheck(t, bin, projectDir)
 
 	total := dep + fn + ap + arch
-	t.Logf("[%s] archway check: dep=%d fn=%d ap=%d arch=%d total=%d compliance=%.0f%% passed=%v",
+	t.Logf("[%s] verikt check: dep=%d fn=%d ap=%d arch=%d total=%d compliance=%.0f%% passed=%v",
 		label, dep, fn, ap, arch, total, compliance*100, passed)
 
 	return agentMetrics{
@@ -603,7 +603,7 @@ func logContrast(t *testing.T, without, with agentMetrics) {
 	t.Logf("")
 }
 
-const hexagonalArchwayYAML = `language: go
+const hexagonalVeriktYAML = `language: go
 architecture: hexagonal
 
 components:
@@ -647,7 +647,7 @@ Module name: example.com/experiment`
 func TestAgent_WithoutGuide(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	m := runAgentExperiment(t, "without-guide", taskPrompt, hexagonalArchwayYAML)
+	m := runAgentExperiment(t, "without-guide", taskPrompt, hexagonalVeriktYAML)
 
 	t.Logf("=== Without Guide: Prompt ===")
 	t.Logf("%s", m.Prompt)
@@ -656,22 +656,22 @@ func TestAgent_WithoutGuide(t *testing.T) {
 	t.Logf("%s", m.Response)
 }
 
-// TestAgent_WithGuide runs the same task with the archway guide prepended as context.
-// The guide is what `archway guide` generates — 311 lines of architecture instructions.
+// TestAgent_WithGuide runs the same task with the verikt guide prepended as context.
+// The guide is what `verikt guide` generates — 311 lines of architecture instructions.
 func TestAgent_WithGuide(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	// Read the guide generated from the conforming project's archway.yaml.
+	// Read the guide generated from the conforming project's verikt.yaml.
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	guidePath := filepath.Join(filepath.Dir(filename), "testdata", "conforming-hexagonal", ".cursorrules")
 	guideBytes, err := os.ReadFile(guidePath)
-	require.NoError(t, err, "guide not found — run: archway guide --target cursor from testdata/conforming-hexagonal/")
+	require.NoError(t, err, "guide not found — run: verikt guide --target cursor from testdata/conforming-hexagonal/")
 
 	guide := string(guideBytes)
 	promptWithGuide := guide + "\n\n---\n\n" + taskPrompt
 
-	m := runAgentExperiment(t, "with-guide", promptWithGuide, hexagonalArchwayYAML)
+	m := runAgentExperiment(t, "with-guide", promptWithGuide, hexagonalVeriktYAML)
 
 	t.Logf("=== With Guide: Prompt (guide omitted for brevity, task shown) ===")
 	t.Logf("%s", taskPrompt)
@@ -689,12 +689,12 @@ func TestAgent_Contrast(t *testing.T) {
 	require.True(t, ok)
 	guidePath := filepath.Join(filepath.Dir(filename), "testdata", "conforming-hexagonal", ".cursorrules")
 	guideBytes, err := os.ReadFile(guidePath)
-	require.NoError(t, err, "guide not found — run: archway guide --target cursor from testdata/conforming-hexagonal/")
+	require.NoError(t, err, "guide not found — run: verikt guide --target cursor from testdata/conforming-hexagonal/")
 
 	guide := string(guideBytes)
 
-	without := runAgentExperiment(t, "without-guide", taskPrompt, hexagonalArchwayYAML)
-	with := runAgentExperiment(t, "with-guide", guide+"\n\n---\n\n"+taskPrompt, hexagonalArchwayYAML)
+	without := runAgentExperiment(t, "without-guide", taskPrompt, hexagonalVeriktYAML)
+	with := runAgentExperiment(t, "with-guide", guide+"\n\n---\n\n"+taskPrompt, hexagonalVeriktYAML)
 
 	logContrast(t, without, with)
 
@@ -726,8 +726,8 @@ func TestAgent_Consistency(t *testing.T) {
 
 	for i := range runs {
 		t.Logf("--- Run %d/%d ---", i+1, runs)
-		wo := runAgentExperiment(t, fmt.Sprintf("without-guide-run%d", i+1), taskPrompt, hexagonalArchwayYAML)
-		wi := runAgentExperiment(t, fmt.Sprintf("with-guide-run%d", i+1), guide+"\n\n---\n\n"+taskPrompt, hexagonalArchwayYAML)
+		wo := runAgentExperiment(t, fmt.Sprintf("without-guide-run%d", i+1), taskPrompt, hexagonalVeriktYAML)
+		wi := runAgentExperiment(t, fmt.Sprintf("with-guide-run%d", i+1), guide+"\n\n---\n\n"+taskPrompt, hexagonalVeriktYAML)
 		withoutSummary.violations = append(withoutSummary.violations, wo.ViolationsTotal)
 		withoutSummary.passed = append(withoutSummary.passed, wo.Passed)
 		withSummary.violations = append(withSummary.violations, wi.ViolationsTotal)

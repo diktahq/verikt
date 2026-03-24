@@ -1,0 +1,5 @@
+name: migrations
+description: "Prisma database migrations — versioned schema changes with migrate dev/deploy"
+suggests:
+  - postgres
+  - mysql

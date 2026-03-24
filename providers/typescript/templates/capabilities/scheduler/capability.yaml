@@ -1,0 +1,4 @@
+name: scheduler
+description: "Periodic tasks via node-cron — cron expressions with graceful shutdown integration"
+suggests:
+  - graceful

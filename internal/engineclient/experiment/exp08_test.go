@@ -7,7 +7,7 @@ package experiment
 // The guide's NEVER rules should suppress all of them.
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP08 -v -timeout 600s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP08 -v -timeout 600s ./internal/engineclient/experiment/
 
 import (
 	"testing"

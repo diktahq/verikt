@@ -58,7 +58,7 @@ Without guide               With guide
 ─────────────────────       ──────────────────────────────
 arch violations: 6–8 ✗      arch violations: 1    ~ partial
 naked_goroutine      ✗      naked_goroutine        ✗ (task requires it)
-archway check: FAIL         archway check: FAIL
+verikt check: FAIL         verikt check: FAIL
 ```
 
 <Aside type="note">
@@ -81,7 +81,7 @@ Two findings, not one.
 
 **Anti-pattern violations: NEVER rules are text hints, not enforcement.** When the task explicitly requires a pattern the guide prohibits, the task wins. The agent produces goroutines because you asked for concurrency.
 
-Enforcement via `archway check` in the CI feedback loop is the only reliable prevention for task-driven anti-patterns. The guide prevents architectural drift. It cannot override what the task demands.
+Enforcement via `verikt check` in the CI feedback loop is the only reliable prevention for task-driven anti-patterns. The guide prevents architectural drift. It cannot override what the task demands.
 
 ## Setup
 
@@ -92,6 +92,6 @@ Enforcement via `archway check` in the CI feedback loop is the only reliable pre
 
 [→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
 
-[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-03)
+[→ Artifacts on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-03)
 
 [→ EXP-04: Does it hold when adding to an existing service?](/experiments/exp-04/)

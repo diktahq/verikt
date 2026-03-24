@@ -6,7 +6,7 @@
 
 ## Context
 
-Archway needs a language provider architecture to support multiple programming languages (Go first, then PHP, Node, Python, etc.). Each provider implements `Scaffold()`, `Analyze()`, `Migrate()`, `GetInfo()`. The question is how providers are packaged and loaded.
+verikt needs a language provider architecture to support multiple programming languages (Go first, then PHP, Node, Python, etc.). Each provider implements `Scaffold()`, `Analyze()`, `Migrate()`, `GetInfo()`. The question is how providers are packaged and loaded.
 
 ## Constraints
 
@@ -21,7 +21,7 @@ Archway needs a language provider architecture to support multiple programming l
 
 Providers are Go packages imported directly:
 ```go
-import goprovider "archway/providers/golang"
+import goprovider "verikt/providers/golang"
 var providers = map[string]Provider{"go": &goprovider.Provider{}}
 ```
 

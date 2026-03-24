@@ -418,11 +418,15 @@ func removeEmptyDirs(rootDir string) {
 	var dirs []string
 	// Best-effort cleanup: walk errors are intentionally ignored because failing
 	// to remove empty directories is not a critical error.
-	_ = filepath.Walk(rootDir, func(p string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(rootDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if info.IsDir() {
+		// Skip symlinked directories — they point outside the project boundary (INV-002).
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
 			dirs = append(dirs, p)
 		}
 		return nil

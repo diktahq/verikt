@@ -7,11 +7,11 @@
 
 ## Context
 
-archway ships as a CLI tool. Every feature — `archway guide`, `archway new`, `archway check`, `archway analyze` — is a CLI command. The risk is that the CLI becomes the product, and the value proposition becomes "a good CLI for Go architecture."
+verikt ships as a CLI tool. Every feature — `verikt guide`, `verikt new`, `verikt check`, `verikt analyze` — is a CLI command. The risk is that the CLI becomes the product, and the value proposition becomes "a good CLI for Go architecture."
 
 That's the wrong frame.
 
-The vision is broader: archway exists to make agentic engineering reliable, consistent, and predictable at the architecture level. Engineers use AI coding agents (Claude Code, Cursor, Copilot, Windsurf) to produce code. Those agents don't remember architecture between sessions. archway fixes that.
+The vision is broader: verikt exists to make agentic engineering reliable, consistent, and predictable at the architecture level. Engineers use AI coding agents (Claude Code, Cursor, Copilot, Windsurf) to produce code. Those agents don't remember architecture between sessions. verikt fixes that.
 
 ## Decision
 
@@ -19,10 +19,10 @@ The vision is broader: archway exists to make agentic engineering reliable, cons
 
 Every CLI command exists to enable a better agent session — not to be used directly. The mental model:
 
-- `archway guide` → agent loads architectural context silently before every session
-- `archway new` → agent scaffolds correct structure from day one, giving guide an accurate source of truth
-- `archway check` → agent (or CI) validates that what was built matches what was declared
-- `archway analyze` → agent understands an existing codebase's architecture before touching it
+- `verikt guide` → agent loads architectural context silently before every session
+- `verikt new` → agent scaffolds correct structure from day one, giving guide an accurate source of truth
+- `verikt check` → agent (or CI) validates that what was built matches what was declared
+- `verikt analyze` → agent understands an existing codebase's architecture before touching it
 
 The interface is the prompt the engineer writes in their agent session. The CLI is the plumbing underneath.
 
@@ -36,7 +36,7 @@ The interface is the prompt the engineer writes in their agent session. The CLI 
 **For marketing and content:**
 - Homepage and persona pages lead with the agent session experience — the prompts that work, the outcomes that become reliable — not the CLI commands
 - CLI commands appear as supporting context ("what runs under the hood") not as the primary value
-- Canonical prompts (what an engineer types into Claude Code or Cursor that archway makes reliable) are first-class product assets, not documentation afterthoughts
+- Canonical prompts (what an engineer types into Claude Code or Cursor that verikt makes reliable) are first-class product assets, not documentation afterthoughts
 
 **For the guide output:**
 - The guide file must be written for the agent, not for the human. It is an instruction set, not a README.
@@ -44,15 +44,15 @@ The interface is the prompt the engineer writes in their agent session. The CLI 
 
 **For roadmap:**
 - Skills/slash commands are considered only where: (a) the prompt is non-obvious, and (b) the guide context alone is insufficient to route correctly
-- Since archway installs into the repo (`archway.yaml` + guide files), the agent already has context and tools — skills fill gaps, they don't replace the guide
+- Since verikt installs into the repo (`verikt.yaml` + guide files), the agent already has context and tools — skills fill gaps, they don't replace the guide
 
 ## The Model
 
 | Scenario | Mechanism |
 |---|---|
-| Agent writes code → needs to know architecture | `archway guide` context file — passive, always on |
+| Agent writes code → needs to know architecture | `verikt guide` context file — passive, always on |
 | Engineer asks "what am I missing before production?" | Agent reads guide, answers from context — no extra tooling |
-| Engineer asks "add kafka capability" | Agent runs `archway add kafka-consumer && archway guide` — CLI as plumbing |
+| Engineer asks "add kafka capability" | Agent runs `verikt add kafka-consumer && verikt guide` — CLI as plumbing |
 | Engineer wants a pre-built workflow | Skill/slash command — only where prompt is non-obvious |
 
 ---

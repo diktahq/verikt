@@ -1,3 +1,3 @@
-module github.com/dcsg/archway/experiments
+module github.com/diktahq/verikt/experiments
 
 go 1.22

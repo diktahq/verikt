@@ -3,11 +3,11 @@ package rules
 import (
 	"fmt"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 )
 
 // GenerateRules creates proxy rules based on the project's architecture and capabilities.
-func GenerateRules(cfg *config.ArchwayConfig) []Rule {
+func GenerateRules(cfg *config.VeriktConfig) []Rule {
 	if cfg == nil {
 		return nil
 	}
@@ -21,7 +21,7 @@ func GenerateRules(cfg *config.ArchwayConfig) []Rule {
 }
 
 // generateArchRules creates layer isolation rules based on the declared architecture.
-func generateArchRules(cfg *config.ArchwayConfig) []Rule {
+func generateArchRules(cfg *config.VeriktConfig) []Rule {
 	switch cfg.Architecture {
 	case "hexagonal":
 		return hexagonalRules(cfg)
@@ -32,8 +32,18 @@ func generateArchRules(cfg *config.ArchwayConfig) []Rule {
 	}
 }
 
+// fileExtForLanguage returns the source file extension for a language.
+func fileExtForLanguage(language string) string {
+	switch language {
+	case "typescript":
+		return ".ts"
+	default:
+		return ".go"
+	}
+}
+
 // hexagonalRules generates layer isolation rules from component dependency declarations.
-func hexagonalRules(cfg *config.ArchwayConfig) []Rule {
+func hexagonalRules(cfg *config.VeriktConfig) []Rule {
 	if len(cfg.Components) == 0 {
 		return nil
 	}
@@ -48,7 +58,7 @@ func hexagonalRules(cfg *config.ArchwayConfig) []Rule {
 			continue
 		}
 
-		rule := buildIsolationRule(comp, forbidden)
+		rule := buildIsolationRule(comp, forbidden, cfg.Language)
 		rules = append(rules, rule)
 	}
 
@@ -92,35 +102,56 @@ func forbiddenDeps(self string, all []string, allowed map[string]bool) []string 
 }
 
 // buildIsolationRule creates a grep rule that catches imports from forbidden layers.
-func buildIsolationRule(comp config.Component, forbidden []string) Rule {
-	pattern := buildForbiddenPattern(forbidden)
+func buildIsolationRule(comp config.Component, forbidden []string, language string) Rule {
+	pattern := buildForbiddenPattern(forbidden, language)
+	ext := fileExtForLanguage(language)
 	return Rule{
 		ID:          fmt.Sprintf("arch-%s-isolation", comp.Name),
 		Engine:      "grep",
 		Description: fmt.Sprintf("%s layer must not import from: %s", comp.Name, joinNames(forbidden)),
 		Severity:    "error",
-		Ref:         "archway.yaml",
+		Ref:         "verikt.yaml",
 		Pattern:     pattern,
-		Scope:       scopeFromPaths(comp.In),
-		Exclude:     []string{"*_test.go"},
+		Scope:       scopeFromPaths(comp.In, ext),
+		Exclude:     excludeTestFiles(language),
 	}
 }
 
 // buildForbiddenPattern creates a regex matching imports from any forbidden component.
-func buildForbiddenPattern(forbidden []string) string {
+// Go imports look like: "module/path/domain"
+// TypeScript imports look like: from '../../domain/...' or from "../domain"
+func buildForbiddenPattern(forbidden []string, language string) string {
+	if language == "typescript" {
+		// Match TypeScript import paths containing a forbidden segment.
+		if len(forbidden) == 1 {
+			return fmt.Sprintf(`from\s+['"][^'"]*/%s/[^'"]*['"]`, forbidden[0])
+		}
+		return fmt.Sprintf(`from\s+['"][^'"]*/(%s)/[^'"]*['"]`, joinNames(forbidden))
+	}
+	// Go: quoted import paths.
 	if len(forbidden) == 1 {
 		return fmt.Sprintf(`"[^"]*/%s/[^"]*"`, forbidden[0])
 	}
 	return fmt.Sprintf(`"[^"]*/(%s)/[^"]*"`, joinNames(forbidden))
 }
 
-// scopeFromPaths converts component In paths to scope globs with Go file suffix.
-func scopeFromPaths(paths []string) []string {
+// scopeFromPaths converts component In paths to scope globs with the given file extension.
+func scopeFromPaths(paths []string, ext string) []string {
 	scopes := make([]string, 0, len(paths))
 	for _, p := range paths {
-		scopes = append(scopes, p+"/*.go")
+		scopes = append(scopes, p+"/*"+ext)
 	}
 	return scopes
+}
+
+// excludeTestFiles returns the appropriate exclude patterns for a language.
+func excludeTestFiles(language string) []string {
+	switch language {
+	case "typescript":
+		return []string{"**/*.spec.ts", "**/*.test.ts"}
+	default:
+		return []string{"*_test.go"}
+	}
 }
 
 // joinNames joins names with | for regex alternation.
@@ -147,7 +178,7 @@ var capabilityRuleMap = map[string]func() Rule{
 }
 
 // generateCapRules creates best-practice rules for each enabled capability.
-func generateCapRules(cfg *config.ArchwayConfig) []Rule {
+func generateCapRules(cfg *config.VeriktConfig) []Rule {
 	seen := make(map[string]bool)
 	rules := make([]Rule, 0, len(cfg.Capabilities))
 
@@ -173,7 +204,7 @@ func sqlRule() Rule {
 		Engine:      "grep",
 		Description: "SQL queries must use parameterized queries, not string concatenation",
 		Severity:    "error",
-		Ref:         "archway.yaml",
+		Ref:         "verikt.yaml",
 		Pattern:     `(fmt\.Sprintf|"\+.*SELECT|"\+.*INSERT|"\+.*UPDATE|"\+.*DELETE)`,
 		Scope:       []string{"**/*.go"},
 		Exclude:     []string{"*_test.go", "vendor/**"},
@@ -186,7 +217,7 @@ func httpHandlerContextRule() Rule {
 		Engine:      "grep",
 		Description: "HTTP handlers should use request context, not context.Background()",
 		Severity:    "warning",
-		Ref:         "archway.yaml",
+		Ref:         "verikt.yaml",
 		Pattern:     `context\.Background\(\)`,
 		Scope:       []string{"adapter/httphandler/**/*.go", "internal/handler/**/*.go"},
 		Exclude:     []string{"*_test.go"},
@@ -199,7 +230,7 @@ func grpcRule() Rule {
 		Engine:          "grep",
 		Description:     "gRPC services should have proto file definitions",
 		Severity:        "warning",
-		Ref:             "archway.yaml",
+		Ref:             "verikt.yaml",
 		FileMustContain: `syntax\s*=\s*"proto3"`,
 		Scope:           []string{"**/*.proto"},
 	}
@@ -211,7 +242,7 @@ func authRule() Rule {
 		Engine:          "grep",
 		Description:     "Handler files should reference auth middleware or JWT validation",
 		Severity:        "warning",
-		Ref:             "archway.yaml",
+		Ref:             "verikt.yaml",
 		FileMustContain: `(middleware|auth|jwt|token)`,
 		Scope:           []string{"adapter/httphandler/**/*.go", "internal/handler/**/*.go"},
 		Exclude:         []string{"*_test.go", "**/router.go"},
@@ -224,7 +255,7 @@ func observabilityRule() Rule {
 		Engine:         "grep",
 		Description:    "Functions making external calls should pass context for tracing",
 		Severity:       "warning",
-		Ref:            "archway.yaml",
+		Ref:            "verikt.yaml",
 		Pattern:        `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
 		MustNotContain: "ctx",
 		Scope:          []string{"**/*.go"},
@@ -238,7 +269,7 @@ func kafkaRule() Rule {
 		Engine:      "grep",
 		Description: "Kafka consumers must handle errors, not silently discard them",
 		Severity:    "error",
-		Ref:         "archway.yaml",
+		Ref:         "verikt.yaml",
 		Pattern:     `\.ReadMessage\(`,
 		MustContain: `(err|error|Error)`,
 		Scope:       []string{"**/*.go"},

@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/engineclient"
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
-	"github.com/dcsg/archway/internal/rules"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/engineclient"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
+	"github.com/diktahq/verikt/internal/rules"
 	"github.com/spf13/cobra"
 )
 
@@ -35,18 +35,18 @@ func newCheckCommand(opts *globalOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "check",
-		Short: "Validate project against archway.yaml rules",
-		Long: `Check validates an existing project against its archway.yaml rules.
+		Short: "Validate project against verikt.yaml rules",
+		Long: `Check validates an existing project against its verikt.yaml rules.
 
 Reports dependency violations, structure issues, and function complexity.
 Runs both built-in detectors and proxy rules by default.
 Exits with code 1 if any error-severity violations are found (useful in CI).`,
-		Example: `  archway check
-  archway check --path ./my-service
-  archway check --proxy-rules
-  archway check --staged
-  archway check --rule cap-sql-parameterized
-  archway check --decisions`,
+		Example: `  verikt check
+  verikt check --path ./my-service
+  verikt check --proxy-rules
+  verikt check --staged
+  verikt check --rule cap-sql-parameterized
+  verikt check --decisions`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCheck(opts, flags)
 		},
@@ -66,12 +66,12 @@ Exits with code 1 if any error-severity violations are found (useful in CI).`,
 func runCheck(opts *globalOptions, flags *checkFlags) error {
 	projectPath := flags.projectPath
 
-	archwayPath, err := config.FindArchwayYAML(projectPath)
+	veriktPath, err := config.FindVeriktYAML(projectPath)
 	if err != nil {
-		return fmt.Errorf("no archway.yaml found in %s (or parent directories)", projectPath)
+		return fmt.Errorf("no verikt.yaml found in %s (or parent directories)", projectPath)
 	}
 
-	cfg, err := config.LoadArchwayYAML(archwayPath)
+	cfg, err := config.LoadVeriktYAML(veriktPath)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 		var metricClient checker.MetricClient
 		if engineClient != nil {
 			apClient = &engineClientAdapter{engineClient}
-			depClient = &engineDepAdapter{engineClient}
+			depClient = &engineDepAdapter{client: engineClient, language: cfg.Language}
 			metricClient = &engineMetricAdapter{engineClient}
 		}
 		checkerResult, err = checker.CheckWithEngine(cfg, projectPath, apClient, depClient, metricClient)
@@ -139,7 +139,7 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 
 	// Run proxy rules unless --detectors is set.
 	if !flags.detectors {
-		rulesDir := filepath.Join(projectPath, ".archway", "rules")
+		rulesDir := filepath.Join(projectPath, ".verikt", "rules")
 		ruleResult, err = rules.RunRules(rulesDir, projectPath, stagedFiles, engineClient)
 		if err != nil {
 			return fmt.Errorf("proxy rules failed: %w", err)
@@ -217,7 +217,7 @@ func getStagedFiles(projectPath string) ([]string, error) {
 
 // getDiffFiles returns relative file paths changed compared to a git ref.
 func getDiffFiles(projectPath, ref string) ([]string, error) {
-	cmd := exec.CommandContext(context.Background(), "git", "diff", "--name-only", ref)
+	cmd := exec.CommandContext(context.Background(), "git", "diff", "--name-only", "--", ref)
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
@@ -371,13 +371,13 @@ func filterRuleResult(r *rules.RunResult, ruleID string) *rules.RunResult {
 	return filtered
 }
 
-func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, cfg *config.ArchwayConfig, flags *checkFlags) {
+func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, cfg *config.VeriktConfig, flags *checkFlags) {
 	projectName := cfg.Architecture
 	if projectName == "" {
 		projectName = "project"
 	}
 
-	fmt.Printf("\nArchway Check — %s\n", projectName)
+	fmt.Printf("\nverikt check — %s\n", projectName)
 	fmt.Println(strings.Repeat("═", 55))
 
 	// Built-in detector results.
@@ -414,7 +414,7 @@ func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules
 	if flags.staged {
 		fmt.Println("\nTip: Add to .git/hooks/pre-commit:")
 		fmt.Println("  #!/bin/sh")
-		fmt.Println("  archway check --staged")
+		fmt.Println("  verikt check --staged")
 	}
 }
 
@@ -595,14 +595,15 @@ func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.Run
 }
 
 // engineDepAdapter wraps *engineclient.Client to satisfy checker.DependencyClient.
-// It converts archway.yaml components into ImportGraphSpec rules and maps findings
+// It converts verikt.yaml components into ImportGraphSpec rules and maps findings
 // back to checker.Violation.
 type engineDepAdapter struct {
-	client *engineclient.Client
+	client   *engineclient.Client
+	language string // "go", "typescript", etc.
 }
 
 func (a *engineDepAdapter) CheckDependencies(projectPath string, components []config.Component) ([]checker.Violation, error) {
-	rules := componentsToImportRules(components)
+	rules := componentsToImportRules(components, a.language)
 	if len(rules) == 0 {
 		return nil, nil
 	}
@@ -626,11 +627,14 @@ func (a *engineDepAdapter) CheckDependencies(projectPath string, components []co
 	return out, nil
 }
 
-// componentsToImportRules converts archway.yaml component dependency rules into
+// componentsToImportRules converts verikt.yaml component dependency rules into
 // ImportGraphSpec rules understood by the Rust engine. One rule is generated per
 // (component, In pattern) pair, with forbidden = In patterns of components not in
 // the component's may_depend_on list.
-func componentsToImportRules(components []config.Component) []*pb.Rule {
+//
+// language is set on the rule scope so the Rust engine uses the correct extractor
+// ("typescript" → tree-sitter-typescript; anything else → tree-sitter-go).
+func componentsToImportRules(components []config.Component, language string) []*pb.Rule {
 	var rules []*pb.Rule
 
 	for _, comp := range components {
@@ -657,6 +661,7 @@ func componentsToImportRules(components []config.Component) []*pb.Rule {
 				Severity: pb.Severity_ERROR,
 				Message:  comp.Name + " dependency violation",
 				Engine:   pb.EngineType_IMPORT_GRAPH,
+				Scope:    &pb.RuleScope{Language: language},
 				Spec: &pb.Rule_ImportGraph{
 					ImportGraph: &pb.ImportGraphSpec{
 						PackagePattern: pkgPattern,

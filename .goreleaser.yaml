@@ -1,6 +1,6 @@
 version: 2
 
-project_name: archway
+project_name: verikt
 
 before:
   hooks:
@@ -9,9 +9,9 @@ before:
     # before GoReleaser runs. See .github/workflows/release.yml.
 
 builds:
-  - id: archway
-    main: ./cmd/archway
-    binary: archway
+  - id: verikt
+    main: ./cmd/verikt
+    binary: verikt
     env:
       - CGO_ENABLED=0
     goos:
@@ -26,9 +26,9 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/dcsg/archway/internal/cli.version={{.Version}}
-      - -X github.com/dcsg/archway/internal/cli.commit={{.Commit}}
-      - -X github.com/dcsg/archway/internal/cli.date={{.Date}}
+      - -X github.com/diktahq/verikt/internal/cli.version={{.Version}}
+      - -X github.com/diktahq/verikt/internal/cli.commit={{.Commit}}
+      - -X github.com/diktahq/verikt/internal/cli.date={{.Date}}
 
 archives:
   - id: default
@@ -71,16 +71,16 @@ changelog:
 
 brews:
   - repository:
-      owner: dcsg
+      owner: diktahq
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: https://github.com/dcsg/archway
-    description: Architecture-aware service composer and enforcer
+    homepage: https://github.com/diktahq/verikt
+    description: Your architecture, in every agent session
     license: Elastic-2.0
     install: |
-      bin.install "archway"
+      bin.install "verikt"
     post_install: |
-      system "#{bin}/archway", "setup"
+      system "#{bin}/verikt", "setup"
     test: |
-      system "#{bin}/archway", "version"
+      system "#{bin}/verikt", "version"

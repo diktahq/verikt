@@ -4,6 +4,7 @@ use crate::pb::{
     rule::Spec,
     rule_status::Status,
 };
+use crate::typescript_imports;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
@@ -14,17 +15,29 @@ use tree_sitter::Parser;
 
 /// A single directed edge: `from` package imports `to` package.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Import {
     from_file: String,
     from_pkg: String,
     to_pkg: String,
 }
 
-/// Build an import graph from all Go files under the project root.
-/// Returns (imports, graph_indices) for rule evaluation.
+/// Build an import graph from project files and evaluate import_graph rules.
+/// Handles both Go (`scope.language = "go"` or unset) and TypeScript
+/// (`scope.language = "typescript"`) rules.
 pub fn handle_import_graph_check(req: &CheckRequest) -> Vec<EngineResponse> {
     let start = Instant::now();
-    let project = PathBuf::from(&req.project_path);
+    let project = match PathBuf::from(&req.project_path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return vec![EngineResponse {
+                payload: Some(Payload::Error(pb::EngineError {
+                    message: format!("invalid project_path: {e}"),
+                    code: "INVALID_PROJECT_PATH".to_string(),
+                })),
+            }];
+        }
+    };
 
     // Collect import_graph rules.
     let ig_rules: Vec<_> = req
@@ -37,112 +50,193 @@ pub fn handle_import_graph_check(req: &CheckRequest) -> Vec<EngineResponse> {
         return vec![];
     }
 
-    // Walk Go files and extract imports.
-    let go_files = collect_go_files(&project, &req.target_files);
-    let imports = extract_all_imports(&project, &go_files);
+    // Partition rules by language.
+    let (ts_rules, go_rules): (Vec<&pb::Rule>, Vec<&pb::Rule>) =
+        ig_rules.iter().copied().partition(|r| {
+            r.scope
+                .as_ref()
+                .map(|s| s.language.to_lowercase() == "typescript")
+                .unwrap_or(false)
+        });
 
-    // Build adjacency map: package -> Vec<(from_file, to_pkg)>
-    let mut pkg_imports: HashMap<String, Vec<(String, String)>> = HashMap::new();
-    for imp in &imports {
-        pkg_imports
-            .entry(imp.from_pkg.clone())
-            .or_default()
-            .push((imp.from_file.clone(), imp.to_pkg.clone()));
-    }
+    // Build import maps lazily — only if the language has rules.
+    let go_pkg_imports = if !go_rules.is_empty() {
+        let files = collect_go_files(&project, &req.target_files);
+        build_pkg_imports_go(&project, &files)
+    } else {
+        HashMap::new()
+    };
+
+    let (ts_pkg_imports, ts_file_count) = if !ts_rules.is_empty() {
+        let files = typescript_imports::collect_ts_files(&project, &req.target_files);
+        let count = files.len();
+        (build_pkg_imports_ts(&project, &files), count)
+    } else {
+        (HashMap::new(), 0)
+    };
 
     let mut responses: Vec<EngineResponse> = Vec::new();
     let mut rule_statuses: Vec<RuleStatus> = Vec::new();
     let mut findings_total: u32 = 0;
     let mut findings_error: u32 = 0;
     let mut findings_warning: u32 = 0;
+    let mut files_checked: u32 = 0;
 
-    for rule in &ig_rules {
-        let spec = match &rule.spec {
-            Some(Spec::ImportGraph(s)) => s,
-            _ => continue,
-        };
-
-        let pkg_glob = match build_globset(&[spec.package_pattern.clone()]) {
-            Some(g) => g,
-            None => {
-                rule_statuses.push(RuleStatus {
-                    rule_id: rule.id.clone(),
-                    status: Status::Invalid.into(),
-                    error: "invalid package_pattern glob".to_string(),
-                });
-                continue;
-            }
-        };
-
-        let forbidden_globs: Vec<GlobSet> = spec
-            .forbidden
-            .iter()
-            .filter_map(|p| build_globset(&[p.clone()]))
-            .collect();
-
-        let allowed_globs: Vec<GlobSet> = spec
-            .allowed_only
-            .iter()
-            .filter_map(|p| build_globset(&[p.clone()]))
-            .collect();
-
-        let mut rule_matched = false;
-
-        for (pkg, pkg_imp_list) in &pkg_imports {
-            // Only check packages matching the package_pattern.
-            let pkg_rel = strip_module_prefix(pkg, &req.project_path);
-            if !pkg_glob.is_match(&pkg_rel) {
-                continue;
-            }
-
-            for (from_file, to_pkg) in pkg_imp_list {
-                let to_rel = strip_module_prefix(to_pkg, &req.project_path);
-
-                // Check forbidden patterns.
-                let is_forbidden = forbidden_globs.iter().any(|g| g.is_match(&to_rel));
-                if is_forbidden {
-                    let is_allowed = !allowed_globs.is_empty()
-                        && allowed_globs.iter().all(|g| g.is_match(&to_rel));
-                    if !is_allowed {
-                        rule_matched = true;
-                        findings_total += 1;
-                        match rule.severity {
-                            s if s == pb::Severity::Error as i32 => findings_error += 1,
-                            s if s == pb::Severity::Warning as i32 => findings_warning += 1,
-                            _ => {}
-                        }
-                        responses.push(EngineResponse {
-                            payload: Some(Payload::Finding(Finding {
-                                rule_id: rule.id.clone(),
-                                severity: rule.severity,
-                                file: from_file.clone(),
-                                line: 0,
-                                column: 0,
-                                message: format!(
-                                    "{} must not import {}",
-                                    pkg_rel, to_rel
-                                ),
-                                r#match: format!("import \"{}\"", to_pkg),
-                                engine: "import_graph".to_string(),
-                            })),
-                        });
-                    }
+    // Evaluate Go rules.
+    for rule in &go_rules {
+        files_checked = (collect_go_files(&project, &req.target_files).len() as u32)
+            .max(files_checked);
+        let (matched, mut rule_findings) =
+            evaluate_rule(rule, &go_pkg_imports, &req.project_path, false);
+        findings_total += rule_findings.len() as u32;
+        for f in &rule_findings {
+            if let Some(Payload::Finding(finding)) = &f.payload {
+                match finding.severity {
+                    s if s == pb::Severity::Error as i32 => findings_error += 1,
+                    s if s == pb::Severity::Warning as i32 => findings_warning += 1,
+                    _ => {}
                 }
+            }
+        }
+        responses.append(&mut rule_findings);
+        rule_statuses.push(RuleStatus {
+            rule_id: rule.id.clone(),
+            status: if matched { Status::Valid } else { Status::Stale }.into(),
+            error: String::new(),
+        });
+    }
 
-                // Check allowed_only — anything not in the allowed list is a violation.
-                if !allowed_globs.is_empty() {
+    // Evaluate TypeScript rules.
+    for rule in &ts_rules {
+        files_checked = (ts_file_count as u32).max(files_checked);
+        let (matched, mut rule_findings) =
+            evaluate_rule(rule, &ts_pkg_imports, &req.project_path, true);
+        findings_total += rule_findings.len() as u32;
+        for f in &rule_findings {
+            if let Some(Payload::Finding(finding)) = &f.payload {
+                match finding.severity {
+                    s if s == pb::Severity::Error as i32 => findings_error += 1,
+                    s if s == pb::Severity::Warning as i32 => findings_warning += 1,
+                    _ => {}
+                }
+            }
+        }
+        responses.append(&mut rule_findings);
+        rule_statuses.push(RuleStatus {
+            rule_id: rule.id.clone(),
+            status: if matched { Status::Valid } else { Status::Stale }.into(),
+            error: String::new(),
+        });
+    }
+
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+    responses.push(EngineResponse {
+        payload: Some(Payload::CheckComplete(CheckComplete {
+            files_checked,
+            rules_evaluated: ig_rules.len() as u32,
+            findings_total,
+            findings_error,
+            findings_warning,
+            findings_info: 0,
+            duration_ms,
+            rule_statuses,
+        })),
+    });
+
+    responses
+}
+
+/// Evaluate a single import_graph rule against a package import map.
+/// Returns (rule_matched, findings).
+///
+/// `is_ts` controls how package paths are relativised:
+/// - Go: strip the Go module prefix (e.g. `github.com/diktahq/verikt/internal/cli` → `internal/cli`)
+/// - TypeScript: paths are already project-relative (e.g. `src/domain`)
+fn evaluate_rule(
+    rule: &pb::Rule,
+    pkg_imports: &HashMap<String, Vec<(String, String)>>,
+    project_path: &str,
+    is_ts: bool,
+) -> (bool, Vec<EngineResponse>) {
+    let spec = match &rule.spec {
+        Some(Spec::ImportGraph(s)) => s,
+        _ => return (false, vec![]),
+    };
+
+    let pkg_glob = match build_globset(&[spec.package_pattern.clone()]) {
+        Some(g) => g,
+        None => return (false, vec![]),
+    };
+
+    let forbidden_globs: Vec<GlobSet> = spec
+        .forbidden
+        .iter()
+        .filter_map(|p| build_globset(&[p.clone()]))
+        .collect();
+
+    let allowed_globs: Vec<GlobSet> = spec
+        .allowed_only
+        .iter()
+        .filter_map(|p| build_globset(&[p.clone()]))
+        .collect();
+
+    let mut rule_matched = false;
+    let mut findings = Vec::new();
+
+    for (pkg, pkg_imp_list) in pkg_imports {
+        let pkg_rel = if is_ts {
+            pkg.clone()
+        } else {
+            strip_module_prefix(pkg, project_path)
+        };
+
+        if !pkg_glob.is_match(&pkg_rel) {
+            continue;
+        }
+
+        for (from_file, to_pkg) in pkg_imp_list {
+            let to_rel = if is_ts {
+                to_pkg.clone()
+            } else {
+                strip_module_prefix(to_pkg, project_path)
+            };
+
+            // Check forbidden patterns.
+            let is_forbidden = forbidden_globs.iter().any(|g| g.is_match(&to_rel));
+            if is_forbidden {
+                let is_allowed = !allowed_globs.is_empty()
+                    && allowed_globs.iter().all(|g| g.is_match(&to_rel));
+                if !is_allowed {
+                    rule_matched = true;
+                    findings.push(EngineResponse {
+                        payload: Some(Payload::Finding(Finding {
+                            rule_id: rule.id.clone(),
+                            severity: rule.severity,
+                            file: from_file.clone(),
+                            line: 0,
+                            column: 0,
+                            message: format!("{} must not import {}", pkg_rel, to_rel),
+                            r#match: format!("import \"{}\"", to_pkg),
+                            engine: "import_graph".to_string(),
+                        })),
+                    });
+                }
+            }
+
+            // Check allowed_only — any internal import not in the list is a violation.
+            if !allowed_globs.is_empty() {
+                let is_internal = if is_ts {
+                    typescript_imports::is_internal_ts_import(to_pkg)
+                } else {
+                    to_pkg.contains(&extract_module_root(project_path))
+                };
+
+                if is_internal {
                     let is_allowed = allowed_globs.iter().any(|g| g.is_match(&to_rel));
-                    // Only flag internal imports — stdlib and external are not constrained here.
-                    let is_internal = to_pkg.contains(&extract_module_root(&req.project_path));
-                    if is_internal && !is_allowed && !is_forbidden {
+                    if !is_allowed && !is_forbidden {
                         rule_matched = true;
-                        findings_total += 1;
-                        match rule.severity {
-                            s if s == pb::Severity::Error as i32 => findings_error += 1,
-                            s if s == pb::Severity::Warning as i32 => findings_warning += 1,
-                            _ => {}
-                        }
-                        responses.push(EngineResponse {
+                        findings.push(EngineResponse {
                             payload: Some(Payload::Finding(Finding {
                                 rule_id: rule.id.clone(),
                                 severity: rule.severity,
@@ -161,35 +255,9 @@ pub fn handle_import_graph_check(req: &CheckRequest) -> Vec<EngineResponse> {
                 }
             }
         }
-
-        rule_statuses.push(RuleStatus {
-            rule_id: rule.id.clone(),
-            status: if rule_matched {
-                Status::Valid
-            } else {
-                Status::Stale
-            }
-            .into(),
-            error: String::new(),
-        });
     }
 
-    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-    responses.push(EngineResponse {
-        payload: Some(Payload::CheckComplete(CheckComplete {
-            files_checked: go_files.len() as u32,
-            rules_evaluated: ig_rules.len() as u32,
-            findings_total,
-            findings_error,
-            findings_warning,
-            findings_info: 0,
-            duration_ms,
-            rule_statuses,
-        })),
-    });
-
-    responses
+    (rule_matched, findings)
 }
 
 /// Extract imports from a single Go file using tree-sitter.
@@ -210,8 +278,7 @@ fn extract_imports_from_file(_path: &Path, source: &str) -> Vec<String> {
     imports
 }
 
-/// Recursively collect import path strings from the AST.
-/// Uses the named "path" field on import_spec — version-stable across tree-sitter-go.
+/// Recursively collect import path strings from the Go AST.
 fn collect_imports(node: tree_sitter::Node, source: &str, imports: &mut Vec<String>) {
     if node.kind() == "import_spec" {
         if let Some(path_node) = node.child_by_field_name("path") {
@@ -221,14 +288,16 @@ fn collect_imports(node: tree_sitter::Node, source: &str, imports: &mut Vec<Stri
                 imports.push(trimmed);
             }
         }
-        return; // no need to recurse into import_spec children
+        return;
     }
     for i in 0..node.child_count() {
-        collect_imports(node.child(i).unwrap(), source, imports);
+        if let Some(child) = node.child(i) {
+            collect_imports(child, source, imports);
+        }
     }
 }
 
-/// Extract the package path from a Go file (directory relative to project root).
+/// Extract the package path from a file (directory relative to project root).
 pub(crate) fn file_to_package(file_path: &Path, project_root: &Path) -> String {
     if let Some(parent) = file_path.parent() {
         let rel = parent.strip_prefix(project_root).unwrap_or(parent);
@@ -249,11 +318,11 @@ pub(crate) fn collect_go_files(project: &Path, target_files: &[String]) -> Vec<P
     }
 
     let mut files = Vec::new();
-    collect_go_files_recursive(project, project, &mut files);
+    collect_go_files_recursive(project, &mut files);
     files
 }
 
-fn collect_go_files_recursive(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
+fn collect_go_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -266,15 +335,19 @@ fn collect_go_files_recursive(root: &Path, dir: &Path, files: &mut Vec<PathBuf>)
             if name_str.starts_with('.') || name_str == "vendor" || name_str == "target" {
                 continue;
             }
-            collect_go_files_recursive(root, &path, files);
+            collect_go_files_recursive(&path, files);
         } else if name_str.ends_with(".go") {
             files.push(path);
         }
     }
 }
 
-fn extract_all_imports(project: &Path, files: &[PathBuf]) -> Vec<Import> {
-    let mut all_imports = Vec::new();
+/// Build package→imports map for Go files.
+fn build_pkg_imports_go(
+    project: &Path,
+    files: &[PathBuf],
+) -> HashMap<String, Vec<(String, String)>> {
+    let mut pkg_imports: HashMap<String, Vec<(String, String)>> = HashMap::new();
     for file_path in files {
         let content = match fs::read_to_string(file_path) {
             Ok(c) => c,
@@ -288,18 +361,47 @@ fn extract_all_imports(project: &Path, files: &[PathBuf]) -> Vec<Import> {
             .replace('\\', "/");
 
         for to_pkg in extract_imports_from_file(file_path, &content) {
-            all_imports.push(Import {
-                from_file: rel_file.clone(),
-                from_pkg: from_pkg.clone(),
-                to_pkg,
-            });
+            pkg_imports
+                .entry(from_pkg.clone())
+                .or_default()
+                .push((rel_file.clone(), to_pkg));
         }
     }
-    all_imports
+    pkg_imports
+}
+
+/// Build package→imports map for TypeScript files.
+/// The map key is the **relative file path** (e.g. `src/domain/index.ts`) so that
+/// component `In` globs like `src/domain/**` match correctly — using the parent
+/// directory as key would produce `src/domain` which `src/domain/**` does not match
+/// (globset `/**` requires at least one additional path component).
+fn build_pkg_imports_ts(
+    project: &Path,
+    files: &[PathBuf],
+) -> HashMap<String, Vec<(String, String)>> {
+    let mut pkg_imports: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for file_path in files {
+        let content = match fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let rel_file = file_path
+            .strip_prefix(project)
+            .unwrap_or(file_path)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        for to_pkg in typescript_imports::extract_ts_imports(file_path, &content, project) {
+            pkg_imports
+                .entry(rel_file.clone())
+                .or_default()
+                .push((rel_file.clone(), to_pkg));
+        }
+    }
+    pkg_imports
 }
 
 /// Strip the Go module root prefix from a package path, returning the relative path.
-/// e.g. "github.com/dcsg/archway/internal/cli" -> "internal/cli"
 fn strip_module_prefix(pkg: &str, project_path: &str) -> String {
     let module_root = extract_module_root(project_path);
     if let Some(stripped) = pkg.strip_prefix(&module_root) {
@@ -310,7 +412,6 @@ fn strip_module_prefix(pkg: &str, project_path: &str) -> String {
 }
 
 /// Extract the Go module name from go.mod in the project root.
-/// Falls back to the last path component of project_path.
 fn extract_module_root(project_path: &str) -> String {
     let go_mod = PathBuf::from(project_path).join("go.mod");
     if let Ok(content) = fs::read_to_string(&go_mod) {
@@ -320,7 +421,6 @@ fn extract_module_root(project_path: &str) -> String {
             }
         }
     }
-    // Fallback: use last path segment.
     PathBuf::from(project_path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -336,8 +436,6 @@ fn build_globset(patterns: &[String]) -> Option<GlobSet> {
         if let Ok(g) = Glob::new(p) {
             builder.add(g);
         }
-        // Also match the bare directory when pattern ends with /**
-        // so that "service/**" matches both "service" and "service/sub".
         if let Some(bare) = p.strip_suffix("/**") {
             if let Ok(g) = Glob::new(bare) {
                 builder.add(g);
@@ -360,14 +458,17 @@ mod tests {
 
     #[test]
     fn extract_grouped_imports() {
-        let src = "package main\n\nimport (\n    \"fmt\"\n    \"os\"\n    \"github.com/dcsg/archway/internal/scaffold\"\n)\n";
+        let src = "package main\n\nimport (\n    \"fmt\"\n    \"os\"\n    \"github.com/diktahq/verikt/internal/scaffold\"\n)\n";
         let mut imports = extract_imports_from_file(Path::new("main.go"), src);
         imports.sort();
-        assert_eq!(imports, vec![
-            "fmt",
-            "github.com/dcsg/archway/internal/scaffold",
-            "os",
-        ]);
+        assert_eq!(
+            imports,
+            vec![
+                "fmt",
+                "github.com/diktahq/verikt/internal/scaffold",
+                "os",
+            ]
+        );
     }
 
     #[test]
@@ -385,7 +486,10 @@ fn build_digraph(imports: &[Import]) -> DiGraph<String, ()> {
     let mut graph = DiGraph::new();
     let mut indices: HashMap<String, NodeIndex> = HashMap::new();
 
-    let get_or_insert = |g: &mut DiGraph<String, ()>, indices: &mut HashMap<String, NodeIndex>, pkg: &str| -> NodeIndex {
+    let get_or_insert = |g: &mut DiGraph<String, ()>,
+                         indices: &mut HashMap<String, NodeIndex>,
+                         pkg: &str|
+     -> NodeIndex {
         if let Some(&idx) = indices.get(pkg) {
             idx
         } else {

@@ -8,10 +8,10 @@ package experiment
 // and adds the HTTP endpoint in adapter/http/.
 //
 // Mode B (embedded fixture): the fixture is embedded in the system prompt so the agent
-// can see the existing codebase. archway check --diff HEAD measures only agent changes.
+// can see the existing codebase. verikt check --diff HEAD measures only agent changes.
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP04 -v -timeout 300s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP04 -v -timeout 300s ./internal/engineclient/experiment/
 
 import (
 	"testing"
@@ -54,7 +54,7 @@ func TestEXP04_Test(t *testing.T) {
 	t.Logf("=== EXP-04 Test: packages=%v violations=%d passed=%v",
 		m.Packages, m.ViolationsTotal, m.Passed)
 
-	assert.True(t, m.Passed, "archway check --diff should pass with guide")
+	assert.True(t, m.Passed, "verikt check --diff should pass with guide")
 }
 
 // TestEXP04_Contrast runs both conditions and logs the comparison (Mode B).

@@ -1,5 +1,5 @@
-BINARY=bin/archway
-ENGINE_SRC=engine/target/release/archway-engine
+BINARY=bin/verikt
+ENGINE_SRC=engine/target/release/verikt-engine
 ENGINE_EMBED_DIR=internal/engineclient/bin
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
@@ -9,10 +9,10 @@ GOARCH ?= $(shell go env GOARCH)
 engine:
 	cd engine && cargo build --release
 	mkdir -p $(ENGINE_EMBED_DIR)
-	cp $(ENGINE_SRC) $(ENGINE_EMBED_DIR)/archway-engine-$(GOOS)-$(GOARCH)
+	cp $(ENGINE_SRC) $(ENGINE_EMBED_DIR)/verikt-engine-$(GOOS)-$(GOARCH)
 
 build: engine
-	go build -o $(BINARY) ./cmd/archway
+	go build -o $(BINARY) ./cmd/verikt
 
 test:
 	go test ./...
@@ -33,11 +33,11 @@ vet:
 	go vet ./...
 
 install-local:
-	go install ./cmd/archway
+	go install ./cmd/verikt
 
 help:
 	@echo "engine         Build Rust engine for current platform ($(GOOS)/$(GOARCH))"
-	@echo "build          Build binary to bin/archway (runs engine first)"
+	@echo "build          Build binary to bin/verikt (runs engine first)"
 	@echo "test           Run all tests"
 	@echo "lint           Run golangci-lint"
 	@echo "vet            Run go vet"

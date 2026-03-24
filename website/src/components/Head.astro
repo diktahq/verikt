@@ -1,0 +1,44 @@
+---
+import Default from '@astrojs/starlight/components/Head.astro';
+
+const { pathname } = Astro.url;
+const siteUrl = 'https://verikt.dev';
+
+// Build BreadcrumbList items from the URL path segments.
+// Skip the homepage — a single-item breadcrumb adds no value.
+const segments = pathname.replace(/\/$/, '').split('/').filter(Boolean);
+const shouldEmitBreadcrumb = segments.length > 0;
+
+function labelFromSlug(slug: string): string {
+  return slug
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+const breadcrumbItems = shouldEmitBreadcrumb
+  ? [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl + '/' },
+      ...segments.map((segment, i) => ({
+        '@type': 'ListItem',
+        position: i + 2,
+        name: labelFromSlug(segment),
+        item: siteUrl + '/' + segments.slice(0, i + 1).join('/') + '/',
+      })),
+    ]
+  : [];
+
+const breadcrumbSchema = shouldEmitBreadcrumb
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: breadcrumbItems,
+    }
+  : null;
+---
+
+<Default {...Astro.props}><slot /></Default>
+
+{breadcrumbSchema && (
+  <script type="application/ld+json" set:html={JSON.stringify(breadcrumbSchema)} />
+)}

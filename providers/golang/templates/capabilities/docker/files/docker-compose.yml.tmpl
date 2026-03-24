@@ -87,7 +87,7 @@ services:
   {{- if .HasKafka}}
 
   kafka:
-    image: bitnami/kafka:latest
+    image: bitnami/kafka:3.7
     ports:
       - "9092:9092"
     environment:
@@ -108,7 +108,7 @@ services:
   {{- if .HasMailpit}}
 
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI

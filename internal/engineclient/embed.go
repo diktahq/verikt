@@ -9,7 +9,7 @@ import (
 
 // version is bumped whenever the engine binary changes.
 // This ensures cached binaries are replaced on upgrade.
-const version = "0.2.0"
+const version = "0.1.0"
 
 // EnginePath extracts the embedded engine binary to the user cache directory
 // and returns its path. Extraction is skipped if the binary already exists
@@ -26,8 +26,8 @@ func EnginePath() (string, error) {
 		return "", fmt.Errorf("user cache dir: %w", err)
 	}
 
-	dir := filepath.Join(cacheDir, "archway", "engine-v"+version)
-	name := "archway-engine"
+	dir := filepath.Join(cacheDir, "verikt", "engine-v"+version)
+	name := "verikt-engine"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

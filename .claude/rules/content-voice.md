@@ -42,7 +42,7 @@ Write as a practitioner explaining to a fellow engineer. First-person where it f
 
 ## Brand Voice: Direct. Confident. Precise. Grounded.
 
-Four words that define who archway sounds like. Voice is constant — it doesn't change from the homepage to a CLI error message.
+Four words that define who verikt sounds like. Voice is constant — it doesn't change from the homepage to a CLI error message.
 
 - **Direct** — leads with the point, no preamble. If the first sentence doesn't deliver information, cut it.
 - **Confident** — states positions clearly, doesn't hedge. Confidence comes from evidence, not adjectives.
@@ -57,7 +57,7 @@ Four words that define who archway sounds like. Voice is constant — it doesn't
 - Blog posts: grounded + personal
 - Social media: confident + accessible
 
-Full definition: `docs/internal/brand-voice-2026-03-15.md`
+Full definition: `docs/internal/brand-voice.md`
 
 ## What This Does NOT Apply To
 

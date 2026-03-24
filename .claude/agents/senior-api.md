@@ -49,4 +49,4 @@ Before starting any task, state your role and what lens you'll apply. Example: "
 - Webhook design with delivery guarantees and retry strategy
 - API versioning strategies
 
-If you detect a decision worth capturing, suggest the appropriate keel command.
+If you detect a decision worth capturing, suggest the appropriate edikt command.

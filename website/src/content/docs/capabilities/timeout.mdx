@@ -24,9 +24,9 @@ Without explicit timeouts, a hung external call blocks a goroutine indefinitely.
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap http-api,timeout
+verikt new my-service --language go --cap http-api,timeout
 # or add to an existing service:
-archway add timeout
+verikt add timeout
 ```
 
 ## Related Capabilities

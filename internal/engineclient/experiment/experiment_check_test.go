@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// hexagonalConfig returns the archway config for the hexagonal testdata project.
-func hexagonalConfig() *config.ArchwayConfig {
-	return &config.ArchwayConfig{
+// hexagonalConfig returns the verikt config for the hexagonal testdata project.
+func hexagonalConfig() *config.VeriktConfig {
+	return &config.VeriktConfig{
 		Language:     "go",
 		Architecture: "hexagonal",
 		Components: []config.Component{
@@ -41,7 +41,7 @@ func hexagonalProjectPath(t *testing.T) string {
 	return filepath.Join(checkerTestdataDir(t), "hexagonal-project")
 }
 
-// TestFullCheck_GoPath runs archway check using the Go-native analysis path (no engine).
+// TestFullCheck_GoPath runs verikt check using the Go-native analysis path (no engine).
 func TestFullCheck_GoPath(t *testing.T) {
 	cfg := hexagonalConfig()
 	projectPath := hexagonalProjectPath(t)
@@ -59,7 +59,7 @@ func TestFullCheck_GoPath(t *testing.T) {
 	assert.False(t, result.Passed(), "hexagonal-project has known violations")
 }
 
-// TestFullCheck_EnginePath runs archway check using the Rust engine for all subsystems.
+// TestFullCheck_EnginePath runs verikt check using the Rust engine for all subsystems.
 func TestFullCheck_EnginePath(t *testing.T) {
 	client := newEngineClient(t)
 	cfg := hexagonalConfig()

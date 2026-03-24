@@ -1,0 +1,15 @@
+name: mysql
+description: "MySQL via Prisma ORM or Drizzle — schema, client singleton, migrations"
+variables:
+  - name: OrmLibrary
+    type: string
+    default: "prisma"
+    description: "Data access library"
+    choices: ["prisma", "drizzle"]
+suggests:
+  - migrations
+  - docker
+  - repository
+  - uuid
+conflicts:
+  - sqlite

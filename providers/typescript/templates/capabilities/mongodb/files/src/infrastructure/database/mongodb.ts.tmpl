@@ -1,0 +1,29 @@
+import mongoose from 'mongoose'
+
+let isConnected = false
+
+export async function connectDatabase(uri?: string): Promise<void> {
+  if (isConnected) return
+
+  const connectionUri = uri ?? process.env.MONGODB_URI
+  if (!connectionUri) {
+    throw new Error('MONGODB_URI environment variable is required')
+  }
+
+  await mongoose.connect(connectionUri, {
+    serverSelectionTimeoutMS: 5_000,
+  })
+
+  isConnected = true
+  mongoose.connection.on('disconnected', () => {
+    isConnected = false
+  })
+}
+
+export async function disconnectDatabase(): Promise<void> {
+  if (!isConnected) return
+  await mongoose.disconnect()
+  isConnected = false
+}
+
+export { mongoose }

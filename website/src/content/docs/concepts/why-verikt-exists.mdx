@@ -1,0 +1,49 @@
+---
+title: Why verikt exists
+description: The beliefs behind verikt — what we think is broken about how architecture is managed today, and what it means to treat it as code.
+---
+
+## The gap
+
+You know exactly how your service should be structured. You wrote the decision records. You explained hexagonal architecture in the team kickoff. You defined which layers can import from which.
+
+Then an AI agent opens a file and adds a database call to the handler layer, because nothing told it not to. Three months later you're in a code review catching the fifth violation this week — not because your team doesn't care, but because the rules existed in a document, not in the tooling.
+
+That's the gap: the distance between the architecture you intended and the code you actually have. It opens slowly, without drama, and it compounds.
+
+**We think the gap should be zero.**
+
+Not managed. Not audited monthly. Not tolerated because fixing it costs more than leaving it. Zero.
+
+## The beliefs that shaped it
+
+**Architecture is code.**
+It should be declared in a config file, versioned in git, and enforced in CI — the same way infrastructure is. An architecture decision that lives only in Confluence is not enforced. It's aspirational. `verikt.yaml` is the declaration. `verikt check` is the enforcement.
+
+**AI agents need architectural context before they write.**
+An agent working on file 50 of a service has lost the decisions made at file one. It doesn't know your layer boundaries, your capability set, or the rules that follow from both. It defaults to its training data — and produces code that compiles, passes review, and violates the architecture. `verikt guide` generates instruction files from your `verikt.yaml` so every agent session starts with your exact rules. Prevention is cheaper than correction. Always.
+
+**Composition beats generation.**
+A monolithic template gives you a starting point. A composition model gives you building blocks where the rules travel with the code. When you add a capability, its dependencies are resolved, its conflicts are flagged, and its architectural constraints are encoded — not left as comments in a README.
+
+**The gap should be zero.**
+If you can describe your architecture, your tooling should enforce it. `verikt check` runs in CI. It exits non-zero on violations. No service ships with dependency violations that were visible and catchable. That's the contract.
+
+## How this shapes the product
+
+Every command exists because of a belief:
+
+| Belief | Command | What it does |
+|---|---|---|
+| Agents need context | `verikt guide` | Generates instruction files for Claude, Cursor, Copilot, Windsurf from your `verikt.yaml` |
+| Composition beats generation | `verikt new` | Scaffolds a production-ready service from architecture + capabilities, with rules encoded from the first file |
+| Architecture is code | `verikt analyze` | Detects the architecture pattern in any existing codebase — learn what's there before enforcing what should be |
+| The gap should be zero | `verikt check` | 11 AST-based detectors, CI-native, exits non-zero on violations |
+
+---
+
+**Guide prevents drift. Check detects it. Together, the gap is zero.**
+
+**Rules get defined. They get forgotten. verikt makes sure they don't.**
+
+[How It Works →](/concepts/how-it-works/)

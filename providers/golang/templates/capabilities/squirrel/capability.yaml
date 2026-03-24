@@ -1,0 +1,7 @@
+name: squirrel
+description: "Fluent SQL query builder — type-safe query construction without string concatenation"
+requires: []
+suggests:
+  - postgres
+  - mysql
+conflicts: []

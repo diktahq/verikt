@@ -1,0 +1,14 @@
+// EmailGateway — domain interface for sending transactional email.
+// The domain layer depends only on this interface, not on nodemailer or any SMTP detail.
+
+export interface EmailMessage {
+  to: string | string[]
+  subject: string
+  html: string
+  text?: string    // plain-text fallback
+  from?: string    // overrides default sender
+}
+
+export interface EmailGateway {
+  send(message: EmailMessage): Promise<void>
+}

@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install archway via Homebrew or install script — both set up your project and register architecture context for every AI agent automatically.
+description: Install verikt via Homebrew or install script — both set up your project and register architecture context for every AI agent automatically.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
@@ -11,26 +11,26 @@ import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 <TabItem label="Homebrew">
 
 ```bash
-brew install dcsg/tap/archway
+brew install diktahq/tap/verikt
 ```
 
 </TabItem>
 <TabItem label="Install Script">
 
 ```bash
-curl -sSL https://archway.dcsg.me/install.sh | bash
+curl -sSL https://verikt.dev/install.sh | bash
 ```
 
-Works on macOS and Linux. Installs the binary and registers archway with
+Works on macOS and Linux. Installs the binary and registers verikt with
 your AI agents automatically.
 
 </TabItem>
 <TabItem label="From Source">
 
 ```bash
-git clone https://github.com/dcsg/archway.git
-cd archway
-go build -o archway ./cmd/archway
+git clone https://github.com/diktahq/verikt.git
+cd verikt
+go build -o verikt ./cmd/verikt
 ```
 
 </TabItem>
@@ -39,7 +39,7 @@ go build -o archway ./cmd/archway
 ## Verify
 
 ```bash
-archway --version
+verikt --version
 ```
 
 ## Shell Completions
@@ -48,21 +48,21 @@ archway --version
 <TabItem label="Bash">
 
 ```bash
-archway completion bash > /etc/bash_completion.d/archway
+verikt completion bash > /etc/bash_completion.d/verikt
 ```
 
 </TabItem>
 <TabItem label="Zsh">
 
 ```bash
-archway completion zsh > "${fpath[1]}/_archway"
+verikt completion zsh > "${fpath[1]}/_verikt"
 ```
 
 </TabItem>
 <TabItem label="Fish">
 
 ```bash
-archway completion fish > ~/.config/fish/completions/archway.fish
+verikt completion fish > ~/.config/fish/completions/verikt.fish
 ```
 
 </TabItem>

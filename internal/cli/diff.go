@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/diff"
-	"github.com/dcsg/archway/internal/provider"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/diff"
+	"github.com/diktahq/verikt/internal/provider"
+	"github.com/diktahq/verikt/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -23,14 +23,14 @@ func newDiffCommand(opts *globalOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "diff",
-		Short: "Show structural drift between archway.yaml and files on disk",
-		Long: `Diff compares the architecture and capabilities declared in archway.yaml
+		Short: "Show structural drift between verikt.yaml and files on disk",
+		Long: `Diff compares the architecture and capabilities declared in verikt.yaml
 against the files that actually exist on disk. Like 'terraform plan' for code structure.
 
 Reports which expected files are present, partially present, or fully missing.`,
-		Example: `  archway diff
-  archway diff --path ./my-service
-  archway diff -o json`,
+		Example: `  verikt diff
+  verikt diff --path ./my-service
+  verikt diff -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDiff(opts, flags)
 		},
@@ -44,14 +44,14 @@ Reports which expected files are present, partially present, or fully missing.`,
 func runDiff(opts *globalOptions, flags *diffFlags) error {
 	projectPath := flags.projectPath
 
-	archwayPath, err := config.FindArchwayYAML(projectPath)
+	veriktPath, err := config.FindVeriktYAML(projectPath)
 	if err != nil {
-		return fmt.Errorf("no archway.yaml found in %s (or parent directories)", projectPath)
+		return fmt.Errorf("no verikt.yaml found in %s (or parent directories)", projectPath)
 	}
 
-	cfg, err := config.LoadArchwayYAML(archwayPath)
+	cfg, err := config.LoadVeriktYAML(veriktPath)
 	if err != nil {
-		return fmt.Errorf("load archway.yaml: %w", err)
+		return fmt.Errorf("load verikt.yaml: %w", err)
 	}
 
 	// Get the language provider for template FS access.
@@ -106,7 +106,7 @@ func runDiff(opts *globalOptions, flags *diffFlags) error {
 
 func printDiffTerminal(r *diff.Result) {
 	capCount := len(r.CapabilityDiffs)
-	fmt.Printf("\nArchway Diff — %s + %d capabilities\n", r.Architecture, capCount-1)
+	fmt.Printf("\nverikt diff — %s + %d capabilities\n", r.Architecture, capCount-1)
 	fmt.Println(strings.Repeat("═", 55))
 
 	for _, d := range r.CapabilityDiffs {
@@ -142,7 +142,7 @@ func printDiffJSON(r *diff.Result) error {
 }
 
 func printDiffMarkdown(r *diff.Result) {
-	fmt.Printf("# Archway Diff — %s\n\n", r.Architecture)
+	fmt.Printf("# verikt Diff — %s\n\n", r.Architecture)
 	fmt.Println("| Capability | Status | Missing |")
 	fmt.Println("|------------|--------|---------|")
 

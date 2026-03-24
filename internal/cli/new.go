@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/dcsg/archway/internal/provider"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/provider"
+	"github.com/diktahq/verikt/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -36,9 +36,9 @@ func newNewCommand(_ *globalOptions) *cobra.Command {
 		Long: `Create a new project scaffold by composing architecture + capabilities.
 
 This command runs an interactive wizard by default, or can be used non-interactively with flags.`,
-		Example: `  archway new my-service
-  archway new my-service --arch hexagonal --cap http-api,mysql,observability --no-wizard
-  archway new my-service --template cli --no-wizard`,
+		Example: `  verikt new my-service
+  verikt new my-service --arch hexagonal --cap http-api,mysql,observability --no-wizard
+  verikt new my-service --template cli --no-wizard`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -56,7 +56,7 @@ This command runs an interactive wizard by default, or can be used non-interacti
 				}
 			}
 			if opts.NoWizard && strings.TrimSpace(opts.Name) == "" {
-				return fmt.Errorf("name is required: archway new <name> or --name <name>")
+				return fmt.Errorf("name is required: verikt new <name> or --name <name>")
 			}
 			return runNew(cmd.Context(), opts)
 		},
@@ -169,18 +169,24 @@ func runNew(ctx context.Context, opts *newCommandOptions) error {
 
 	fmt.Println("\nNext steps:")
 	fmt.Printf("  cd %s\n", filepath.Join(opts.OutputDir, opts.Name))
-	if template == "flat" || opts.Architecture == "flat" {
-		fmt.Println("  go run .")
-	} else {
-		fmt.Printf("  go run ./cmd/%s\n", opts.Name)
+	switch opts.Language {
+	case "typescript":
+		fmt.Println("  npm install")
+		fmt.Println("  npm run dev")
+	default: // go
+		if template == "flat" || opts.Architecture == "flat" {
+			fmt.Println("  go run .")
+		} else {
+			fmt.Printf("  go run ./cmd/%s\n", opts.Name)
+		}
 	}
-	fmt.Println("\nTip: Run 'keel:init' to set up AI-powered development guardrails.")
+	fmt.Println("\nTip: Run 'edikt:init' to set up AI-powered development guardrails.")
 
 	return nil
 }
 
 func printEquivalentCommand(opts *newCommandOptions) {
-	parts := []string{"archway new", opts.Name}
+	parts := []string{"verikt new", opts.Name}
 	if opts.Architecture != "" {
 		parts = append(parts, "--arch", opts.Architecture)
 	} else if opts.Template != "" && opts.Template != "api" {
@@ -189,8 +195,11 @@ func printEquivalentCommand(opts *newCommandOptions) {
 	if opts.Capabilities != "" {
 		parts = append(parts, "--cap", opts.Capabilities)
 	}
-	if opts.ModulePath != "" {
+	if opts.ModulePath != "" && opts.Language != "typescript" {
 		parts = append(parts, "--module", opts.ModulePath)
+	}
+	if opts.Language != "" && opts.Language != "go" {
+		parts = append(parts, "--language", opts.Language)
 	}
 	parts = append(parts, "--no-wizard")
 	fmt.Printf("\nEquivalent command:\n  %s\n", strings.Join(parts, " "))
@@ -327,7 +336,7 @@ func runCompositionWizard(opts *newCommandOptions) (map[string]interface{}, erro
 	if err := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("How should AI agents use the architecture guide?").
-			Description("Controls how Claude, Cursor, Copilot, and Windsurf behave with archway context.").
+			Description("Controls how Claude, Cursor, Copilot, and Windsurf behave with verikt context.").
 			Options(
 				huh.NewOption("passive  — answer first, architecture notes at the end", "passive"),
 				huh.NewOption("audit    — read codebase on session start, lead with gap analysis", "audit"),

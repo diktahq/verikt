@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/dcsg/archway/internal/engineclient/experiment/testdata/conforming-hexagonal/domain"
-	"github.com/dcsg/archway/internal/engineclient/experiment/testdata/conforming-hexagonal/port"
+	"github.com/diktahq/verikt/internal/engineclient/experiment/testdata/conforming-hexagonal/domain"
+	"github.com/diktahq/verikt/internal/engineclient/experiment/testdata/conforming-hexagonal/port"
 )
 
 // OrderHandler handles HTTP requests for orders.

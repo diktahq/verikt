@@ -1,8 +1,8 @@
 # Capabilities Matrix
 
-> Everything Archway can compose into your Go service — **63 capabilities**.
+> Everything verikt can compose into your Go service — **63 capabilities**.
 
-Archway scaffolds projects by combining an **architecture** with **capabilities**. Pick what you need — Archway wires it all together.
+verikt scaffolds projects by combining an **architecture** with **capabilities**. Pick what you need — verikt wires it all together.
 
 ## Architectures
 
@@ -108,9 +108,9 @@ Capabilities can declare relationships:
 
 ### Smart Suggestions
 
-When you select capabilities, Archway suggests what you might be missing:
+When you select capabilities, verikt suggests what you might be missing:
 
-| If you select... | Archway suggests... | Why |
+| If you select... | verikt suggests... | Why |
 |-----------------|--------------------|----|
 | Any transport | `platform` | Production services need config, logging, lifecycle |
 | `platform` | `bootstrap` | Testable wiring with thin main.go |
@@ -122,7 +122,7 @@ When you select capabilities, Archway suggests what you might be missing:
 
 ### Capability Warnings
 
-After suggestions, Archway warns about capability combinations that often cause issues in production:
+After suggestions, verikt warns about capability combinations that often cause issues in production:
 
 | If you have... | But missing... | Warning |
 |---------------|---------------|---------|
@@ -138,7 +138,7 @@ Warnings are advisory — they don't block scaffolding.
 
 ## Anti-Pattern Detection
 
-`archway check` detects anti-patterns across three categories:
+`verikt check` detects anti-patterns across three categories:
 
 ### Code Anti-Patterns
 
@@ -223,21 +223,21 @@ Warnings are advisory — they don't block scaffolding.
 
 ```bash
 # Full production API
-archway new my-api --arch hexagonal \
+verikt new my-api --arch hexagonal \
   --cap platform,bootstrap,http-api,postgres,uuid,migrations,auth-jwt,rate-limiting,cors,health,observability,request-id,docker,linting
 
 # gRPC microservice
-archway new my-grpc --arch hexagonal \
+verikt new my-grpc --arch hexagonal \
   --cap platform,bootstrap,grpc,redis,docker,linting,health,observability
 
 # Event-driven worker
-archway new my-worker --arch hexagonal \
+verikt new my-worker --arch hexagonal \
   --cap platform,bootstrap,kafka-consumer,postgres,event-bus,outbox,worker,docker
 
 # CQRS service
-archway new my-cqrs --arch hexagonal \
+verikt new my-cqrs --arch hexagonal \
   --cap platform,bootstrap,http-api,postgres,uuid,cqrs,event-bus,outbox,repository,docker
 
 # Simple CLI tool
-archway new my-cli --arch flat
+verikt new my-cli --arch flat
 ```

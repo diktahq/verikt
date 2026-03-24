@@ -1,0 +1,4 @@
+name: worker
+description: "Background job processing via BullMQ (Redis-backed) — typed jobs with retries"
+suggests:
+  - redis

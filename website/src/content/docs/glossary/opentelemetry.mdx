@@ -29,7 +29,7 @@ Each span has a start time, end time, status, and attributes (user ID, order ID,
 
 ## In Go
 
-archway's `observability` capability scaffolds OTLP/gRPC export, trace propagation middleware, and metric collection:
+verikt's `observability` capability scaffolds OTLP/gRPC export, trace propagation middleware, and metric collection:
 
 ```go
 // Tracer is initialized once at startup
@@ -56,7 +56,7 @@ func (s *OrderService) PlaceOrder(ctx context.Context, cmd PlaceOrderCommand) er
 
 The context carries the span, which is propagated automatically to downstream calls.
 
-## How archway Supports It
+## How verikt Supports It
 
 The `observability` capability scaffolds OTLP/gRPC export configuration, trace propagation middleware, and metric instruments. It's suggested whenever `http-api`, `grpc`, or `kafka-consumer` is selected — you cannot debug a production service without it. See [Capabilities](/concepts/capabilities/).
 

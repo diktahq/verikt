@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dcsg/archway/internal/engineclient"
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	"github.com/diktahq/verikt/internal/engineclient"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 )
 
 // runGrepViaRust sends all grep rules to the Rust engine in a single call and

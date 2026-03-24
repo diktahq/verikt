@@ -1,17 +1,24 @@
 ---
-title: Feature Matrix
-description: "Version-gated language features that control template output. Each feature maps to a Go version and enables modern API usage in scaffolded code."
+title: Version-gated language features
+description: "Version-gated language features that control template output. Each feature maps to a language version and enables modern API usage in scaffolded code."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Archway uses a **feature matrix** to generate version-appropriate code. Instead of targeting the lowest common denominator, templates use feature flags to emit modern APIs when the target Go version supports them.
+verikt uses a **feature matrix** to generate version-appropriate code. Instead of targeting the lowest common denominator, templates use feature flags to emit modern APIs when the target language version supports them.
 
 ## How It Works
 
-1. **Detect version** — archway runs `go env GOVERSION` (or uses `--set GoVersion=X.XX`)
+1. **Detect version** — verikt reads the language version from your project (language-specific, see below)
 2. **Resolve features** — the detected version is compared against `features.yaml`, producing a boolean map
 3. **Inject into templates** — templates access features via `{{if .Features.<name>}}...{{end}}`
+
+### Language-specific version detection
+
+How verikt detects the runtime version depends on the language:
+
+- **Go** — runs `go env GOVERSION`, or accepts an override via `--set GoVersion=X.XX`
+- **TypeScript** — runs `node --version`, or accepts an override via `--set NodeVersion=XX`
 
 ## Go Feature Matrix
 
@@ -69,14 +76,41 @@ features:
 |-------|------|-------------|
 | `name` | string | Identifier used in templates as `.Features.<name>` |
 | `description` | string | Human-readable explanation of the feature |
-| `since` | string | Minimum Go version (`major.minor`) that supports this feature |
+| `since` | string | Minimum version that supports this feature |
 
-## Adding Features for New Go Versions
+## TypeScript / Node.js Feature Matrix
 
-When a new Go version ships with relevant stdlib or language changes:
+Node.js versions gate TypeScript-specific template behavior. The default Node version is **22** (current Active LTS). Override with `--set NodeVersion=24`.
 
-1. Add an entry to `providers/golang/templates/features.yaml`
+| Feature | Description | Since |
+|---------|-------------|-------|
+| `native_ts` | Stable native TypeScript (`--strip-types` enabled by default) — drops `tsx` dependency, uses `node --watch` | 24 |
+| `es2024` | ES2024 target support (`Object.groupBy`, `Promise.withResolvers`, `ArrayBuffer.transfer`) | 24 |
+
+**What changes by Node version:**
+
+| Template concern | Node 20 | Node 22 (default) | Node 24 |
+|---|---|---|---|
+| `tsconfig.json` target | ES2023 | ES2023 | ES2024 |
+| Dev server | `tsx watch` | `tsx watch` | `node --watch` (native) |
+| `tsx` dependency | Required | Required | Dropped |
+| Dockerfile base | `node:20-alpine` | `node:22-alpine` | `node:24-alpine` |
+| `@types/node` | `^20` | `^22` | `^24` |
+
+<Aside type="note">
+Node.js 20 reaches end-of-life in April 2026. Node 22 is supported until April 2027. Node 24 is the current Active LTS with the longest support window (April 2028).
+</Aside>
+
+<Aside type="note">
+The source of truth is `providers/typescript/templates/features.yaml`.
+</Aside>
+
+## Adding Features
+
+When a new Go or Node.js version ships with relevant changes:
+
+1. Add an entry to the provider's `features.yaml`
 2. Update any templates that should use the new feature with `{{if .Features.<name>}}`
-3. Optionally add `conditional` rules in capability manifests for file-level gating (see [archway.yaml reference](/reference/archway-yaml/#conditional-file-inclusion))
+3. Optionally add `conditional` rules in capability manifests for file-level gating (see [verikt.yaml reference](/reference/verikt-yaml/#conditional-file-inclusion))
 
 No changes to the feature resolver are needed — it reads features.yaml dynamically.

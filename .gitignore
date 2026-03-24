@@ -1,23 +1,18 @@
 # Binaries
-archway
+/verikt
 bin/
 *.exe
 
 # Engine binary (built locally, not committed — see internal/engineclient/embed.go)
 internal/engineclient/bin/
 
-# Test artifacts
-test-service/
-test-seviceb/
-testservice/
-
 # IDE
 .idea/
 .vscode/
 *.swp
 
-# Internal docs (not public)
-docs/internal/
+# Internal docs — research subdirectory (color audits, etc.)
+docs/internal/research/
 
 # Environment files
 .env
@@ -33,6 +28,9 @@ docs/internal/
 # Go
 vendor/
 docs/product/plans/
+
+# Rust engine build artifacts
+engine/target/
 
 # Release artifacts (downloaded by CI, not committed)
 engine-artifacts/

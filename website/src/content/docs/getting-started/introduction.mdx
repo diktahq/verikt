@@ -1,6 +1,6 @@
 ---
 title: Introduction
-description: archway makes your architecture persistent and enforceable — so AI agents start every session with your rules, and every service starts from a consistent foundation.
+description: verikt makes your architecture persistent and enforceable — so AI agents start every session with your rules, and every service starts from a consistent foundation.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -15,9 +15,9 @@ AI agents make this worse. They write correct syntax but don't know your archite
 
 ## The Solution
 
-`archway guide` generates instruction files from your `archway.yaml` so AI agents (Claude Code, Cursor, Copilot, Windsurf) start every session with your exact architecture rules, capability set, and dependency constraints. This is prevention, not correction — the agent knows the rules before it writes the first line.
+`verikt guide` generates instruction files from your `verikt.yaml` so AI agents (Claude Code, Cursor, Copilot, Windsurf) start every session with your exact architecture rules, capability set, and dependency constraints. This is prevention, not correction — the agent knows the rules before it writes the first line.
 
-For greenfield services, archway also composes your project from two building blocks:
+For greenfield services, verikt also composes your project from two building blocks:
 
 1. **Architecture** — The structural pattern (hexagonal, layered, clean, flat) that defines your project layout and dependency rules
 2. **Capabilities** — 63 modular features (HTTP API, MySQL, auth, circuit breaker, i18n, etc.) that plug into your architecture
@@ -27,19 +27,19 @@ Architecture (hexagonal) + Capabilities (http-api, mysql, docker) = Your Service
 ```
 
 <Aside type="tip">
-Think of it like Terraform for code architecture. You declare what you want, archway composes it.
+Think of it like Terraform for code architecture. You declare what you want, verikt composes it.
 </Aside>
 
 ## How It Works
 
-Capabilities generate only the code, imports, and configuration they need — nothing more. When you add an HTTP API, archway suggests what else you likely need: health endpoints, request ID propagation, rate limiting, CORS. `archway check` validates your dependency rules with 11 AST-based detectors — domain code importing adapter code gets caught at the command line, not in code review.
+Capabilities generate only the code, imports, and configuration they need — nothing more. When you add an HTTP API, verikt suggests what else you likely need: health endpoints, request ID propagation, rate limiting, CORS. `verikt check` validates your dependency rules with 11 AST-based detectors — domain code importing adapter code gets caught at the command line, not in code review.
 
 <Aside>
-archway generates plain code with no runtime dependency — not a framework. Scaffold once and own the output. It sets up the infrastructure; you write the domain.
+verikt generates plain code with no runtime dependency — not a framework. Scaffold once and own the output. It sets up the infrastructure; you write the domain.
 </Aside>
 
 ## Next Steps
 
 - [Quick Start with AI Agents](/getting-started/ai-agents/) — set up your project without leaving your agent session
-- [How It Works](/concepts/how-it-works/) — understand the composition model behind archway
+- [How It Works](/concepts/how-it-works/) — understand the composition model behind verikt
 - [Quick Start with CLI](/getting-started/cli/) — scaffold your first service in 2 minutes

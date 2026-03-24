@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/scaffold"
 )
 
-// Result holds the full diff between archway.yaml declarations and on-disk files.
+// Result holds the full diff between verikt.yaml declarations and on-disk files.
 type Result struct {
 	Architecture    string           `json:"architecture"`
 	CapabilityDiffs []CapabilityDiff `json:"capability_diffs"`

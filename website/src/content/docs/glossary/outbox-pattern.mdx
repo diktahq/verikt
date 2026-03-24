@@ -32,7 +32,7 @@ The relay is a simple polling loop or a Postgres LISTEN/NOTIFY-triggered worker.
 
 ## In Go
 
-The outbox relay worker is a long-running goroutine that polls the outbox table on a configurable interval. archway's `outbox` capability scaffolds the table definition, the relay worker, and the publisher interface:
+The outbox relay worker is a long-running goroutine that polls the outbox table on a configurable interval. verikt's `outbox` capability scaffolds the table definition, the relay worker, and the publisher interface:
 
 ```go
 type OutboxRelay struct {
@@ -57,9 +57,9 @@ func (r *OutboxRelay) Run(ctx context.Context) error {
 
 Graceful shutdown ensures in-flight relay operations complete before the process exits.
 
-## How archway Supports It
+## How verikt Supports It
 
-The `outbox` capability scaffolds the outbox table schema, relay worker, and publisher interface. It suggests `postgres`, `event-bus`, and `scheduler` as natural companions. archway also warns when `event-bus` is used without `outbox` — a production incident waiting to happen. See the [Capabilities Matrix](/reference/capabilities-matrix/) for the full context.
+The `outbox` capability scaffolds the outbox table schema, relay worker, and publisher interface. It suggests `postgres`, `event-bus`, and `scheduler` as natural companions. verikt also warns when `event-bus` is used without `outbox` — a production incident waiting to happen. See the [Capabilities Matrix](/reference/capabilities-matrix/) for the full context.
 
 <Aside type="tip">
 The relay worker's polling interval is a trade-off between event latency and database load. Start at 1 second — you can reduce it later with LISTEN/NOTIFY if sub-second latency matters.

@@ -1,0 +1,8 @@
+name: sqlc
+description: "Compile SQL to type-safe Go — write .sql files, get generated Go code"
+requires: []
+suggests:
+  - postgres
+  - mysql
+  - migrations
+conflicts: []

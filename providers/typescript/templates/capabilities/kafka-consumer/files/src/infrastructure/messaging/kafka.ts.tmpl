@@ -1,0 +1,40 @@
+import { Kafka, type Consumer, type EachMessagePayload } from 'kafkajs'
+
+const kafka = new Kafka({
+  clientId: '{{.ServiceName}}',
+  brokers: (process.env.KAFKA_BROKERS ?? 'localhost:9092').split(','),
+})
+
+export type MessageHandler = (payload: EachMessagePayload) => Promise<void>
+
+// createConsumer sets up a Kafka consumer group and registers topic handlers.
+// Call shutdown() during graceful shutdown to commit offsets and leave the group cleanly.
+export async function createConsumer(
+  groupId: string,
+  topics: Record<string, MessageHandler>,
+): Promise<{ shutdown: () => Promise<void> }> {
+  const consumer: Consumer = kafka.consumer({ groupId })
+
+  await consumer.connect()
+  await consumer.subscribe({ topics: Object.keys(topics), fromBeginning: false })
+
+  await consumer.run({
+    eachMessage: async (payload) => {
+      const handler = topics[payload.topic]
+      if (!handler) return
+      try {
+        await handler(payload)
+      } catch (err) {
+        console.error(`[kafka] error processing message from topic "${payload.topic}"`, err)
+        // Re-throw to trigger retry/dead-letter handling in the consumer group.
+        throw err
+      }
+    },
+  })
+
+  return {
+    async shutdown() {
+      await consumer.disconnect()
+    },
+  }
+}

@@ -2,4 +2,4 @@
 # See exp12_test.go for setup instructions.
 *
 !.gitignore
-!archway.yaml
+!verikt.yaml

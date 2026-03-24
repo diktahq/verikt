@@ -6,7 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	// Register language providers via init() so they're available via provider.Get().
-	_ "github.com/dcsg/archway/providers/golang"
+	_ "github.com/diktahq/verikt/providers/golang"
+	_ "github.com/diktahq/verikt/providers/typescript"
 )
 
 var (
@@ -28,11 +29,16 @@ func newRootCommand() *cobra.Command {
 	opts := &globalOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "archway",
-		Short: "Architecture-aware service composer and enforcer",
-		Long: `Archway composes production-ready services from architecture patterns and capability modules.
+		Use:   "verikt",
+		Short: "Your architecture, in every agent session",
+		Long: `verikt — your architecture, in every agent session
 
-Use archway new to scaffold projects, archway check to validate architecture rules, and archway analyze to understand existing codebases.`,
+  Get started:        verikt init           (detects greenfield or existing codebase)
+  Add a service:      verikt new <name>     (scaffold a new service)
+  Using an AI agent?  verikt init --ai      (agent conducts the setup)
+
+  Validate:           verikt check
+  Generate context:   verikt guide`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

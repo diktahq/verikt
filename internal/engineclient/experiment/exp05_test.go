@@ -7,13 +7,13 @@ package experiment
 // to a thorough prompt without the guide.
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP05 -v -timeout 600s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP05 -v -timeout 600s ./internal/engineclient/experiment/
 
 import (
 	"testing"
 )
 
-const exp05ArchwayYAML = `language: go
+const exp05VeriktYAML = `language: go
 architecture: hexagonal
 
 components:
@@ -64,17 +64,17 @@ Module name: github.com/example/inventory`
 func TestEXP05_AllConditions(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	bin := archwayBin(t)
-	guide := generateGuideFromYAML(t, bin, exp05ArchwayYAML)
+	bin := veriktBin(t)
+	guide := generateGuideFromYAML(t, bin, exp05VeriktYAML)
 
 	// A: lazy + no guide
-	a := runAgentExperiment(t, "EXP05-A-lazy-noguide", exp05LazyPrompt, exp05ArchwayYAML)
+	a := runAgentExperiment(t, "EXP05-A-lazy-noguide", exp05LazyPrompt, exp05VeriktYAML)
 	// B: lazy + guide
-	b := runAgentExperiment(t, "EXP05-B-lazy-guide", guide+"\n\n---\n\n"+exp05LazyPrompt, exp05ArchwayYAML)
+	b := runAgentExperiment(t, "EXP05-B-lazy-guide", guide+"\n\n---\n\n"+exp05LazyPrompt, exp05VeriktYAML)
 	// C: thorough + no guide
-	c := runAgentExperiment(t, "EXP05-C-thorough-noguide", exp05ThoroughPrompt, exp05ArchwayYAML)
+	c := runAgentExperiment(t, "EXP05-C-thorough-noguide", exp05ThoroughPrompt, exp05VeriktYAML)
 	// D: thorough + guide
-	d := runAgentExperiment(t, "EXP05-D-thorough-guide", guide+"\n\n---\n\n"+exp05ThoroughPrompt, exp05ArchwayYAML)
+	d := runAgentExperiment(t, "EXP05-D-thorough-guide", guide+"\n\n---\n\n"+exp05ThoroughPrompt, exp05VeriktYAML)
 
 	t.Logf("")
 	t.Logf("=== EXP-05: Prompt Quality Compensation ===")
@@ -110,7 +110,7 @@ func TestEXP05_AllConditions(t *testing.T) {
 // TestEXP05_ConditionA is condition A in isolation: lazy prompt, no guide.
 func TestEXP05_ConditionA(t *testing.T) {
 	agentGuardOrSkip(t)
-	m := runAgentExperiment(t, "EXP05-A-lazy-noguide", exp05LazyPrompt, exp05ArchwayYAML)
+	m := runAgentExperiment(t, "EXP05-A-lazy-noguide", exp05LazyPrompt, exp05VeriktYAML)
 	t.Logf("A: packages=%v hexagonal=%v violations=%d", m.Packages, isHexagonalShape(m.Packages), m.ViolationsTotal)
 	t.Logf("%s", m.Response)
 }
@@ -118,9 +118,9 @@ func TestEXP05_ConditionA(t *testing.T) {
 // TestEXP05_ConditionB is condition B in isolation: lazy prompt, with guide.
 func TestEXP05_ConditionB(t *testing.T) {
 	agentGuardOrSkip(t)
-	bin := archwayBin(t)
-	guide := generateGuideFromYAML(t, bin, exp05ArchwayYAML)
-	m := runAgentExperiment(t, "EXP05-B-lazy-guide", guide+"\n\n---\n\n"+exp05LazyPrompt, exp05ArchwayYAML)
+	bin := veriktBin(t)
+	guide := generateGuideFromYAML(t, bin, exp05VeriktYAML)
+	m := runAgentExperiment(t, "EXP05-B-lazy-guide", guide+"\n\n---\n\n"+exp05LazyPrompt, exp05VeriktYAML)
 	t.Logf("B: packages=%v hexagonal=%v violations=%d", m.Packages, isHexagonalShape(m.Packages), m.ViolationsTotal)
 	t.Logf("%s", m.Response)
 }
@@ -128,7 +128,7 @@ func TestEXP05_ConditionB(t *testing.T) {
 // TestEXP05_ConditionC is condition C in isolation: thorough prompt, no guide.
 func TestEXP05_ConditionC(t *testing.T) {
 	agentGuardOrSkip(t)
-	m := runAgentExperiment(t, "EXP05-C-thorough-noguide", exp05ThoroughPrompt, exp05ArchwayYAML)
+	m := runAgentExperiment(t, "EXP05-C-thorough-noguide", exp05ThoroughPrompt, exp05VeriktYAML)
 	t.Logf("C: packages=%v hexagonal=%v violations=%d", m.Packages, isHexagonalShape(m.Packages), m.ViolationsTotal)
 	t.Logf("%s", m.Response)
 }
@@ -136,9 +136,9 @@ func TestEXP05_ConditionC(t *testing.T) {
 // TestEXP05_ConditionD is condition D in isolation: thorough prompt, with guide.
 func TestEXP05_ConditionD(t *testing.T) {
 	agentGuardOrSkip(t)
-	bin := archwayBin(t)
-	guide := generateGuideFromYAML(t, bin, exp05ArchwayYAML)
-	m := runAgentExperiment(t, "EXP05-D-thorough-guide", guide+"\n\n---\n\n"+exp05ThoroughPrompt, exp05ArchwayYAML)
+	bin := veriktBin(t)
+	guide := generateGuideFromYAML(t, bin, exp05VeriktYAML)
+	m := runAgentExperiment(t, "EXP05-D-thorough-guide", guide+"\n\n---\n\n"+exp05ThoroughPrompt, exp05VeriktYAML)
 	t.Logf("D: packages=%v hexagonal=%v violations=%d", m.Packages, isHexagonalShape(m.Packages), m.ViolationsTotal)
 	t.Logf("%s", m.Response)
 }
@@ -147,11 +147,11 @@ func TestEXP05_ConditionD(t *testing.T) {
 func TestEXP05_BvsC(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	bin := archwayBin(t)
-	guide := generateGuideFromYAML(t, bin, exp05ArchwayYAML)
+	bin := veriktBin(t)
+	guide := generateGuideFromYAML(t, bin, exp05VeriktYAML)
 
-	b := runAgentExperiment(t, "EXP05-B-lazy-guide", guide+"\n\n---\n\n"+exp05LazyPrompt, exp05ArchwayYAML)
-	c := runAgentExperiment(t, "EXP05-C-thorough-noguide", exp05ThoroughPrompt, exp05ArchwayYAML)
+	b := runAgentExperiment(t, "EXP05-B-lazy-guide", guide+"\n\n---\n\n"+exp05LazyPrompt, exp05VeriktYAML)
+	c := runAgentExperiment(t, "EXP05-C-thorough-noguide", exp05ThoroughPrompt, exp05VeriktYAML)
 
 	t.Logf("")
 	t.Logf("=== EXP-05: B vs C (flagship comparison) ===")

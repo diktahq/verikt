@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/engineclient"
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
-	"github.com/dcsg/archway/internal/rules"
+	"github.com/diktahq/verikt/internal/engineclient"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
+	"github.com/diktahq/verikt/internal/rules"
 )
 
-// TestCompareGoVsRustGrep runs the same grep rules against archway's own codebase
+// TestCompareGoVsRustGrep runs the same grep rules against verikt's own codebase
 // through both the Go engine and the Rust engine, and compares results.
 func TestCompareGoVsRustGrep(t *testing.T) {
 	repoRoot := findRepoRoot(t)
@@ -92,7 +92,7 @@ func TestBenchmarkGoVsRust(t *testing.T) {
 	}
 	rustDuration := time.Since(rustStart)
 
-	t.Logf("=== Benchmark: %d rules against archway codebase ===", len(goRules))
+	t.Logf("=== Benchmark: %d rules against verikt codebase ===", len(goRules))
 	t.Logf("Go engine:   %d violations in %v", totalGoViolations, goDuration)
 	t.Logf("Rust engine: %d violations in %v (engine internal: %.1fms)",
 		len(result.Findings), rustDuration, result.Summary.DurationMs)

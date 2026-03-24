@@ -33,7 +33,7 @@ The server never calls the database during token verification — all required i
 
 ## In Go
 
-archway's `auth-jwt` capability scaffolds middleware that validates tokens and injects claims into the request context:
+verikt's `auth-jwt` capability scaffolds middleware that validates tokens and injects claims into the request context:
 
 ```go
 func JWTMiddleware(verifier TokenVerifier) func(http.Handler) http.Handler {
@@ -58,9 +58,9 @@ func JWTMiddleware(verifier TokenVerifier) func(http.Handler) http.Handler {
 
 Handlers extract the authenticated user's identity from the context without re-verifying.
 
-## How archway Supports It
+## How verikt Supports It
 
-The `auth-jwt` capability requires `http-api` and scaffolds middleware with claims extraction and route-level authentication. archway warns when `multi-tenancy` is used without an auth capability — tenant IDs from unverified headers can be spoofed. See the [Capabilities Matrix](/reference/capabilities-matrix/).
+The `auth-jwt` capability requires `http-api` and scaffolds middleware with claims extraction and route-level authentication. verikt warns when `multi-tenancy` is used without an auth capability — tenant IDs from unverified headers can be spoofed. See the [Capabilities Matrix](/reference/capabilities-matrix/).
 
 <Aside type="tip">
 Keep JWT payloads small — they're sent with every request. Include only what you need (user ID, roles, tenant ID) and fetch additional user data from cache when required. Large JWTs add overhead to every request.

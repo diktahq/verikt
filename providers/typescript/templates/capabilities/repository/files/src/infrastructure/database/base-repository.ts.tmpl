@@ -1,0 +1,31 @@
+{{- if eq .OrmLibrary "prisma" -}}
+import type { BaseRepository } from '../../domain/repository.js'
+
+// PrismaBaseRepository — extend this for each aggregate root.
+// T is your domain type, ID is its identifier type, Model is the Prisma model type.
+export abstract class PrismaBaseRepository<T, ID, Model> implements BaseRepository<T, ID> {
+  abstract findById(id: ID): Promise<T | null>
+  abstract findAll(): Promise<T[]>
+  abstract save(entity: T): Promise<T>
+  abstract delete(id: ID): Promise<void>
+
+  // Map from Prisma model to domain entity.
+  protected abstract toDomain(model: Model): T
+
+  // Map from domain entity to Prisma create/update input.
+  protected abstract toPersistence(entity: T): Omit<Model, 'createdAt' | 'updatedAt'>
+}
+{{- end}}
+{{- if eq .OrmLibrary "drizzle" -}}
+import type { BaseRepository } from '../../domain/repository.js'
+
+// DrizzleBaseRepository — extend this for each aggregate root.
+// T is your domain type, ID is its identifier type.
+// Subclasses use the Drizzle query builder directly in each method.
+export abstract class DrizzleBaseRepository<T, ID> implements BaseRepository<T, ID> {
+  abstract findById(id: ID): Promise<T | null>
+  abstract findAll(): Promise<T[]>
+  abstract save(entity: T): Promise<T>
+  abstract delete(id: ID): Promise<void>
+}
+{{- end}}

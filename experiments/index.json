@@ -1,5 +1,5 @@
 {
-  "generated": "2026-03-17T00:43:26Z",
+  "generated": "2026-03-21T15:45:37Z",
   "experiments": [
     {
       "agents": {
@@ -69,7 +69,7 @@
     {
       "agents": {
         "claude-sonnet-4-6": {
-          "latest": "2026-03-17"
+          "latest": "2026-03-21"
         }
       },
       "id": "EXP-07",
@@ -95,6 +95,15 @@
       },
       "id": "EXP-09",
       "name": "What else do we need?",
+      "status": "complete"
+    },
+    {
+      "agents": {
+        "claude-sonnet-4-6": {
+          "latest": "2026-03-21"
+        }
+      },
+      "id": "EXP-10",
       "status": "complete"
     }
   ]

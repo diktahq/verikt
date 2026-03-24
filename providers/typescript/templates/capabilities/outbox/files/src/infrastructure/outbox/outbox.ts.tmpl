@@ -1,0 +1,59 @@
+// Transactional Outbox — guarantees event delivery even if the process crashes
+// between committing to the database and publishing to the event bus.
+//
+// Pattern:
+//   1. Within your DB transaction, INSERT an outbox record alongside your domain write.
+//   2. A polling processor (below) reads unpublished records and publishes them.
+//   3. On success, mark the record published. On failure, leave it for the next poll.
+//
+// This module is storage-agnostic. Plug in your Prisma/Mongoose client in OutboxStore.
+
+export interface OutboxRecord {
+  id: string
+  type: string                    // domain event type e.g. 'order.placed'
+  payload: Record<string, unknown>
+  createdAt: Date
+  publishedAt?: Date
+}
+
+// OutboxStore is the persistence interface. Implement for your database.
+export interface OutboxStore {
+  findUnpublished(limit?: number): Promise<OutboxRecord[]>
+  markPublished(id: string): Promise<void>
+}
+
+// OutboxPublisher defines how a record is forwarded (e.g. event bus, Kafka topic).
+export type OutboxPublisher = (record: OutboxRecord) => Promise<void>
+
+// OutboxProcessor polls the store and publishes pending records.
+export class OutboxProcessor {
+  private timer: ReturnType<typeof setInterval> | null = null
+
+  constructor(
+    private readonly store: OutboxStore,
+    private readonly publish: OutboxPublisher,
+    private readonly intervalMs = 5_000,
+  ) {}
+
+  start(): void {
+    this.timer = setInterval(() => void this.process(), this.intervalMs)
+    console.info('[outbox] processor started')
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer)
+    console.info('[outbox] processor stopped')
+  }
+
+  private async process(): Promise<void> {
+    const records = await this.store.findUnpublished(50)
+    for (const record of records) {
+      try {
+        await this.publish(record)
+        await this.store.markPublished(record.id)
+      } catch (err) {
+        console.error(`[outbox] failed to publish record ${record.id}`, err)
+      }
+    }
+  }
+}

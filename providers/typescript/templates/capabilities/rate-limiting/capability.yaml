@@ -1,0 +1,10 @@
+name: rate-limiting
+description: "Per-route rate limiting — express-rate-limit / @fastify/rate-limit based on framework"
+variables:
+  - name: HttpFramework
+    type: string
+    default: "express"
+    description: "HTTP framework (determines which rate-limit package is used)"
+    choices: ["express", "fastify", "hono"]
+suggests:
+  - http-api
