@@ -283,7 +283,7 @@ func TestCheckPrintCombinedTerminal_NilCheckerResult(t *testing.T) {
 		printCombinedTerminal(nil, nil, nil, cfg, flags)
 	})
 
-	assert.Contains(t, out, "verikt Check — hexagonal")
+	assert.Contains(t, out, "verikt check — hexagonal")
 	// Should not contain component info when checkerResult is nil.
 	assert.NotContains(t, out, "Components:")
 }
@@ -296,7 +296,7 @@ func TestCheckPrintCombinedTerminal_NilRuleResult(t *testing.T) {
 		printCombinedTerminal(nil, nil, nil, cfg, flags)
 	})
 
-	assert.Contains(t, out, "verikt Check — flat")
+	assert.Contains(t, out, "verikt check — flat")
 	assert.NotContains(t, out, "PROXY RULES")
 }
 
@@ -331,7 +331,7 @@ func TestCheckPrintCombinedTerminal_EmptyArchitectureFallback(t *testing.T) {
 		printCombinedTerminal(nil, nil, nil, cfg, flags)
 	})
 
-	assert.Contains(t, out, "verikt Check — project")
+	assert.Contains(t, out, "verikt check — project")
 }
 
 // --- getStagedFiles parsing ---

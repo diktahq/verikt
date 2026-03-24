@@ -28,10 +28,10 @@ var capabilityMeta = map[string]matrixEntry{
 	"kafka-consumer": {Category: "Messaging", Pattern: "Kafka Consumer", Description: "Consumer group with handler pattern, graceful shutdown"},
 
 	// Data
-	"mysql":     {Category: "Data", Pattern: "MySQL Repository", Description: "Connection pooling, health checks, repository pattern"},
-	"redis":     {Category: "Data", Pattern: "Redis Repository", Description: "Connection management, repository pattern"},
-	"squirrel":  {Category: "Data", Pattern: "Squirrel Query Builder", Description: "Fluent query construction, dynamic WHERE clauses, complex joins"},
-	"sqlc":      {Category: "Data", Pattern: "sqlc", Description: "Type-safe database access from SQL files, compile-time query validation"},
+	"mysql":    {Category: "Data", Pattern: "MySQL Repository", Description: "Connection pooling, health checks, repository pattern"},
+	"redis":    {Category: "Data", Pattern: "Redis Repository", Description: "Connection management, repository pattern"},
+	"squirrel": {Category: "Data", Pattern: "Squirrel Query Builder", Description: "Fluent query construction, dynamic WHERE clauses, complex joins"},
+	"sqlc":     {Category: "Data", Pattern: "sqlc", Description: "Type-safe database access from SQL files, compile-time query validation"},
 
 	// Security
 	"auth-jwt":      {Category: "Security", Pattern: "JWT Authentication", Description: "Middleware-based JWT validation with claims extraction"},
