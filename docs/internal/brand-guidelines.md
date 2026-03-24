@@ -15,17 +15,16 @@ GitHub org: **diktahq**. Brand voice: precise, direct, authoritative, forward.
 
 ## Logo / Wordmark
 
-The wordmark is all neutral color except the **k**, which is accent amber:
+The wordmark splits into two parts:
 
 - **veri** — neutral (white in dark mode, black in light mode)
-- **k** — accent amber (`#E8913A` dark, `#C47A2E` light)
-- **t** — neutral
+- **kt** — accent amber (`#E8913A` dark, `#C47A2E` light)
 
-The single amber letter creates a focal point — the "k" from verdict. Subtle, distinctive, reads at any size.
+The amber "kt" — from verdict — is the brand mark. Two letters, enough to register at any size.
 
 This applies everywhere the name appears as a visual element:
 - Navbar site title (custom `SiteTitle.astro` component)
-- Hero title on homepage (HTML in frontmatter: `veri<span style="color:var(--sl-color-accent)">k</span>t`)
+- Hero title on homepage (HTML in frontmatter: `veri<span style="color:var(--sl-color-accent)">kt</span>`)
 - OG image (`website/public/og.svg`)
 - Any future marketing material, social images, etc.
 
@@ -49,7 +48,7 @@ See `docs/internal/gtm-positioning.md` for the full positioning framework.
 
 | Token | Dark | Light | Usage |
 |-------|------|-------|-------|
-| Accent | `#E8913A` | `#8F5819` | "k" in logo, links, borders, h3 subcategories. Light mode darkened: amber deepened toward brown = "conscientious, dependable", passes AA (5.0:1) on warm cream bg. |
+| Accent | `#E8913A` | `#8F5819` | "kt" in logo, links, borders, h3 subcategories. Light mode darkened: amber deepened toward brown = "conscientious, dependable", passes AA (5.0:1) on warm cream bg. |
 | Accent low | `#1E1A14` | `#FFF5E8` | Backgrounds, subtle highlights |
 | Accent high | `#F5D4A8` | `#5C3D1A` | Tagline, emphasis text |
 | Background | `#111110` | `#F0EDE8` | Warm page background |
@@ -93,7 +92,7 @@ Aside semantic colors (tip, caution, danger) use Starlight defaults unless they 
 ## Rules
 
 - Never capitalize: always **verikt**
-- The amber "k" is the primary brand element — maintain it in all logo contexts
+- The amber "kt" is the primary brand element — maintain it in all logo contexts
 - No emoji in the brand name or tagline
 
 ## Implementation
