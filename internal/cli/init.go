@@ -105,7 +105,7 @@ func runInit(ctx context.Context, opts *initCommandOptions) error {
 type projectState int
 
 const (
-	stateGreenfield  projectState = iota
+	stateGreenfield projectState = iota
 	stateBrownfield
 	stateReconfigure
 )

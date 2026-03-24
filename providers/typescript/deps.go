@@ -106,7 +106,7 @@ var capabilityDeps = map[string]struct {
 			"@opentelemetry/auto-instrumentations-node": "^0.57",
 			"@opentelemetry/exporter-trace-otlp-http":   "^0.57",
 			"@opentelemetry/resources":                  "^1",
-			"@opentelemetry/semantic-conventions":        "^1",
+			"@opentelemetry/semantic-conventions":       "^1",
 		},
 		devDeps: map[string]string{},
 	},
