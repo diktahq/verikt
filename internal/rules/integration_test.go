@@ -11,7 +11,7 @@ import (
 
 func setupRulesDir(t *testing.T, projectDir string) string {
 	t.Helper()
-	rulesDir := filepath.Join(projectDir, ".archway", "rules")
+	rulesDir := filepath.Join(projectDir, ".verikt", "rules")
 	require.NoError(t, os.MkdirAll(rulesDir, 0o755))
 	return rulesDir
 }
@@ -173,7 +173,7 @@ scope:
 
 func TestRunRulesNonexistentDir(t *testing.T) {
 	dir := t.TempDir()
-	rulesDir := filepath.Join(dir, ".archway", "rules")
+	rulesDir := filepath.Join(dir, ".verikt", "rules")
 
 	result, err := RunRules(rulesDir, dir, nil, nil)
 	require.NoError(t, err)

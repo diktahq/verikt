@@ -1,20 +1,91 @@
 ---
 title: "redis capability"
-description: "Add Redis to your Go service with connection management and repository pattern scaffold for caching, sessions, and pub/sub."
+description: "Add Redis to your Go or TypeScript service with connection management, health checks, and a repository scaffold for caching, sessions, and pub/sub."
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-`redis` wires Redis into your Go service with a configured connection and repository pattern scaffold.
+`redis` wires Redis into your service with a configured connection, health checks, and a repository scaffold for common access patterns.
+
+## Why Redis
+
+The problem Redis solves is latency and contention on hot data. A database query that takes 10ms at low load can take 200ms under traffic when multiple requests hit the same rows. Redis holds that data in memory and returns it in under a millisecond, offloading the database and keeping response times consistent as traffic grows.
+
+Beyond caching, Redis is the backend behind several other capabilities in this catalog. [Rate limiting](/capabilities/rate-limiting/) needs a fast, atomic counter that works across multiple service instances — Redis's `INCR` with `EXPIRE` is the standard implementation. [Idempotency](/capabilities/idempotency/) stores request fingerprints with a TTL to deduplicate retried operations. Session storage works the same way: a signed session ID maps to a Redis key with a configurable expiry.
+
+Pub/sub is a different use case. Redis supports it natively, but if you need durable message delivery with consumer groups and replay, you want [Kafka](/capabilities/kafka-consumer/) or [event-bus](/capabilities/event-bus/) instead. Redis pub/sub is fire-and-forget: if no subscriber is connected when a message is published, it's gone.
+
+Redis is not a primary database. Data in Redis is volatile unless you configure persistence (RDB snapshots or AOF logging), and even with persistence enabled, it's not the right place for data you can't afford to lose. Use it for data you can reconstruct — cached database results, session state, transient locks.
 
 ## What You Get
 
-- Connection management
-- Repository pattern scaffold
+- Connection setup with lazy connect (connects on first use, not at startup)
+- Health check that verifies the connection is live
+- `getRedisClient` / `connectCache` / `disconnectCache` lifecycle functions
+- Repository scaffold with typed get/set/delete patterns
 
-## When to Use
+## Go Implementation
 
-Use `redis` for caching, session storage, rate limiting backends, or pub/sub. It pairs well with `idempotency` (key storage) and `rate-limiting` (token bucket backend).
+The Go capability uses [go-redis](https://github.com/redis/go-redis) — the official Redis client for Go. The scaffold initializes a `redis.Client` with connection pool settings read from environment variables and a `Ping`-based health check.
+
+```go
+// Client is created once and injected as a dependency.
+rdb := redis.NewClient(&redis.Options{
+    Addr:         cfg.Redis.Addr,
+    Password:     cfg.Redis.Password,
+    DB:           cfg.Redis.DB,
+    PoolSize:     cfg.Redis.PoolSize,
+    ReadTimeout:  cfg.Redis.ReadTimeout,
+    WriteTimeout: cfg.Redis.WriteTimeout,
+})
+
+// Operations propagate context for deadline and cancellation.
+err := rdb.Set(ctx, key, value, ttl).Err()
+val, err := rdb.Get(ctx, key).Result()
+if errors.Is(err, redis.Nil) {
+    // Cache miss — fetch from source and populate.
+}
+```
+
+The `redis.Nil` sentinel is important: it's not an error, it's a defined absence. Code that treats a cache miss as an error will produce false alert noise. The scaffold wraps this into a typed `CacheRepository` that returns `(value, found, error)` instead of leaking the sentinel.
+
+## TypeScript Implementation
+
+The TypeScript capability uses [ioredis](https://github.com/redis/ioredis) — a robust Node.js Redis client with full TypeScript support, automatic reconnection, and pipelining. The scaffold configures lazy connect mode: the client is created at module load time but doesn't attempt to connect until the first command, which lets the service start faster and avoids blocking startup on Redis availability.
+
+```typescript
+import { getRedisClient, connectCache, disconnectCache } from './cache/redis';
+
+// Wire into your platform lifecycle.
+await connectCache();
+
+const client = getRedisClient();
+
+// Cache-aside pattern with typed values.
+const cached = await client.get(`order:${orderId}`);
+if (cached) return JSON.parse(cached);
+
+const order = await orderRepository.findById(orderId);
+await client.set(`order:${orderId}`, JSON.stringify(order), 'EX', 300);
+return order;
+
+// Disconnect on shutdown.
+await disconnectCache();
+```
+
+The lifecycle functions (`connectCache`, `disconnectCache`) integrate with your platform's shutdown hooks so connections are closed cleanly on `SIGTERM`.
+
+## Key Patterns
+
+**Cache-aside** is the most common pattern: check Redis first, on a miss fetch from the primary store, write back to Redis with a TTL. The scaffold includes a typed helper for this that handles JSON serialization and the miss path.
+
+**Distributed locking** uses `SET key value NX PX ttl` — set only if not exists, with a millisecond expiry. This is the basis for preventing duplicate processing in [idempotency](/capabilities/idempotency/) and for mutual exclusion in [scheduler](/capabilities/scheduler/).
+
+**Rate limiting** uses `INCR` with `EXPIRE` for sliding-window counters. Each request increments a key scoped to the client identifier and time window; if the counter exceeds the threshold, the request is rejected. This works correctly across multiple service instances because Redis operations are single-threaded and atomic.
+
+<Aside type="caution">
+Redis is not a durable primary database. Only store data you can reconstruct from your primary store. If you need persistence guarantees, configure AOF with `appendfsync always` — and accept the performance cost.
+</Aside>
 
 ## Requirements & Suggestions
 
@@ -23,15 +94,16 @@ Use `redis` for caching, session storage, rate limiting backends, or pub/sub. It
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap redis
+verikt new my-service --cap redis
 # or add to an existing service:
-archway add redis
+verikt add redis
 ```
 
 ## Related Capabilities
 
 <CardGrid>
+  <Card title="rate-limiting" href="/capabilities/rate-limiting/">Token bucket rate limiter using Redis as a backend.</Card>
+  <Card title="idempotency" href="/capabilities/idempotency/">Use Redis as idempotency key storage for safe retries.</Card>
+  <Card title="circuit-breaker" href="/capabilities/circuit-breaker/">Protect Redis access with a circuit breaker.</Card>
   <Card title="docker" href="/capabilities/docker/">Local Redis instance via Docker Compose.</Card>
-  <Card title="idempotency" href="/capabilities/idempotency/">Use Redis as idempotency key storage.</Card>
-  <Card title="rate-limiting" href="/capabilities/rate-limiting/">Token bucket rate limiter that can use Redis as a backend.</Card>
 </CardGrid>

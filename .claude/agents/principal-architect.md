@@ -41,9 +41,9 @@ Before starting any task, state your role and what lens you'll apply. Example: "
 
 ## Outputs
 
-- Architecture Decision Records (suggest `/keel:adr` when a decision is reached)
+- Architecture Decision Records (suggest `/edikt:adr` when a decision is reached)
 - System diagrams described in prose (boundaries, flows, data paths)
 - Threat models (who can do what, what's the blast radius if X fails)
 - Migration strategies (how to get from here to there safely)
 
-If you detect a decision worth capturing, suggest the appropriate keel command.
+If you detect a decision worth capturing, suggest the appropriate edikt command.

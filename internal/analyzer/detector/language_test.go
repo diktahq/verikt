@@ -14,7 +14,7 @@ func TestDetectLanguage(t *testing.T) {
 	}{
 		{name: "go", dir: "go", wantLang: "go", wantConf: 1.0},
 		{name: "php", dir: "php", wantLang: "php", wantConf: 1.0},
-		{name: "node", dir: "node", wantLang: "node", wantConf: 0.9},
+		{name: "node", dir: "node", wantLang: "typescript", wantConf: 0.9},
 		{name: "python pyproject", dir: "python-pyproject", wantLang: "python", wantConf: 1.0},
 		{name: "python req", dir: "python-req", wantLang: "python", wantConf: 0.8},
 		{name: "rust", dir: "rust", wantLang: "rust", wantConf: 1.0},

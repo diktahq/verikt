@@ -1,0 +1,41 @@
+import { Queue, Worker, type Job, type ConnectionOptions } from 'bullmq'
+
+const connection: ConnectionOptions = {
+  host: process.env.REDIS_HOST ?? 'localhost',
+  port: Number(process.env.REDIS_PORT ?? 6379),
+}
+
+// JobData is the payload contract for a job. Extend per job type.
+export interface JobData {
+  [key: string]: unknown
+}
+
+// createQueue returns a typed queue for enqueuing jobs.
+//
+// Usage:
+//   const emailQueue = createQueue<EmailJobData>('email')
+//   await emailQueue.add('send-welcome', { userId: 'abc' })
+export function createQueue<T extends JobData>(name: string): Queue<T> {
+  return new Queue<T>(name, { connection })
+}
+
+// createWorker registers a processor for a named queue.
+// The processor receives each job and should throw on failure — BullMQ retries.
+//
+// Usage:
+//   createWorker<EmailJobData>('email', async (job) => {
+//     await sendEmail(job.data.userId)
+//   })
+export function createWorker<T extends JobData>(
+  name: string,
+  processor: (job: Job<T>) => Promise<void>,
+  concurrency = 5,
+): Worker<T> {
+  const worker = new Worker<T>(name, processor, { connection, concurrency })
+
+  worker.on('failed', (job, err) => {
+    console.error(`[worker:${name}] job ${job?.id} failed`, err)
+  })
+
+  return worker
+}

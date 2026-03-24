@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/dcsg/archway/internal/engineclient"
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	"github.com/diktahq/verikt/internal/engineclient"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 )
 
 // RunRules loads rules from rulesDir, validates them, and runs valid rules.

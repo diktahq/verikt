@@ -24,8 +24,8 @@ jobs:
       - name: Place engine binary for embed
         run: |
           mkdir -p internal/engineclient/bin
-          cp engine/target/x86_64-unknown-linux-musl/release/archway-engine internal/engineclient/bin/archway-engine-linux-amd64
-          chmod +x internal/engineclient/bin/archway-engine-linux-amd64
+          cp engine/target/x86_64-unknown-linux-musl/release/verikt-engine internal/engineclient/bin/verikt-engine-linux-amd64
+          chmod +x internal/engineclient/bin/verikt-engine-linux-amd64
       - name: Test
         run: go test $(go list ./... | grep -v '/experiments/\|/engineclient/experiment$')
       - name: Vet
@@ -51,8 +51,8 @@ jobs:
       - name: Place engine binary for embed
         run: |
           mkdir -p internal/engineclient/bin
-          cp engine/target/x86_64-unknown-linux-musl/release/archway-engine internal/engineclient/bin/archway-engine-linux-amd64
-          chmod +x internal/engineclient/bin/archway-engine-linux-amd64
+          cp engine/target/x86_64-unknown-linux-musl/release/verikt-engine internal/engineclient/bin/verikt-engine-linux-amd64
+          chmod +x internal/engineclient/bin/verikt-engine-linux-amd64
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: v2.11.3
@@ -79,11 +79,11 @@ jobs:
       - name: Place engine binary for embed
         run: |
           mkdir -p internal/engineclient/bin
-          cp engine/target/x86_64-unknown-linux-musl/release/archway-engine internal/engineclient/bin/archway-engine-linux-amd64
-          chmod +x internal/engineclient/bin/archway-engine-linux-amd64
-      - name: Build archway
+          cp engine/target/x86_64-unknown-linux-musl/release/verikt-engine internal/engineclient/bin/verikt-engine-linux-amd64
+          chmod +x internal/engineclient/bin/verikt-engine-linux-amd64
+      - name: Build verikt
         run: go build $(go list ./... | grep -v '/experiments/\|/engineclient/experiment$')
       - name: Run template compilation tests
         env:
-          ARCHWAY_TEST_GO_VERSION: ${{ matrix.go-version }}
+          VERIKT_TEST_GO_VERSION: ${{ matrix.go-version }}
         run: go test ./internal/scaffold/ -run TestTemplateCompilation -count=1 -v

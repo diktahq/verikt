@@ -4,14 +4,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // engineHexagonalComponents returns component config for the engine dep test.
-// Uses the archway-module testdata so the engine's module-path stripping works.
+// Uses the verikt-module testdata so the engine's module-path stripping works.
 // domain/domain.go imports service — a clear hexagonal violation.
 func engineHexagonalComponents() []config.Component {
 	p := "internal/engineclient/experiment/testdata/hexagonal"
@@ -31,7 +31,7 @@ func TestDeps_GoPath(t *testing.T) {
 		{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "port"}},
 		{Name: "adapter", In: []string{"adapter/**"}, MayDependOn: []string{"domain", "port", "service"}},
 	}
-	cfg := &config.ArchwayConfig{Language: "go", Components: goComponents}
+	cfg := &config.VeriktConfig{Language: "go", Components: goComponents}
 	projectPath := hexagonalProjectPath(t)
 
 	start := time.Now()
@@ -49,7 +49,7 @@ func TestDeps_GoPath(t *testing.T) {
 }
 
 // TestDeps_EnginePath runs dependency checks via the Rust import graph engine.
-// Uses repo root as project path with archway-module testdata so import paths can be resolved.
+// Uses repo root as project path with verikt-module testdata so import paths can be resolved.
 func TestDeps_EnginePath(t *testing.T) {
 	client := newEngineClient(t)
 	projectPath := findRepoRoot(t)
@@ -79,7 +79,7 @@ func TestDeps_Parity(t *testing.T) {
 		{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "port"}},
 		{Name: "adapter", In: []string{"adapter/**"}, MayDependOn: []string{"domain", "port", "service"}},
 	}
-	cfg := &config.ArchwayConfig{Language: "go", Components: goComponents}
+	cfg := &config.VeriktConfig{Language: "go", Components: goComponents}
 
 	goStart := time.Now()
 	goResult, err := checker.Check(cfg, hexagonalProjectPath(t))

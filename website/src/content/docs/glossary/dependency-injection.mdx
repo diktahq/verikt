@@ -60,9 +60,9 @@ func Run(version string) error {
 }
 ```
 
-The entire dependency graph is constructed in one place. This is the bootstrap pattern archway scaffolds.
+The entire dependency graph is constructed in one place. This is the bootstrap pattern verikt scaffolds.
 
-## How archway Supports It
+## How verikt Supports It
 
 The `bootstrap` capability generates a thin `main.go` and `internal/bootstrap/bootstrap.go` where all dependency wiring lives. Each capability adds its initialization code to this composition root via partial injection. See [How It Works](/concepts/how-it-works/) for how partials are injected.
 
@@ -80,6 +80,6 @@ Inject interfaces, not concrete types. If you inject `*PostgresOrderRepository` 
     Repositories are injected into services as interfaces — a canonical DI use case. [Repository Pattern](/glossary/repository-pattern/)
   </Card>
   <Card title="How It Works" icon="right-arrow">
-    How archway's bootstrap pattern and partial injection implement DI automatically. [How It Works](/concepts/how-it-works/)
+    How verikt's bootstrap pattern and partial injection implement DI automatically. [How It Works](/concepts/how-it-works/)
   </Card>
 </CardGrid>

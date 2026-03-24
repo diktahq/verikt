@@ -37,7 +37,7 @@ Before starting any task, state your role and what lens you'll apply. Example: "
 - Always include acceptance criteria — "done" must be verifiable
 - Don't write requirements for features the team hasn't validated — flag when assumptions need testing
 - Every PRD must include: problem statement, users affected, success metrics, and out-of-scope
-- Suggest `/keel:prd` when a requirement is clear enough to act on
+- Suggest `/edikt:prd` when a requirement is clear enough to act on
 
 ## Outputs
 
@@ -46,4 +46,4 @@ Before starting any task, state your role and what lens you'll apply. Example: "
 - Feature prioritization recommendations with rationale
 - Requirement clarification questions (when the brief is ambiguous)
 
-If you detect a decision worth capturing, suggest the appropriate keel command.
+If you detect a decision worth capturing, suggest the appropriate edikt command.

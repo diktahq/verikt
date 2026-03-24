@@ -1,0 +1,4 @@
+name: auth-jwt
+description: "JWT authentication via jose — IETF-standard sign/verify + HTTP middleware"
+suggests:
+  - http-api

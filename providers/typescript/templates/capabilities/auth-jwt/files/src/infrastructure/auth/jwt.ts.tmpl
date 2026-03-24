@@ -1,0 +1,40 @@
+import { SignJWT, jwtVerify, type JWTPayload } from 'jose'
+
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required — refusing to start with no secret')
+}
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
+const ALGORITHM = 'HS256'
+const ISSUER = '{{.ServiceName}}'
+
+export interface TokenPayload extends JWTPayload {
+  sub: string   // subject — user or service identifier
+  role?: string
+}
+
+// signToken issues a signed JWT with the given payload.
+// Default expiry: 1 hour. Pass expiresIn to override (e.g. '7d', '30m').
+export async function signToken(
+  payload: Omit<TokenPayload, 'iss' | 'iat'>,
+  expiresIn: string = '1h',
+): Promise<string> {
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: ALGORITHM })
+    .setIssuedAt()
+    .setIssuer(ISSUER)
+    .setExpirationTime(expiresIn)
+    .sign(SECRET)
+}
+
+// verifyToken validates a JWT and returns its payload.
+// Throws jose errors (JWTExpired, JWTInvalid, etc.) on failure.
+export async function verifyToken(token: string): Promise<TokenPayload> {
+  const { payload } = await jwtVerify(token, SECRET, { issuer: ISSUER })
+  return payload as TokenPayload
+}
+
+// extractBearerToken pulls the token from an Authorization: Bearer <token> header.
+export function extractBearerToken(authHeader: string | undefined): string | null {
+  if (!authHeader?.startsWith('Bearer ')) return null
+  return authHeader.slice(7)
+}

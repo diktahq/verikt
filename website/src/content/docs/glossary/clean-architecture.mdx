@@ -15,7 +15,7 @@ The practical benefit is testability and replaceability. Use cases can be tested
 
 ## How It Works
 
-The four layers in archway's clean architecture scaffold:
+The four layers in verikt's clean architecture scaffold:
 
 ```
 internal/entity/            → Core business entities. No external dependencies.
@@ -43,11 +43,11 @@ type CreateOrderUseCase struct {
 
 The `usecase` package imports `entity` — nothing else. The concrete `PostgresOrderRepository` in `infrastructure/` imports `usecase` (for the interface) and `entity`, implementing the interface without the use case knowing.
 
-`archway check` enforces these import boundaries statically, catching violations before they accumulate.
+`verikt check` enforces these import boundaries statically, catching violations before they accumulate.
 
-## How archway Supports It
+## How verikt Supports It
 
-archway scaffolds the clean architecture layout with `entity/`, `usecase/`, `interface/`, and `infrastructure/` directories and encodes the dependency rules in `archway.yaml`. Run `archway check` to catch dependency violations. See [Architectures](/concepts/architectures/) for the full comparison.
+verikt scaffolds the clean architecture layout with `entity/`, `usecase/`, `interface/`, and `infrastructure/` directories and encodes the dependency rules in `verikt.yaml`. Run `verikt check` to catch dependency violations. See [Architectures](/concepts/architectures/) for the full comparison.
 
 <Aside type="tip">
 The interface/handler layer is a thin translator — it converts HTTP requests into use case commands and use case results into HTTP responses. Business decisions belong in use cases, not handlers.
@@ -63,6 +63,6 @@ The interface/handler layer is a thin translator — it converts HTTP requests i
     DDD pairs naturally with clean architecture — entities and use cases map to DDD concepts. [Domain-Driven Design](/glossary/domain-driven-design/)
   </Card>
   <Card title="Architectures" icon="right-arrow">
-    See how archway implements clean architecture alongside hexagonal, layered, and flat. [Architectures](/concepts/architectures/)
+    See how verikt implements clean architecture alongside hexagonal, layered, and flat. [Architectures](/concepts/architectures/)
   </Card>
 </CardGrid>

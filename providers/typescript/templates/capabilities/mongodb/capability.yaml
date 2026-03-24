@@ -1,0 +1,4 @@
+name: mongodb
+description: "MongoDB via Mongoose — connection module and schema helpers"
+suggests:
+  - docker

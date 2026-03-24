@@ -3,7 +3,7 @@ package checker
 import (
 	"fmt"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 )
 
 // DecisionViolation represents an undecided architecture decision gate.

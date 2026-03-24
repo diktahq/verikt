@@ -1,9 +1,9 @@
 ---
 title: "EXP-09 — Does the Guide Expand What Agents Recommend?"
-description: Without the guide, the agent gave generic advice. With it — archway capability names, smart suggestions, and a generated RECOMMENDATIONS file with archway add commands.
+description: Without the guide, the agent gave generic advice. With it — verikt capability names, smart suggestions, and a generated RECOMMENDATIONS file with verikt add commands.
 ---
 
-Without the guide, the agent says "consider adding retries." With it, the agent generates a RECOMMENDATIONS file with `archway add retry`, `archway add circuit-breaker`, and `archway add idempotency` commands. This experiment isolates the guide as the variable.
+Without the guide, the agent says "consider adding retries." With it, the agent generates a RECOMMENDATIONS file with `verikt add retry`, `verikt add circuit-breaker`, and `verikt add idempotency` commands. This experiment isolates the guide as the variable.
 
 The RECOMMENDATIONS file appeared in every guide condition run. It never appeared in control runs.
 
@@ -14,7 +14,7 @@ The RECOMMENDATIONS file appeared in every guide condition run. It never appeare
   </div>
   <div class="exp-compare-col">
     <div class="exp-compare-label">With guide</div>
-    <div class="exp-compare-value"><code>archway add retry circuit-breaker idempotency</code></div>
+    <div class="exp-compare-value"><code>verikt add retry circuit-breaker idempotency</code></div>
   </div>
 </div>
 
@@ -25,10 +25,10 @@ The RECOMMENDATIONS file appeared in every guide condition run. It never appeare
 ```
 Without guide               With guide
 ─────────────────────       ──────────────────────────────
-"add error handling"        circuit-breaker  → archway add circuit-breaker
-"implement retries"         retry            → archway add retry
-"consider timeouts"         idempotency      → archway add idempotency
-                            timeout          → archway add timeout
+"add error handling"        circuit-breaker  → verikt add circuit-breaker
+"implement retries"         retry            → verikt add retry
+"consider timeouts"         idempotency      → verikt add idempotency
+                            timeout          → verikt add timeout
                             (RECOMMENDATIONS file generated)
 ```
 
@@ -71,7 +71,7 @@ Without guide               With guide
 | Violations | 0 | 0 |
 | Pass rate | 2/2 | 2/2 |
 | RECOMMENDATIONS file | Never | **Always** |
-| Capability vocabulary | Generic phrases | **`archway add` commands** |
+| Capability vocabulary | Generic phrases | **`verikt add` commands** |
 | Cache tokens (run 2) | 12,085 | **62,630** |
 | Output tokens (run 2) | 2,309 | **6,470** |
 
@@ -98,4 +98,6 @@ n=2. Architecture shape shows variance across runs — needs 1 more run per cond
 
 [→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
 
-[→ Artifacts on GitHub](https://github.com/dcsg/archway/tree/main/experiments/EXP-09)
+[→ Artifacts on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-09)
+
+[→ EXP-10: Does a verification checkpoint improve consistency?](/experiments/exp-10/)

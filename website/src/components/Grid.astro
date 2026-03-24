@@ -6,19 +6,19 @@ interface Props {
 const { cols = 2 } = Astro.props;
 ---
 
-<div class:list={['archway-grid', `cols-${cols}`, 'not-content']}>
+<div class:list={['verikt-grid', `cols-${cols}`, 'not-content']}>
   <slot />
 </div>
 
 <style>
-  .archway-grid {
+  .verikt-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 1.5rem;
     margin-top: 0.75rem;
   }
 
-  .archway-grid > :global(*) {
+  .verikt-grid > :global(*) {
     min-height: 0;
   }
 

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package engine;
 
-option go_package = "github.com/dcsg/archway/internal/engineclient/pb";
+option go_package = "github.com/diktahq/verikt/internal/engineclient/pb";
 
 // PoC: Ping + Check (grep only). Full schema in Obsidian design doc.
 

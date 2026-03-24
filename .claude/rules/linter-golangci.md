@@ -3,9 +3,9 @@ paths: "**/*.go"
 version: "1.0.0"
 source: linter
 linter: golangci-lint
-generated-by: keel:sync
+generated-by: edikt:sync
 ---
-<!-- keel:generated — synced from .golangci.yml -->
+<!-- edikt:generated — synced from .golangci.yml -->
 
 # Go Linter Rules (golangci-lint)
 

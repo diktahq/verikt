@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 )
 
 // AntiPattern mirrors checker.AntiPattern but lives here to avoid import cycles.

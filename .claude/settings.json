@@ -5,7 +5,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.keel/hooks/session-start.sh"
+            "command": "$HOME/.edikt/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/user-prompt-submit.sh"
           }
         ]
       }
@@ -16,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.keel/hooks/pre-tool-use.sh"
+            "command": "$HOME/.edikt/hooks/pre-tool-use.sh"
           }
         ]
       }
@@ -27,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.keel/hooks/post-tool-use.sh"
+            "command": "$HOME/.edikt/hooks/post-tool-use.sh"
           }
         ]
       }
@@ -37,7 +47,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.keel/hooks/stop-hook.sh"
+            "command": "$HOME/.edikt/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/subagent-stop.sh"
           }
         ]
       }
@@ -47,7 +67,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.keel/hooks/pre-compact.sh"
+            "command": "$HOME/.edikt/hooks/pre-compact.sh"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/post-compact.sh"
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/instructions-loaded.sh"
           }
         ]
       }

@@ -28,7 +28,7 @@ The simplest CQRS implementation uses a single database: the write side uses nor
 
 ## In Go
 
-archway's `cqrs` capability scaffolds a command/query bus with handler interfaces:
+verikt's `cqrs` capability scaffolds a command/query bus with handler interfaces:
 
 ```go
 // Command — mutates state
@@ -54,7 +54,7 @@ type OrderView struct {
 
 The command handler validates and applies the command to the domain aggregate. The query handler reads directly from a denormalized projection, often bypassing the domain layer entirely for performance.
 
-## How archway Supports It
+## How verikt Supports It
 
 The `cqrs` capability provides the command/query bus, handler interfaces, and separation scaffolding. It pairs naturally with `ddd` (for aggregates on the write side) and `event-bus` (for propagating events to the read side). See [Capabilities](/concepts/capabilities/) for configuration details.
 

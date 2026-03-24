@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": {{- if .Features.es2024}}"ES2024"{{- else}}"ES2023"{{- end}},
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": [{{- if .Features.es2024}}"ES2024"{{- else}}"ES2023"{{- end}}],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "declaration": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

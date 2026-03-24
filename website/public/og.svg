@@ -9,7 +9,7 @@
   </radialGradient>
   <rect width="1200" height="630" fill="url(#vignette)" />
 
-  <!-- Logo: arch (white) + way (amber) -->
+  <!-- Logo: ver (white) + ikt (amber) -->
   <text
     x="600" y="248"
     font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
@@ -18,7 +18,7 @@
     text-anchor="middle"
     letter-spacing="-3"
   >
-    <tspan fill="#ffffff">arch</tspan><tspan fill="#E8913A">way</tspan>
+    <tspan fill="#ffffff">ver</tspan><tspan fill="#E8913A">ikt</tspan>
   </text>
 
   <!-- Tagline — italic serif, accent high colour -->
@@ -31,7 +31,7 @@
     fill="#F5D4A8"
     text-anchor="middle"
     letter-spacing="0.3"
-  >Architecture-aware service composer and enforcer</text>
+  >Your architecture, in every agent session</text>
 
   <!-- Divider -->
   <line x1="440" y1="358" x2="760" y2="358" stroke="#2a2520" stroke-width="1" />
@@ -51,5 +51,5 @@
   <text x="860" y="424" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="14" fill="#555" text-anchor="middle">enforce rules in CI · zero config</text>
 
   <!-- URL -->
-  <text x="600" y="535" font-family="-apple-system, BlinkMacSystemFont, monospace" font-size="16" fill="#444" text-anchor="middle" letter-spacing="0.5">archway.dcsg.me</text>
+  <text x="600" y="535" font-family="-apple-system, BlinkMacSystemFont, monospace" font-size="16" fill="#444" text-anchor="middle" letter-spacing="0.5">verikt.dev</text>
 </svg>

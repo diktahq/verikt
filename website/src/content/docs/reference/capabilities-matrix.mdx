@@ -1,6 +1,6 @@
 ---
 title: Capabilities Matrix
-description: Quick-reference matrix of all 63 archway capabilities for service scaffolding — transport, data, security, resilience, observability, and DevOps modules
+description: Quick-reference matrix of all 65 verikt capabilities — transport, data, security, resilience, observability, and DevOps modules for Go and TypeScript
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
@@ -8,145 +8,151 @@ tableOfContents:
 
 import { Aside } from '@astrojs/starlight/components';
 
+<Aside type="note">
+TypeScript/Node.js is fully supported with 39 capabilities across all core categories. Some capabilities (`grpc`, `graphql`, `ddd`, `nats`, `bff`, `sse`, `websocket`, and others) are Go-only in the current release.
+</Aside>
+
 ## Architectures
 
-| Architecture | Structure | Best For |
-|-------------|-----------|----------|
-| **Hexagonal** | `domain/` → `port/` → `service/` → `adapter/` | Production APIs, microservices |
-| **Layered** | `handler/` → `service/` → `repository/` → `model/` | Standard CRUD APIs |
-| **Clean** | `entity/` → `usecase/` → `interface/` → `infrastructure/` | Complex business logic |
-| **Flat** | Single package | CLIs, scripts, prototypes |
+| Architecture | Structure | Best For | Languages |
+|-------------|-----------|----------|-----------|
+| **Hexagonal** | `domain/` → `port/` → `service/` → `adapter/` | Production APIs, microservices | Go, TS |
+| **Layered** | `handler/` → `service/` → `repository/` → `model/` | Standard CRUD APIs | Go |
+| **Clean** | `entity/` → `usecase/` → `interface/` → `infrastructure/` | Complex business logic | Go |
+| **Flat** | Single package | CLIs, scripts, prototypes | Go, TS |
 
 ## Service Capabilities
 
 ### Transport & API
 
-| Capability | What You Get |
-|-----------|-------------|
-| `http-api` | Chi router, middleware, RFC 7807 errors, OpenAPI |
-| `grpc` | Protocol Buffers, buf tooling, interceptors |
-| `graphql` | gqlgen config, schema, resolver scaffolding, playground |
-| `websocket` | WebSocket upgrader, connection management |
-| `sse` | SSE handler, event formatting, heartbeat support |
-| `bff` | Service aggregation, response shaping, backend abstractions |
-| `cors` | CORS middleware, configurable origins/methods/headers |
-| `rate-limiting` | Token bucket limiter, per-endpoint config |
-| `timeout` | Timeout middleware, per-route timeouts, context cancellation |
-| `api-versioning` | Header/path-based versioning strategies |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `http-api` | HTTP router, middleware, error handling (Chi in Go, Express/Fastify/Hono in TypeScript) | Go, TS |
+| `grpc` | Protocol Buffers, buf tooling, interceptors | Go |
+| `graphql` | gqlgen config, schema, resolver scaffolding, playground | Go |
+| `websocket` | WebSocket upgrader, connection management | Go |
+| `sse` | SSE handler, event formatting, heartbeat support | Go |
+| `bff` | Service aggregation, response shaping, backend abstractions | Go |
+| `cors` | CORS middleware, configurable origins/methods/headers | Go, TS |
+| `rate-limiting` | Token bucket limiter, per-endpoint config | Go, TS |
+| `timeout` | Timeout middleware, per-route timeouts, context cancellation | Go, TS |
+| `api-versioning` | Header/path-based versioning strategies | Go |
 
 ### Data & Storage
 
-| Capability | What You Get |
-|-----------|-------------|
-| `postgres` | pgx driver, connection pool, health checks, repository scaffold |
-| `mysql` | Connection pooling, health checks, repository scaffold |
-| `mongodb` | Client connection, collection abstractions, BSON helpers |
-| `sqlite` | Pure Go SQLite, query helpers |
-| `dynamodb` | DynamoDB client, table operations, query builders |
-| `redis` | Connection management, repository pattern |
-| `elasticsearch` | Client setup, index management, search query builders |
-| `s3` | S3 client, upload/download, presigned URLs, multipart upload |
-| `migrations` | golang-migrate runner, up/down files, version tracking |
-| `repository` | Generic repository (Go generics), common CRUD operations |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `postgres` | Connection pool, health checks, repository scaffold (pgx in Go, Prisma or Drizzle in TypeScript) | Go, TS |
+| `mysql` | Connection pooling, health checks, repository scaffold (database/sql in Go, Prisma or Drizzle in TypeScript) | Go, TS |
+| `squirrel` | Fluent SQL query builder, dynamic WHERE clauses, complex joins | Go |
+| `sqlc` | Type-safe database access from SQL files, compile-time query validation | Go |
+| `mongodb` | Client connection, collection abstractions (official driver in Go, Mongoose in TypeScript) | Go, TS |
+| `sqlite` | Embedded SQLite, query helpers (modernc.org in Go, better-sqlite3 in TypeScript) | Go, TS |
+| `dynamodb` | DynamoDB client, table operations, query builders | Go |
+| `redis` | Connection management, repository pattern (go-redis in Go, ioredis in TypeScript) | Go, TS |
+| `elasticsearch` | Client setup, index management, search query builders | Go |
+| `s3` | S3 client, upload/download, presigned URLs, multipart upload | Go |
+| `migrations` | Migration runner, version tracking (golang-migrate in Go, Prisma Migrate in TypeScript) | Go, TS |
+| `repository` | Repository interface, base CRUD (Go generics in Go, abstract PrismaBaseRepository in TypeScript) | Go, TS |
 
 ### Messaging & Events
 
-| Capability | What You Get |
-|-----------|-------------|
-| `kafka-consumer` | Consumer group, handler pattern, graceful drain |
-| `nats` | NATS + JetStream, publisher/subscriber, durable consumers |
-| `event-bus` | In-process event publisher, subscriber interface, async dispatch |
-| `outbox` | Transactional outbox, relay worker, at-least-once delivery |
-| `saga` | Saga orchestrator, step executor, compensation logic |
-| `worker` | Worker pool, job interface, graceful shutdown |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `kafka-consumer` | Consumer group, handler pattern, graceful drain | Go, TS |
+| `nats` | NATS + JetStream, publisher/subscriber, durable consumers | Go |
+| `event-bus` | In-process event publisher, subscriber interface, async dispatch | Go, TS |
+| `outbox` | Transactional outbox, relay worker, at-least-once delivery | Go, TS |
+| `saga` | Saga orchestrator, step executor, compensation logic | Go |
+| `worker` | Worker pool, job interface, graceful shutdown | Go, TS |
 
 ## Resilience & Security
 
 ### Resilience
 
-| Capability | What You Get |
-|-----------|-------------|
-| `circuit-breaker` | Open/half-open/closed states, configurable thresholds |
-| `retry` | Exponential backoff with jitter, max attempts |
-| `bulkhead` | Semaphore concurrency limiter, timeout support |
-| `idempotency` | Idempotency keys, duplicate detection |
-| `graceful` | Signal handling, ordered shutdown, component registration |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `circuit-breaker` | Open/half-open/closed states, configurable thresholds | Go, TS |
+| `retry` | Exponential backoff with jitter, max attempts | Go, TS |
+| `bulkhead` | Semaphore concurrency limiter, timeout support | Go |
+| `idempotency` | Idempotency keys, duplicate detection | Go, TS |
+| `graceful` | Signal handling, ordered shutdown, component registration | Go, TS |
 
 ### Security
 
-| Capability | What You Get |
-|-----------|-------------|
-| `auth-jwt` | JWT middleware, claims extraction, route-level auth |
-| `oauth2` | OAuth2 flows, token exchange, session management |
-| `encryption` | AES-256-GCM encrypt/decrypt, key management helpers |
-| `multi-tenancy` | Tenant middleware, context propagation, query scoping |
-| `request-id` | Request ID middleware, context propagation, log correlation |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `auth-jwt` | JWT middleware, claims extraction, route-level auth | Go, TS |
+| `oauth2` | OAuth2 flows, token exchange, session management | Go |
+| `encryption` | AES-256-GCM encrypt/decrypt, key management helpers | Go, TS |
+| `multi-tenancy` | Tenant middleware, context propagation, query scoping | Go |
+| `request-id` | Request ID middleware, context propagation, log correlation | Go, TS |
 
 ### Observability
 
-| Capability | What You Get |
-|-----------|-------------|
-| `health` | `/health` + `/ready` endpoints, component registration |
-| `observability` | OpenTelemetry traces + metrics, OTLP/gRPC export |
-| `audit-log` | Structured audit events, configurable retention |
-| `http-client` | Resilient HTTP client with retry + observability |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `health` | `/health` + `/ready` endpoints, component registration | Go, TS |
+| `observability` | OpenTelemetry traces + metrics, OTLP/gRPC export | Go, TS |
+| `audit-log` | Structured audit events, configurable retention | Go, TS |
+| `http-client` | Resilient HTTP client with retry + observability | Go, TS |
 
 ## UI & Communication
 
 ### UI & Templating
 
-| Capability | What You Get |
-|-----------|-------------|
-| `templ` | Type-safe HTML templating, layout components, hot reload |
-| `htmx` | HTMX response helpers, partial rendering, swap config |
-| `static-assets` | Embedded file server, cache-control headers |
-| `i18n` | Message catalogs (YAML), locale middleware, context propagation |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `templ` | Type-safe HTML templating, layout components, hot reload | Go |
+| `htmx` | HTMX response helpers, partial rendering, swap config | Go |
+| `static-assets` | Embedded file server, cache-control headers | Go |
+| `i18n` | Message catalogs (YAML), locale middleware, context propagation | Go |
 
 ### Email & Notifications
 
-| Capability | What You Get |
-|-----------|-------------|
-| `email-gateway` | Email gateway interface, provider abstraction, templates |
-| `mailpit` | Local SMTP testing, Docker service (Web UI :8025) |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `email-gateway` | Email gateway interface, provider abstraction, templates | Go, TS |
+| `mailpit` | Local SMTP testing, Docker service (Web UI :8025) | Go |
 
 ## Application & DevOps
 
 ### Application Core
 
-| Capability | What You Get |
-|-----------|-------------|
-| `platform` | Config, lifecycle, slog logging, PII redaction, live reload |
-| `bootstrap` | Thin `main.go` + wiring in `internal/bootstrap/` |
-| `validation` | Input validation rules, error formatting |
-| `uuid` | UUIDv7 generation, type-safe ID wrappers |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `platform` | Config, lifecycle, slog logging, PII redaction, live reload | Go, TS |
+| `bootstrap` | Thin `main.go` + wiring in `internal/bootstrap/` | Go, TS |
+| `validation` | Input validation rules, error formatting | Go |
+| `uuid` | UUIDv7 generation, type-safe ID wrappers | Go, TS |
 
 ### Architecture Patterns
 
-| Capability | What You Get |
-|-----------|-------------|
-| `cqrs` | Command/query bus, handler interfaces, read/write separation |
-| `ddd` | AggregateRoot, ValueObject, DomainEvent base types |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `cqrs` | Command/query bus, handler interfaces, read/write separation | Go, TS |
+| `ddd` | AggregateRoot, ValueObject, DomainEvent base types | Go |
 
 ### Feature Management
 
-| Capability | What You Get |
-|-----------|-------------|
-| `feature-flags` | Flag evaluator, YAML-based definitions, context-aware eval |
-| `scheduler` | Cron-like scheduler, job registration, configurable intervals |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `feature-flags` | Flag evaluator, YAML-based definitions, context-aware eval | Go |
+| `scheduler` | Cron-like scheduler, job registration, configurable intervals | Go, TS |
 
 ### Development & DevOps
 
-| Capability | What You Get |
-|-----------|-------------|
-| `docker` | `docker-compose.yml`, `.env.example` |
-| `devcontainer` | VS Code Dev Container, Docker config, extension recs |
-| `ci-github` | Issue templates, PR template |
-| `ci-gitlab` | `.gitlab-ci.yml` with build/test/lint/deploy stages |
-| `ci-bitbucket` | `bitbucket-pipelines.yml` with build/test/deploy steps |
-| `makefile` | Build, test, lint, run, clean targets |
-| `linting` | `.golangci.yaml` with curated linter set |
-| `testing` | Test helpers, example table-driven tests, fixtures pattern |
-| `pre-commit` | Pre-commit hooks for format, lint, test |
+| Capability | What You Get | Languages |
+|-----------|-------------|-----------|
+| `docker` | `docker-compose.yml`, `.env.example` | Go, TS |
+| `devcontainer` | VS Code Dev Container, Docker config, extension recs | Go, TS |
+| `ci-github` | Issue templates, PR template | Go, TS |
+| `ci-gitlab` | `.gitlab-ci.yml` with build/test/lint/deploy stages | Go |
+| `ci-bitbucket` | `bitbucket-pipelines.yml` with build/test/deploy steps | Go |
+| `makefile` | Build, test, lint, run, clean targets | Go, TS |
+| `linting` | Curated linter config (golangci-lint in Go, ESLint + Prettier in TypeScript) | Go, TS |
+| `testing` | Test helpers, example table-driven tests, fixtures pattern | Go, TS |
+| `pre-commit` | Pre-commit hooks for format, lint, test | Go, TS |
 
 ## Conflicts
 
@@ -159,9 +165,9 @@ Some capabilities cannot coexist:
 
 ## Smart Suggestions
 
-When you select capabilities, archway suggests what you might be missing:
+When you select capabilities, verikt suggests what you might be missing:
 
-| If you select... | archway suggests... | Why |
+| If you select... | verikt suggests... | Why |
 |-----------------|--------------------|----|
 | Any transport capability | `platform` | Config, logging, lifecycle management |
 | `platform` | `bootstrap` | Testable wiring with thin main.go |
@@ -172,32 +178,42 @@ When you select capabilities, archway suggests what you might be missing:
 | `email-gateway` | `i18n`, `mailpit` | Translations and local testing |
 
 <Aside type="caution">
-archway also warns about **problematic combinations** — like using MySQL without migrations, or running an HTTP API without health checks. These are warnings, not blockers.
+verikt also warns about **problematic combinations** — like using MySQL without migrations, or running an HTTP API without health checks. These are warnings, not blockers.
 </Aside>
 
 ## Example Compositions
 
 ```bash
 # Full production API
-archway new my-api --arch hexagonal \
+verikt new my-api \
+  --language go \
+  --arch hexagonal \
   --cap platform,bootstrap,http-api,postgres,migrations,auth-jwt,rate-limiting,cors,health,docker,linting,ci-github
 
 # gRPC microservice
-archway new my-grpc --arch hexagonal \
+verikt new my-grpc \
+  --language go \
+  --arch hexagonal \
   --cap platform,bootstrap,grpc,redis,docker,linting
 
 # Event-driven worker
-archway new my-worker --arch hexagonal \
+verikt new my-worker \
+  --language go \
+  --arch hexagonal \
   --cap platform,bootstrap,kafka-consumer,postgres,migrations,outbox,docker
 
 # Full-stack web app (server-rendered)
-archway new my-app --arch layered \
+verikt new my-app \
+  --language go \
+  --arch layered \
   --cap platform,bootstrap,http-api,postgres,templ,htmx,static-assets,docker
 
 # Resilient API gateway
-archway new my-gateway --arch hexagonal \
+verikt new my-gateway \
+  --language go \
+  --arch hexagonal \
   --cap platform,bootstrap,http-api,bff,circuit-breaker,retry,cors,health,docker
 
 # Simple CLI tool
-archway new my-cli --arch flat
+verikt new my-cli --language go --arch flat
 ```

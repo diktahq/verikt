@@ -28,7 +28,7 @@ The rejection is intentional and fast. A rejected request returns a clear error;
 
 ## In Go
 
-Go's `sync.Semaphore` (or a buffered channel used as one) is the natural implementation. archway's `bulkhead` capability scaffolds a reusable semaphore-based limiter:
+Go's `sync.Semaphore` (or a buffered channel used as one) is the natural implementation. verikt's `bulkhead` capability scaffolds a reusable semaphore-based limiter:
 
 ```go
 type Bulkhead struct {
@@ -54,7 +54,7 @@ func (b *Bulkhead) Do(ctx context.Context, fn func() error) error {
 
 The `default` case provides immediate rejection when all slots are occupied.
 
-## How archway Supports It
+## How verikt Supports It
 
 The `bulkhead` capability scaffolds the semaphore concurrency limiter with timeout support. It suggests `observability` (to track bulkhead saturation metrics) and `circuit-breaker` (to stop calls entirely when the downstream is known to be failing). See the [Capabilities Matrix](/reference/capabilities-matrix/).
 

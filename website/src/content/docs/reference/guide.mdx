@@ -1,18 +1,18 @@
 ---
-title: archway guide
-description: Generate architecture context for AI coding agents with archway guide — feed Claude, Cursor, Copilot, and Windsurf your service's dependency rules
+title: verikt guide
+description: Generate architecture context for AI coding agents with verikt guide — feed Claude, Cursor, Copilot, and Windsurf your service's dependency rules
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 ## Overview
 
-`archway guide` reads your project's `archway.yaml` and generates architecture context that AI coding agents can consume. Instead of fixing architecture violations after the fact, feed your agent the rules upfront.
+`verikt guide` reads your project's `verikt.yaml` and generates architecture context that AI coding agents can consume. Instead of fixing architecture violations after the fact, feed your agent the rules upfront.
 
 **Prevention beats correction.**
 
 ```bash
-archway guide [flags]
+verikt guide [flags]
 ```
 
 ## Flags
@@ -28,7 +28,7 @@ archway guide [flags]
 ### Default (any AI agent)
 
 ```bash
-archway guide
+verikt guide
 ```
 
 Outputs architecture context to stdout — paste it into any AI chat or system prompt.
@@ -36,7 +36,7 @@ Outputs architecture context to stdout — paste it into any AI chat or system p
 ### Claude Code
 
 ```bash
-archway guide --target claude
+verikt guide --target claude
 ```
 
 Generates context optimized for Claude Code's CLAUDE.md format.
@@ -44,7 +44,7 @@ Generates context optimized for Claude Code's CLAUDE.md format.
 ### Cursor
 
 ```bash
-archway guide --target cursor
+verikt guide --target cursor
 ```
 
 Generates context for Cursor's `.cursorrules` format.
@@ -52,13 +52,13 @@ Generates context for Cursor's `.cursorrules` format.
 ### Copilot
 
 ```bash
-archway guide --target copilot
+verikt guide --target copilot
 ```
 
 ### Windsurf
 
 ```bash
-archway guide --target windsurf
+verikt guide --target windsurf
 ```
 
 ## Example Output
@@ -85,15 +85,25 @@ archway guide --target windsurf
 ```
 
 <Aside type="tip">
-Run `archway guide` in your project root — it reads `archway.yaml` to generate context specific to your project's architecture and capabilities.
+Run `verikt guide` in your project root — it reads `verikt.yaml` to generate context specific to your project's architecture and capabilities.
 </Aside>
+
+## Governance Checkpoint
+
+Every guide output includes a governance checkpoint — an instruction block that tells agents to verify architecture rules at two points: before modifying any file, and after receiving tool results (test output, build errors, lint output).
+
+The checkpoint doesn't add new rules. It tells the agent *when to check* the rules that are already in the guide. The prompting pattern comes from Anthropic's [think tool research](https://www.anthropic.com/engineering/claude-think-tool), which found that agents follow complex policies significantly better when explicitly told to pause and verify at decision points rather than only receiving the rules upfront.
+
+In [EXP-10](/experiments/exp-10/), the checkpoint eliminated variance in agent compliance (0.89 → 0.00) and reduced violations by 25% on greenfield builds. On brownfield projects with a conforming codebase, the checkpoint has no measurable effect — the existing code already constrains the agent.
+
+The checkpoint adds approximately 80 tokens to the guide output. It appears in all target formats (Claude, Cursor, Copilot, Windsurf).
 
 ## Supported AI Tools
 
 | Tool | Target Flag | Output File |
 |------|------------|-------------|
 | All tools | `--target all` (default) | All files below |
-| Claude Code | `--target claude` | `.claude/rules/archway.md` |
+| Claude Code | `--target claude` | `.claude/rules/verikt.md` |
 | Cursor | `--target cursor` | `.cursorrules` |
 | GitHub Copilot | `--target copilot` | `.github/copilot-instructions.md` |
 | Windsurf | `--target windsurf` | `.windsurfrules` |

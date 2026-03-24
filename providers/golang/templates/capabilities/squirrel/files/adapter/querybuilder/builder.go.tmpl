@@ -1,0 +1,23 @@
+package querybuilder
+
+import (
+	sq "github.com/Masterminds/squirrel"
+)
+
+// QB returns a new query builder pre-configured for the target database's
+// placeholder format. PostgreSQL uses $1/$2, MySQL uses ?.
+//
+// Example:
+//
+//	query, args, err := QB().
+//	  Select("id", "name", "email").
+//	  From("users").
+//	  Where(sq.Eq{"id": userID}).
+//	  ToSql()
+func QB() sq.StatementBuilderType {
+{{- if .HasPostgreSQL}}
+	return sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+{{- else}}
+	return sq.StatementBuilder
+{{- end}}
+}

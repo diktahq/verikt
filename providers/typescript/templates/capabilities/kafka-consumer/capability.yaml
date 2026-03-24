@@ -1,0 +1,5 @@
+name: kafka-consumer
+description: "kafkajs consumer group — typed message handlers, graceful shutdown, dead-letter support"
+suggests:
+  - graceful
+  - platform

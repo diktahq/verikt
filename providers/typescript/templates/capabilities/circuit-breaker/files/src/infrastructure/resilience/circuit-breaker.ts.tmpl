@@ -1,0 +1,30 @@
+import CircuitBreaker from 'opossum'
+
+export interface CircuitBreakerOptions {
+  timeout?: number        // ms before action is considered failed (default: 3000)
+  errorThresholdPercentage?: number  // % errors to open circuit (default: 50)
+  resetTimeout?: number   // ms before attempting to close (default: 10000)
+}
+
+// withCircuitBreaker wraps an async function with a circuit breaker.
+// When the circuit opens, calls fail fast without hitting the downstream service.
+//
+// Usage:
+//   const protectedFetch = withCircuitBreaker(fetchUserFromAPI, { timeout: 5000 })
+//   const user = await protectedFetch(userId)
+export function withCircuitBreaker<TArgs extends unknown[], TReturn>(
+  action: (...args: TArgs) => Promise<TReturn>,
+  options: CircuitBreakerOptions = {},
+): (...args: TArgs) => Promise<TReturn> {
+  const breaker = new CircuitBreaker(action, {
+    timeout: options.timeout ?? 3_000,
+    errorThresholdPercentage: options.errorThresholdPercentage ?? 50,
+    resetTimeout: options.resetTimeout ?? 10_000,
+  })
+
+  breaker.on('open', () => console.warn('[circuit-breaker] circuit opened'))
+  breaker.on('halfOpen', () => console.info('[circuit-breaker] circuit half-open, probing'))
+  breaker.on('close', () => console.info('[circuit-breaker] circuit closed'))
+
+  return (...args: TArgs) => breaker.fire(...args)
+}

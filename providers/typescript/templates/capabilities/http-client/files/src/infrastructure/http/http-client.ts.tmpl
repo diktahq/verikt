@@ -1,0 +1,79 @@
+// HttpClient — typed fetch wrapper using Node 20 built-in fetch.
+// Adds base URL, default timeout, JSON serialization, and typed error handling.
+
+export class HttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: unknown,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'HttpError'
+  }
+}
+
+export interface HttpClientOptions {
+  baseUrl: string
+  timeoutMs?: number
+  defaultHeaders?: Record<string, string>
+}
+
+export class HttpClient {
+  private readonly baseUrl: string
+  private readonly timeoutMs: number
+  private readonly defaultHeaders: Record<string, string>
+
+  constructor(options: HttpClientOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/$/, '')
+    this.timeoutMs = options.timeoutMs ?? 10_000
+    this.defaultHeaders = {
+      'Content-Type': 'application/json',
+      ...options.defaultHeaders,
+    }
+  }
+
+  async get<T>(path: string, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>('GET', path, undefined, headers)
+  }
+
+  async post<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>('POST', path, body, headers)
+  }
+
+  async put<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>('PUT', path, body, headers)
+  }
+
+  async delete<T>(path: string, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>('DELETE', path, undefined, headers)
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: { ...this.defaultHeaders, ...headers },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      })
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        throw new HttpError(res.status, data, `${method} ${path} failed with status ${res.status}`)
+      }
+
+      return data as T
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+}

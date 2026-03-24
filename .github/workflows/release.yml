@@ -16,22 +16,22 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            artifact: archway-engine-linux-amd64
+            artifact: verikt-engine-linux-amd64
             use_cross: false
             apt_packages: musl-tools protobuf-compiler
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            artifact: archway-engine-linux-arm64
+            artifact: verikt-engine-linux-arm64
             use_cross: true
             apt_packages: protobuf-compiler
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: archway-engine-darwin-amd64
+            artifact: verikt-engine-darwin-amd64
             use_cross: false
             apt_packages: ""
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: archway-engine-darwin-arm64
+            artifact: verikt-engine-darwin-arm64
             use_cross: false
             apt_packages: ""
     runs-on: ${{ matrix.os }}
@@ -69,7 +69,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}
-          path: engine/target/${{ matrix.target }}/release/archway-engine
+          path: engine/target/${{ matrix.target }}/release/verikt-engine
           retention-days: 1
 
   goreleaser:
@@ -93,10 +93,10 @@ jobs:
       - name: Place engine binaries for embed
         run: |
           mkdir -p internal/engineclient/bin
-          cp engine-artifacts/archway-engine-linux-amd64/archway-engine  internal/engineclient/bin/archway-engine-linux-amd64
-          cp engine-artifacts/archway-engine-linux-arm64/archway-engine  internal/engineclient/bin/archway-engine-linux-arm64
-          cp engine-artifacts/archway-engine-darwin-amd64/archway-engine internal/engineclient/bin/archway-engine-darwin-amd64
-          cp engine-artifacts/archway-engine-darwin-arm64/archway-engine internal/engineclient/bin/archway-engine-darwin-arm64
+          cp engine-artifacts/verikt-engine-linux-amd64/verikt-engine  internal/engineclient/bin/verikt-engine-linux-amd64
+          cp engine-artifacts/verikt-engine-linux-arm64/verikt-engine  internal/engineclient/bin/verikt-engine-linux-arm64
+          cp engine-artifacts/verikt-engine-darwin-amd64/verikt-engine internal/engineclient/bin/verikt-engine-darwin-amd64
+          cp engine-artifacts/verikt-engine-darwin-arm64/verikt-engine internal/engineclient/bin/verikt-engine-darwin-arm64
           chmod +x internal/engineclient/bin/*
 
       - uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557fd212fa902bebf # v6.3.0

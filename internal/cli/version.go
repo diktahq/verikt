@@ -10,10 +10,10 @@ func newVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "version",
 		Short:   "Print version info",
-		Long:    "Print Archway version, commit, and build date information.",
-		Example: "archway version",
+		Long:    "Print verikt version, commit, and build date information.",
+		Example: "verikt version",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Printf("archway version %s\ncommit: %s\nbuilt: %s\n", version, commit, date)
+			fmt.Printf("verikt version %s\ncommit: %s\nbuilt: %s\n", version, commit, date)
 			return nil
 		},
 	}

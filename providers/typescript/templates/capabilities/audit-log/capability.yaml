@@ -1,0 +1,4 @@
+name: audit-log
+description: "Append-only structured audit trail for compliance and forensics"
+suggests:
+  - platform

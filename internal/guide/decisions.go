@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 )
 
 // DecisionTemplate defines a standard architecture decision topic.
@@ -214,7 +214,7 @@ func writeDecisionStatus(b *strings.Builder, decisions []config.Decision) {
 
 	undecided := UndecidedDecisions(decisions)
 	if len(undecided) > 0 {
-		b.WriteString("**Action:** Run `archway decide` to resolve open decisions.\n")
+		b.WriteString("**Action:** Run `verikt decide` to resolve open decisions.\n")
 		b.WriteString("**Rule:** Do NOT implement features that depend on undecided Tier 1 topics.\n\n")
 	}
 }

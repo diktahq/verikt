@@ -1,0 +1,31 @@
+import nodemailer, { type Transporter } from 'nodemailer'
+import type { EmailGateway, EmailMessage } from '../../domain/email-gateway.js'
+
+// SmtpEmailGateway implements EmailGateway using nodemailer over SMTP.
+// Configure via environment variables — never hardcode credentials.
+export class SmtpEmailGateway implements EmailGateway {
+  private readonly transporter: Transporter
+  private readonly defaultFrom: string
+
+  constructor() {
+    this.defaultFrom = process.env.EMAIL_FROM ?? 'noreply@{{.ServiceName}}.local'
+    this.transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST ?? 'localhost',
+      port: Number(process.env.SMTP_PORT ?? 1025),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        : undefined,
+    })
+  }
+
+  async send(message: EmailMessage): Promise<void> {
+    await this.transporter.sendMail({
+      from: message.from ?? this.defaultFrom,
+      to: Array.isArray(message.to) ? message.to.join(', ') : message.to,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    })
+  }
+}

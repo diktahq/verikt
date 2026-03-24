@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/guide"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/guide"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // conformingProjectPath returns the path to the conforming-hexagonal testdata.
-// This project was written by following the archway guide — it has zero violations.
+// This project was written by following the verikt guide — it has zero violations.
 func conformingProjectPath(t *testing.T) string {
 	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)
@@ -26,10 +26,10 @@ func conformingProjectPath(t *testing.T) string {
 	return filepath.Join(filepath.Dir(filename), "testdata", "conforming-hexagonal")
 }
 
-// hexagonalArchwayConfig returns the archway config that governs both the
+// hexagonalVeriktConfig returns the verikt config that governs both the
 // violating and the conforming hexagonal projects.
-func hexagonalArchwayConfig() *config.ArchwayConfig {
-	return &config.ArchwayConfig{
+func hexagonalVeriktConfig() *config.VeriktConfig {
+	return &config.VeriktConfig{
 		Language:     "go",
 		Architecture: "hexagonal",
 		Components: []config.Component{
@@ -48,11 +48,11 @@ func hexagonalArchwayConfig() *config.ArchwayConfig {
 	}
 }
 
-// TestE2E_GuideGeneratesInstructions validates that archway guide produces
+// TestE2E_GuideGeneratesInstructions validates that verikt guide produces
 // architecture-specific content from the declared config.
 // This is the prompt the AI agent receives before writing code.
 func TestE2E_GuideGeneratesInstructions(t *testing.T) {
-	cfg := hexagonalArchwayConfig()
+	cfg := hexagonalVeriktConfig()
 	opts := guide.GenerateOptions{
 		Architecture: cfg.Architecture,
 		Components:   cfg.Components,
@@ -86,9 +86,9 @@ func TestE2E_GuideGeneratesInstructions(t *testing.T) {
 //
 // The hexagonal-project testdata simulates code written without architectural
 // awareness: domain imports service, handlers have business logic, errors are
-// swallowed. archway check finds all of it.
+// swallowed. verikt check finds all of it.
 func TestE2E_ViolatingProject_Check(t *testing.T) {
-	cfg := hexagonalArchwayConfig()
+	cfg := hexagonalVeriktConfig()
 	projectPath := hexagonalProjectPath(t)
 
 	start := time.Now()
@@ -114,22 +114,22 @@ func TestE2E_ViolatingProject_Check(t *testing.T) {
 	}
 
 	// Control: this project must fail.
-	assert.False(t, result.Passed(), "violating project must not pass archway check")
+	assert.False(t, result.Passed(), "violating project must not pass verikt check")
 	assert.NotEmpty(t, result.DependencyViolations, "must catch layer boundary violations")
 	assert.NotEmpty(t, result.AntiPatternViolations, "must catch code anti-patterns")
 }
 
 // TestE2E_ConformingProject_Check demonstrates what happens when an AI agent
-// writes code following the archway guide — the "good" state.
+// writes code following the verikt guide — the "good" state.
 //
 // The conforming-hexagonal testdata simulates code written by an agent that
 // received the guide as context: clean layer boundaries, no anti-patterns,
 // functions within size limits, errors propagated correctly.
 //
-// archway check must find zero violations. This is the negative result —
+// verikt check must find zero violations. This is the negative result —
 // and it is as important as the positive one. A tool that cries wolf gets ignored.
 func TestE2E_ConformingProject_Check(t *testing.T) {
-	cfg := hexagonalArchwayConfig()
+	cfg := hexagonalVeriktConfig()
 	projectPath := conformingProjectPath(t)
 
 	start := time.Now()
@@ -145,7 +145,7 @@ func TestE2E_ConformingProject_Check(t *testing.T) {
 	t.Logf("  Anti-patterns:%d violation(s)", len(result.AntiPatternViolations))
 
 	// The critical assertion: zero violations on conforming code.
-	assert.True(t, result.Passed(), "conforming project must pass archway check")
+	assert.True(t, result.Passed(), "conforming project must pass verikt check")
 	assert.Empty(t, result.DependencyViolations, "no layer boundary violations")
 	assert.Empty(t, result.FunctionViolations, "no function metric violations")
 	assert.Empty(t, result.AntiPatternViolations, "no anti-pattern violations")
@@ -157,7 +157,7 @@ func TestE2E_ConformingProject_Check(t *testing.T) {
 // This is the blog post moment: same rules, same enforcement, two codebases.
 // One was written with architectural awareness. One was not.
 func TestE2E_GuideToEnforce_Contrast(t *testing.T) {
-	cfg := hexagonalArchwayConfig()
+	cfg := hexagonalVeriktConfig()
 
 	// Generate the guide — this is what the agent receives.
 	opts := guide.GenerateOptions{

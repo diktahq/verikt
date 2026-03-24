@@ -6,7 +6,7 @@
 
 ## Context
 
-Archway must be extensible at multiple levels: template authors, rule authors, and language support contributors. Different levels of extensibility require different skill levels and mechanisms. The challenge is enabling broad contribution without requiring Go expertise for everything.
+verikt must be extensible at multiple levels: template authors, rule authors, and language support contributors. Different levels of extensibility require different skill levels and mechanisms. The challenge is enabling broad contribution without requiring Go expertise for everything.
 
 ## Constraints
 
@@ -26,9 +26,9 @@ Archway must be extensible at multiple levels: template authors, rule authors, a
 - Distribution: embedded (official), git repos, local dirs
 
 **Layer 2 — Rules & Presets (shareable YAML):**
-- `archway.yaml` with dependency rules, naming, structure, functions
+- `verikt.yaml` with dependency rules, naming, structure, functions
 - `extends:` key composes presets (like ESLint configs)
-- Shareable as git repos: `archway/go-hexagonal-strict`
+- Shareable as git repos: `verikt/go-hexagonal-strict`
 - Teams can create org-specific presets
 
 **Layer 3 — Language Analyzers (embedded Go code):**
@@ -108,4 +108,4 @@ Templates and rules as npm/Go modules with a central registry.
 - Preset resolution (`extends:` chain) must handle conflicts and ordering
 - Analyzer interface must be designed for future extraction to plugins (ADR-001)
 - Documentation needs three separate contribution guides
-- Post-MVP: consider `archway template add <git-url>` and `archway preset add <git-url>` commands
+- Post-MVP: consider `verikt template add <git-url>` and `verikt preset add <git-url>` commands

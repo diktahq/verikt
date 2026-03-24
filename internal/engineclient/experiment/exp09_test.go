@@ -4,14 +4,14 @@ package experiment
 //
 // The agent adds a payment call to the orders service, then lists what else it needs.
 // Without the guide: generic suggestions (retry, logging, error handling).
-// With the guide: archway capability vocabulary (circuit-breaker, retry+idempotency, timeout).
+// With the guide: verikt capability vocabulary (circuit-breaker, retry+idempotency, timeout).
 //
 // The primary measurement is qualitative (suggestion content), not quantitative (violations).
 //
-// Mode B (embedded fixture): archway check --diff HEAD on agent changes only.
+// Mode B (embedded fixture): verikt check --diff HEAD on agent changes only.
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP09 -v -timeout 300s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP09 -v -timeout 300s ./internal/engineclient/experiment/
 
 import (
 	"strings"
@@ -30,7 +30,7 @@ After the code files, add a section:
 === RECOMMENDATIONS ===
 [your capability recommendations]`
 
-// exp09CapabilityTerms are archway vocabulary terms we look for in the recommendations.
+// exp09CapabilityTerms are verikt vocabulary terms we look for in the recommendations.
 var exp09CapabilityTerms = []string{
 	"circuit-breaker", "circuit breaker",
 	"retry", "backoff",
@@ -38,7 +38,7 @@ var exp09CapabilityTerms = []string{
 	"timeout",
 }
 
-// countCapabilityHits returns how many archway vocabulary terms appear in the text.
+// countCapabilityHits returns how many verikt vocabulary terms appear in the text.
 func countCapabilityHits(text string) (int, []string) {
 	lower := strings.ToLower(text)
 	var found []string

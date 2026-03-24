@@ -92,13 +92,13 @@ func persistArtifacts(dir string, a runArtifacts) error {
 		return err
 	}
 	if a.CheckResult != nil {
-		if err := os.WriteFile(filepath.Join(dir, "archway-check.json"), a.CheckResult, 0644); err != nil {
-			return fmt.Errorf("write archway-check.json: %w", err)
+		if err := os.WriteFile(filepath.Join(dir, "verikt-check.json"), a.CheckResult, 0644); err != nil {
+			return fmt.Errorf("write verikt-check.json: %w", err)
 		}
 	}
 	if a.CheckDiff != nil {
-		if err := os.WriteFile(filepath.Join(dir, "archway-check-diff.json"), a.CheckDiff, 0644); err != nil {
-			return fmt.Errorf("write archway-check-diff.json: %w", err)
+		if err := os.WriteFile(filepath.Join(dir, "verikt-check-diff.json"), a.CheckDiff, 0644); err != nil {
+			return fmt.Errorf("write verikt-check-diff.json: %w", err)
 		}
 	}
 	filesDir := filepath.Join(dir, "files")

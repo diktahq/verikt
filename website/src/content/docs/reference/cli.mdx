@@ -1,16 +1,16 @@
 ---
 title: CLI Commands
-description: Complete CLI reference for archway — scaffold, analyze, check, diff, guide, and init commands with flags, examples, and exit codes
+description: Complete CLI reference for verikt — scaffold, analyze, check, diff, guide, and init commands with flags, examples, and exit codes
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-## `archway guide`
+## `verikt guide`
 
-Generate architecture context for AI coding agents. Reads your `archway.yaml` and outputs rules, dependency constraints, and anti-patterns that AI agents consume before writing code.
+Generate architecture context for AI coding agents. Reads your `verikt.yaml` and outputs rules, dependency constraints, and anti-patterns that AI agents consume before writing code.
 
 ```bash
-archway guide [flags]
+verikt guide [flags]
 ```
 
 ### Flags
@@ -25,13 +25,13 @@ archway guide [flags]
 
 ```bash
 # Generate context for any AI agent
-archway guide
+verikt guide
 
 # Target Claude Code specifically
-archway guide --target claude
+verikt guide --target claude
 
 # Target Cursor
-archway guide --target cursor
+verikt guide --target cursor
 ```
 
 <Aside type="tip">
@@ -40,12 +40,12 @@ Prevention beats correction. Feed your AI agent the architecture rules before it
 
 ---
 
-## `archway new`
+## `verikt new`
 
 Scaffold a new project.
 
 ```bash
-archway new [name] [flags]
+verikt new [name] [flags]
 ```
 
 ### Flags
@@ -63,16 +63,16 @@ archway new [name] [flags]
 
 ### Version Detection and Features
 
-By default, archway runs `go env GOVERSION` to detect the installed Go version. The detected version is used to resolve **feature flags** from the provider's feature matrix — enabling modern stdlib APIs and language features in the generated code.
+By default, verikt runs `go env GOVERSION` to detect the installed Go version. The detected version is used to resolve **feature flags** from the provider's feature matrix — enabling modern stdlib APIs and language features in the generated code.
 
 You can override the detected version with `--set GoVersion=X.XX`. This is useful in CI environments or when targeting a specific Go version different from the one installed locally.
 
 ```bash
 # Use detected Go version (default)
-archway new my-service --no-wizard
+verikt new my-service --language go --no-wizard
 
 # Target a specific Go version
-archway new my-service --set GoVersion=1.24 --no-wizard
+verikt new my-service --language go --set GoVersion=1.24 --no-wizard
 ```
 
 See the [Feature Matrix](/reference/features/) for the full list of version-gated features.
@@ -81,25 +81,26 @@ See the [Feature Matrix](/reference/features/) for the full list of version-gate
 
 ```bash
 # Interactive wizard — guides you through every choice
-archway new my-service
+verikt new my-service --language go
 
 # Non-interactive with all options
-archway new my-service \
+verikt new my-service \
+  --language go \
   --arch hexagonal \
   --cap platform,bootstrap,http-api,mysql,docker \
   --module github.com/myorg/my-service \
   --no-wizard
 
 # Target Go 1.24 features explicitly
-archway new my-service --set GoVersion=1.24 --no-wizard
+verikt new my-service --language go --set GoVersion=1.24 --no-wizard
 ```
 
-## `archway check`
+## `verikt check`
 
-Validate a project against its `archway.yaml` rules.
+Validate a project against its `verikt.yaml` rules.
 
 ```bash
-archway check [flags]
+verikt check [flags]
 ```
 
 ### Flags
@@ -111,7 +112,7 @@ archway check [flags]
 
 ### What It Checks
 
-archway runs **11 AST-based detectors**:
+verikt runs **11 AST-based detectors**:
 
 - **Dependency violations** — imports that cross component boundaries
 - **Required directories** — components with missing directories
@@ -130,7 +131,7 @@ archway runs **11 AST-based detectors**:
 ### Example Output
 
 ```
-archway check
+verikt check
 
 Architecture: hexagonal
 Components: 4 defined
@@ -145,12 +146,12 @@ Compliance: 100%
 ✓ All checks passed
 ```
 
-## `archway analyze`
+## `verikt analyze`
 
 Analyze an existing project's architecture.
 
 ```bash
-archway analyze [flags]
+verikt analyze [flags]
 ```
 
 ### Flags
@@ -161,39 +162,39 @@ archway analyze [flags]
 | `--output` | Output format (`terminal`, `json`) | `terminal` |
 
 <Aside type="tip">
-Use `archway analyze` on existing projects to understand their structure before adding an `archway.yaml` for enforcement.
+Use `verikt analyze` on existing projects to understand their structure before adding an `verikt.yaml` for enforcement.
 </Aside>
 
-## `archway add`
+## `verikt add`
 
 Add one or more capabilities to an existing project.
 
 ```bash
-archway add <capability> [capability...] [flags]
+verikt add <capability> [capability...] [flags]
 ```
 
 Capabilities are validated against the provider's templates, conflicts are checked, and transitive dependencies are auto-resolved. **Existing files are never overwritten** — only new files are created.
 
 ### What It Does
 
-1. Finds `archway.yaml` in the current directory
+1. Finds `verikt.yaml` in the current directory
 2. Validates that each capability exists and doesn't conflict
 3. Auto-resolves transitive dependencies (e.g., `bff` pulls in `http-api`)
 4. Renders only new capability files, skipping any that already exist on disk
-5. Updates `archway.yaml` with the new capabilities
-6. Regenerates `archway guide` output
+5. Updates `verikt.yaml` with the new capabilities
+6. Regenerates `verikt guide` output
 
 ### Examples
 
 ```bash
 # Add a single capability
-archway add redis
+verikt add redis
 
 # Add multiple capabilities at once
-archway add kafka-consumer observability
+verikt add kafka-consumer observability
 
 # Add a capability with transitive deps
-archway add bff  # auto-adds http-api if not present
+verikt add bff  # auto-adds http-api if not present
 ```
 
 ### Example Output
@@ -212,12 +213,12 @@ Auto-resolved dependencies: http-api
 
 ---
 
-## `archway diff`
+## `verikt diff`
 
-Show structural drift between `archway.yaml` and files on disk. Like `terraform plan` for code architecture.
+Show structural drift between `verikt.yaml` and files on disk. Like `terraform plan` for code architecture.
 
 ```bash
-archway diff [flags]
+verikt diff [flags]
 ```
 
 ### Flags
@@ -229,7 +230,7 @@ archway diff [flags]
 
 ### What It Reports
 
-For each capability declared in `archway.yaml`, diff checks whether the expected files exist:
+For each capability declared in `verikt.yaml`, diff checks whether the expected files exist:
 
 | Status | Meaning |
 |--------|---------|
@@ -243,19 +244,19 @@ The **drift score** (0.00 = perfect, 1.00 = completely drifted) tells you how fa
 
 ```bash
 # Check drift in current project
-archway diff
+verikt diff
 
 # Check a specific project
-archway diff --path ./my-service
+verikt diff --path ./my-service
 
 # Get JSON output for CI
-archway diff -o json
+verikt diff -o json
 ```
 
 ### Example Output
 
 ```
-archway Diff — hexagonal + 4 capabilities
+verikt Diff — hexagonal + 4 capabilities
 ═══════════════════════════════════════════════════════
   ✓ architecture       all files present
   ✓ http-api           all files present
@@ -270,17 +271,17 @@ Summary: 3/4 capabilities fully present | drift score: 0.12
 ```
 
 <Aside type="tip">
-Use `archway diff -o json` in CI pipelines to fail builds when drift exceeds a threshold.
+Use `verikt diff -o json` in CI pipelines to fail builds when drift exceeds a threshold.
 </Aside>
 
 ---
 
-## `archway init`
+## `verikt init`
 
-Initialize an `archway.yaml` for an existing project.
+Initialize an `verikt.yaml` for an existing project.
 
 ```bash
-archway init [flags]
+verikt init [flags]
 ```
 
 ### Flags
@@ -289,26 +290,26 @@ archway init [flags]
 |------|------------|---------|
 | `--path` | Path to project | `.` |
 | `--no-wizard` | Skip interactive wizard | `false` |
-| `--force` | Overwrite existing archway.yaml | `false` |
+| `--force` | Overwrite existing verikt.yaml | `false` |
 
 <Aside type="note">
-This is useful for adding architecture enforcement to projects that weren't scaffolded with archway. Use `archway analyze` first to understand the existing structure.
+This is useful for adding architecture enforcement to projects that weren't scaffolded with verikt. Use `verikt analyze` first to understand the existing structure.
 </Aside>
 
 ---
 
-## `archway version`
+## `verikt version`
 
 Print version, commit hash, and build date.
 
 ```bash
-archway version
+verikt version
 ```
 
 ### Example Output
 
 ```
-archway version 1.0.0
+verikt version 1.0.0
 commit: 6d22600
 built: 2026-03-11T12:00:00Z
 ```

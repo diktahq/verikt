@@ -21,7 +21,8 @@ func DetectLanguage(path string) (string, float64, error) {
 	}{
 		{File: "go.mod", Language: "go", Confidence: 1.0},
 		{File: "composer.json", Language: "php", Confidence: 1.0},
-		{File: "package.json", Language: "node", Confidence: 0.9},
+		{File: "package.json", Language: "typescript", Confidence: 0.9},
+		{File: "tsconfig.json", Language: "typescript", Confidence: 1.0},
 		{File: "pyproject.toml", Language: "python", Confidence: 1.0},
 		{File: "requirements.txt", Language: "python", Confidence: 0.8},
 		{File: "Cargo.toml", Language: "rust", Confidence: 1.0},

@@ -1,33 +1,97 @@
 ---
 title: "circuit-breaker capability"
-description: "Add a circuit breaker pattern to your Go service to prevent cascading failures from flaky or slow external service calls."
+description: "Add a circuit breaker to your Go or TypeScript service to prevent cascading failures when external services degrade or go down."
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-`circuit-breaker` adds a circuit breaker wrapper to your Go service that stops cascading failures when external services degrade.
+`circuit-breaker` adds a circuit breaker wrapper to your service that stops cascading failures when external dependencies degrade.
+
+## Why You Need This
+
+Every service that calls an external dependency — an HTTP API, a database, a message broker — inherits that dependency's failure modes. When the external service slows down, your requests pile up waiting for responses. Your connection pool fills. New requests start failing. Your service is now slow too, and your callers are inheriting the failure. That's a cascade.
+
+A circuit breaker solves this by tracking failure rates and tripping open when they exceed a threshold. Once open, calls fail fast without attempting the network hop. After a configurable timeout, the breaker moves to half-open and allows a probe request through. If it succeeds, the breaker closes and normal traffic resumes. If it fails, the breaker stays open.
+
+The difference between a circuit breaker and a timeout is scope. A timeout protects a single call. A circuit breaker protects the system — it accumulates failure evidence across calls and stops sending traffic to a dependency that's clearly unhealthy. Without one, every caller in your system will queue up against the failing service until thread or goroutine pools are exhausted.
+
+<Aside type="caution">
+An HTTP client without a circuit breaker is a production incident waiting to happen. A single slow external service can exhaust your connection pool and bring your service down with it.
+</Aside>
 
 ## What You Get
 
-- Circuit breaker wrapper with open/half-open/closed states
-- Configurable thresholds and timeouts
+- Circuit breaker wrapper with open/half-open/closed state machine
+- Configurable failure threshold and reset timeout
+- Event logging when the breaker changes state
+- Typed error for fast-fail responses (`ErrCircuitOpen`)
 
-## When to Use
+## Go Implementation
 
-Any service calling external HTTP APIs, databases, or third-party services should use a circuit breaker. A slow external service will exhaust your connection pool and cascade failure to your callers — the circuit breaker trips open and fast-fails until the dependency recovers.
+The Go capability uses [sony/gobreaker](https://github.com/sony/gobreaker) — a clean, dependency-light circuit breaker library with a well-tested state machine. The scaffold wraps it in a thin function that takes any operation and returns an error with clear semantics.
+
+Configure the breaker through the `gobreaker.Settings` struct. The key parameters are `MaxRequests` (how many requests pass through in half-open state), `Interval` (the rolling window for counting failures), and `Timeout` (how long to stay open before probing).
+
+```go
+// Wrap any fallible call — the breaker handles state transitions.
+result, err := breaker.Execute(func() (interface{}, error) {
+    return client.GetOrder(ctx, orderID)
+})
+if err == gobreaker.ErrOpenState {
+    // Fast fail — dependency is known unhealthy, skip the network hop.
+    return nil, ErrServiceUnavailable
+}
+```
+
+The breaker's `OnStateChange` callback is wired to structured logging so state transitions are visible in your observability stack. When a breaker trips in production, you want a log entry with the name, new state, and timestamp — not silence.
+
+## TypeScript Implementation
+
+The TypeScript capability uses [opossum](https://github.com/nodeshift/opossum) — a mature Node.js circuit breaker with a rich event API. The scaffold creates a typed wrapper factory function and wires the open/halfOpen/close events to structured logging.
+
+Opossum wraps an async function and returns a `CircuitBreaker` instance. Call `breaker.fire(...args)` instead of the raw function.
+
+```typescript
+import CircuitBreaker from 'opossum';
+
+const breaker = new CircuitBreaker(fetchOrder, {
+  timeout: 3000,          // fail the call if it takes longer than 3s
+  errorThresholdPercentage: 50,  // trip open at 50% failure rate
+  resetTimeout: 10000,    // wait 10s before probing in half-open
+});
+
+breaker.on('open', () => logger.warn('circuit breaker opened', { name: 'fetchOrder' }));
+breaker.on('halfOpen', () => logger.info('circuit breaker probing', { name: 'fetchOrder' }));
+breaker.on('close', () => logger.info('circuit breaker closed', { name: 'fetchOrder' }));
+
+const order = await breaker.fire(orderID);
+```
+
+The event callbacks are the critical part. A circuit breaker that silently trips provides no operational signal — you find out it tripped when users complain, not when the breaker opens.
+
+## Pairing with Retry
+
+Circuit breaker and [retry](/capabilities/retry/) serve different purposes and work well together, but the order matters. Retry handles transient failures — a single request that fails due to a momentary network blip. The circuit breaker handles sustained failures — a dependency that's been degraded for multiple requests.
+
+The correct composition: retry wraps the individual call, circuit breaker wraps the retry. If a call fails and retry exhausts its attempts, that counts as one failure against the circuit breaker. The breaker accumulates evidence across multiple callers over time.
+
+<Aside type="tip">
+Pair `circuit-breaker` with `retry` for the full resilience stack: retry handles transient blips, circuit breaker handles sustained degradation.
+</Aside>
 
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap circuit-breaker
+verikt new my-service --cap circuit-breaker
 # or add to an existing service:
-archway add circuit-breaker
+verikt add circuit-breaker
 ```
 
 ## Related Capabilities
 
 <CardGrid>
-  <Card title="retry" href="/capabilities/retry/">Retry with backoff before the circuit trips.</Card>
+  <Card title="retry" href="/capabilities/retry/">Retry with backoff for transient failures before the circuit trips.</Card>
   <Card title="http-client" href="/capabilities/http-client/">Resilient HTTP client that pairs with circuit breaker.</Card>
+  <Card title="timeout" href="/capabilities/timeout/">Context-based timeouts for individual calls.</Card>
   <Card title="bulkhead" href="/capabilities/bulkhead/">Concurrency limiter to complement circuit breaking.</Card>
 </CardGrid>

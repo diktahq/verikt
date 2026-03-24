@@ -1,0 +1,4 @@
+name: redis
+description: "Redis via ioredis — typed client with connection management"
+suggests:
+  - docker

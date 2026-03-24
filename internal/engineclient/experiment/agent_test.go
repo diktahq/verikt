@@ -31,12 +31,12 @@ type AgentResponse struct {
 
 // AgentFromEnv constructs an Agent from environment variables.
 //
-//	ARCHWAY_EXPERIMENT_VENDOR   — anthropic | openai | google | ollama (default: anthropic)
-//	ARCHWAY_EXPERIMENT_MODEL    — model ID (default: claude-sonnet-4-6)
-//	ARCHWAY_EXPERIMENT_BASE_URL — optional base URL override
+//	VERIKT_EXPERIMENT_VENDOR   — anthropic | openai | google | ollama (default: anthropic)
+//	VERIKT_EXPERIMENT_MODEL    — model ID (default: claude-sonnet-4-6)
+//	VERIKT_EXPERIMENT_BASE_URL — optional base URL override
 func AgentFromEnv() (Agent, error) {
-	vendor := os.Getenv("ARCHWAY_EXPERIMENT_VENDOR")
-	model := os.Getenv("ARCHWAY_EXPERIMENT_MODEL")
+	vendor := os.Getenv("VERIKT_EXPERIMENT_VENDOR")
+	model := os.Getenv("VERIKT_EXPERIMENT_MODEL")
 
 	if vendor == "" {
 		vendor = "claude-code"
@@ -50,7 +50,7 @@ func AgentFromEnv() (Agent, error) {
 		return &claudeCodeAgent{model: model}, nil
 	}
 
-	baseURL := os.Getenv("ARCHWAY_EXPERIMENT_BASE_URL")
+	baseURL := os.Getenv("VERIKT_EXPERIMENT_BASE_URL")
 	if baseURL == "" {
 		switch vendor {
 		case "anthropic":
@@ -62,7 +62,7 @@ func AgentFromEnv() (Agent, error) {
 		case "ollama":
 			baseURL = "http://localhost:11434/v1"
 		default:
-			return nil, fmt.Errorf("unknown vendor %q — set ARCHWAY_EXPERIMENT_BASE_URL", vendor)
+			return nil, fmt.Errorf("unknown vendor %q — set VERIKT_EXPERIMENT_BASE_URL", vendor)
 		}
 	}
 

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +17,7 @@ var metricsRules = config.FunctionRules{
 
 // TestMetrics_GoPath runs function metric checks via the Go AST path.
 func TestMetrics_GoPath(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: metricsRules},
 	}
@@ -59,7 +59,7 @@ func TestMetrics_Parity(t *testing.T) {
 	client := newEngineClient(t)
 	projectPath := hexagonalProjectPath(t)
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: metricsRules},
 	}
@@ -100,13 +100,13 @@ func TestMetrics_Parity(t *testing.T) {
 	t.Logf("Engine rules fired: %v", keys(ruleSet(engineViolations)))
 }
 
-// TestMetrics_RealCodebase benchmarks both paths on archway's own codebase.
+// TestMetrics_RealCodebase benchmarks both paths on verikt's own codebase.
 func TestMetrics_RealCodebase(t *testing.T) {
 	client := newEngineClient(t)
 	projectPath := findRepoRoot(t)
 
 	realRules := config.FunctionRules{MaxLines: 50, MaxParams: 5}
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: realRules},
 	}

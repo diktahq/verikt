@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/provider"
 )
 
 type MarkdownFormatter struct{}
@@ -14,7 +14,7 @@ func (f *MarkdownFormatter) Format(result *provider.AnalyzeResponse) (string, er
 		return "", fmt.Errorf("analysis result is nil")
 	}
 	b := &strings.Builder{}
-	fmt.Fprintf(b, "# Archway Analysis\n\n")
+	fmt.Fprintf(b, "# verikt Analysis\n\n")
 	fmt.Fprintf(b, "## Project Summary\n\n")
 	fmt.Fprintf(b, "- Language: `%s`\n- Packages: `%d`\n- Files: `%d`\n- Functions: `%d`\n\n",
 		result.Language, result.PackageCount, result.FileCount, result.FunctionCount)

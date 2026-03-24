@@ -1,0 +1,134 @@
+{{- if eq .HttpFramework "express"}}
+import express from 'express'
+import { json } from 'express'
+import http from 'node:http'
+{{- if .HasPlatform}}
+import type { Logger, Config } from '../../infrastructure/platform/index.js'
+{{- end}}
+{{- if .HasHealth}}
+import { healthRouter } from './routes/health.js'
+{{- end}}
+{{- if .HasRequestID}}
+import { requestIdMiddleware } from '../../infrastructure/request-id/middleware.js'
+{{- end}}
+import { errorMiddleware } from './middleware/error.js'
+
+interface ServerOptions {
+{{- if .HasPlatform}}
+  logger?: Logger
+  config?: Config
+{{- end}}
+}
+
+export function createServer(opts: ServerOptions = {}) {
+  const app = express()
+  let httpServer: http.Server | null = null
+
+  app.use(json())
+  {{- if .HasRequestID}}
+  app.use(requestIdMiddleware)
+  {{- end}}
+  {{- if .HasHealth}}
+  app.use(healthRouter)
+  {{- end}}
+  app.use(errorMiddleware)
+
+  return {
+    listen: (port: number) =>
+      new Promise<void>((resolve, reject) => {
+        httpServer = app.listen(port, resolve)
+        httpServer.on('error', reject)
+      }),
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        if (!httpServer) return resolve()
+        httpServer.close((err) => (err ? reject(err) : resolve()))
+      }),
+  }
+}
+{{- end}}
+{{- if eq .HttpFramework "fastify"}}
+import Fastify from 'fastify'
+import sensible from '@fastify/sensible'
+{{- if .HasPlatform}}
+import type { Logger, Config } from '../../infrastructure/platform/index.js'
+{{- end}}
+{{- if .HasHealth}}
+import { healthRoutes } from './routes/health.js'
+{{- end}}
+{{- if .HasRequestID}}
+import { requestIdHook } from '../../infrastructure/request-id/middleware.js'
+{{- end}}
+
+interface ServerOptions {
+{{- if .HasPlatform}}
+  logger?: Logger
+  config?: Config
+{{- end}}
+}
+
+export async function createServer(opts: ServerOptions = {}) {
+  const app = Fastify({
+    logger: {{if .HasPlatform}}opts.logger ?? false{{else}}false{{end}},
+    requestIdHeader: 'x-request-id',
+  })
+
+  await app.register(sensible)
+  {{- if .HasRequestID}}
+  app.addHook('onRequest', requestIdHook)
+  {{- end}}
+  {{- if .HasHealth}}
+  await app.register(healthRoutes)
+  {{- end}}
+
+  return {
+    listen: (port: number) => app.listen({ port, host: '0.0.0.0' }),
+    close: () => app.close(),
+  }
+}
+{{- end}}
+{{- if eq .HttpFramework "hono"}}
+import { Hono } from 'hono'
+import { serve } from '@hono/node-server'
+{{- if .HasPlatform}}
+import type { Logger, Config } from '../../infrastructure/platform/index.js'
+{{- end}}
+{{- if .HasHealth}}
+import { healthRoutes } from './routes/health.js'
+{{- end}}
+{{- if .HasRequestID}}
+import { requestIdMiddleware } from '../../infrastructure/request-id/middleware.js'
+{{- end}}
+
+interface ServerOptions {
+{{- if .HasPlatform}}
+  logger?: Logger
+  config?: Config
+{{- end}}
+}
+
+export function createServer(opts: ServerOptions = {}) {
+  const app = new Hono()
+
+  {{- if .HasRequestID}}
+  app.use('*', requestIdMiddleware)
+  {{- end}}
+  {{- if .HasHealth}}
+  app.route('/', healthRoutes)
+  {{- end}}
+
+  let serverHandle: ReturnType<typeof serve> | null = null
+
+  return {
+    listen: (port: number) =>
+      new Promise<void>((resolve) => {
+        serverHandle = serve({ fetch: app.fetch, port }, () => resolve())
+      }),
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        if (!serverHandle) return resolve()
+        serverHandle.close((err) => (err ? reject(err) : resolve()))
+      }),
+  }
+}
+{{- end}}

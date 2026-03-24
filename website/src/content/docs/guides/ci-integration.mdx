@@ -1,21 +1,21 @@
 ---
 title: CI Integration
-description: Enforce service architecture rules automatically with archway check in GitHub Actions, GitLab CI, and pre-commit hooks to catch violations before merge
+description: Enforce service architecture rules automatically with verikt check in GitHub Actions, GitLab CI, and pre-commit hooks to catch violations before merge
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Archway enforces architecture rules in your CI pipeline and as a pre-commit hook.
+verikt enforces architecture rules in your CI pipeline and as a pre-commit hook.
 
 ## Prerequisites
 
-Your project must have an `archway.yaml` file at the repository root. This file defines the architecture, capabilities, and rules that `archway check` validates against.
+Your project must have an `verikt.yaml` file at the repository root. This file defines the architecture, capabilities, and rules that `verikt check` validates against.
 
-If you don't have one yet, run `archway new` to scaffold a project, or create one manually following the [archway.yaml reference](/reference/archway-yaml/).
+If you don't have one yet, run `verikt new` to scaffold a project, or create one manually following the [verikt.yaml reference](/reference/verikt-yaml/).
 
 ## GitHub Actions
 
-Add this workflow to `.github/workflows/archway.yml`:
+Add this workflow to `.github/workflows/verikt.yml`:
 
 ```yaml
 name: Architecture Check
@@ -24,18 +24,18 @@ on:
     branches: [main]
 
 jobs:
-  archway:
+  verikt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Archway
+      - name: Install verikt
         run: |
-          curl -sSfL https://github.com/dcsg/releases/download/v0.1.0/archway_linux_amd64.tar.gz | tar xz
-          sudo mv archway /usr/local/bin/
+          curl -sSfL https://github.com/diktahq/verikt/releases/download/v0.1.0/verikt_linux_amd64.tar.gz | tar xz
+          sudo mv verikt /usr/local/bin/
 
       - name: Check architecture
-        run: archway check
+        run: verikt check
 ```
 
 <Aside type="caution">
@@ -47,18 +47,18 @@ Always pin to a specific version (`v0.1.0`) instead of `@latest`. This prevents 
 Add this to your `.gitlab-ci.yml`:
 
 ```yaml
-archway:
+verikt:
   stage: test
   image: golang:1.24
   cache:
-    key: archway
+    key: verikt
     paths:
       - /go/pkg/mod/
   before_script:
-    - curl -sSfL https://github.com/dcsg/releases/download/v0.1.0/archway_linux_amd64.tar.gz | tar xz
-    - mv archway /usr/local/bin/
+    - curl -sSfL https://github.com/diktahq/verikt/releases/download/v0.1.0/verikt_linux_amd64.tar.gz | tar xz
+    - mv verikt /usr/local/bin/
   script:
-    - archway check
+    - verikt check
   rules:
     - if: $CI_MERGE_REQUEST_ID
 ```
@@ -71,7 +71,7 @@ Add a git pre-commit hook to catch violations before they are committed. Create 
 #!/usr/bin/env bash
 set -e
 
-archway check --staged
+verikt check --staged
 ```
 
 Then make it executable:
@@ -80,7 +80,7 @@ Then make it executable:
 chmod +x .git/hooks/pre-commit
 ```
 
-The `--staged` flag tells Archway to only check files that are staged for commit, making the hook fast enough for interactive use.
+The `--staged` flag tells verikt to only check files that are staged for commit, making the hook fast enough for interactive use.
 
 ## Pre-commit Framework
 
@@ -90,9 +90,9 @@ If you use the [pre-commit](https://pre-commit.com) framework, add this to your 
 repos:
   - repo: local
     hooks:
-      - id: archway-check
-        name: archway check
-        entry: archway check --staged
+      - id: verikt-check
+        name: verikt check
+        entry: verikt check --staged
         language: system
         pass_filenames: false
         always_run: true
@@ -100,7 +100,7 @@ repos:
 
 ## Exit Codes
 
-`archway check` uses the following exit codes:
+`verikt check` uses the following exit codes:
 
 | Exit Code | Meaning |
 |-----------|---------|
@@ -111,7 +111,7 @@ Warnings (such as missing optional capabilities) are printed to stderr but do no
 
 ## Testing Across Go Versions
 
-Archway resolves [feature flags](/reference/features/) based on the detected Go version, which means scaffolded output varies by version. To verify templates render correctly across versions, use `--set GoVersion` in a matrix build:
+verikt resolves [feature flags](/reference/features/) based on the detected Go version, which means scaffolded output varies by version. To verify templates render correctly across versions, use `--set GoVersion` in a matrix build:
 
 ```yaml
 # GitHub Actions example
@@ -123,13 +123,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Archway
+      - name: Install verikt
         run: |
-          curl -sSfL https://github.com/dcsg/releases/download/v0.1.0/archway_linux_amd64.tar.gz | tar xz
-          sudo mv archway /usr/local/bin/
+          curl -sSfL https://github.com/diktahq/verikt/releases/download/v0.1.0/verikt_linux_amd64.tar.gz | tar xz
+          sudo mv verikt /usr/local/bin/
       - name: Scaffold with target version
         run: |
-          archway new test-svc \
+          verikt new test-svc \
+            --language go \
             --set GoVersion=${{ matrix.go-version }} \
             --arch hexagonal \
             --cap platform,bootstrap,http-api \

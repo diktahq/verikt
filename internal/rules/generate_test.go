@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,13 +15,13 @@ func TestGenerateRules_NilConfig(t *testing.T) {
 }
 
 func TestGenerateRules_EmptyConfig(t *testing.T) {
-	cfg := &config.ArchwayConfig{}
+	cfg := &config.VeriktConfig{}
 	rules := GenerateRules(cfg)
 	assert.Empty(t, rules)
 }
 
 func TestGenerateRules_FlatArchitecture(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 	}
@@ -30,7 +30,7 @@ func TestGenerateRules_FlatArchitecture(t *testing.T) {
 }
 
 func TestGenerateRules_HexagonalArchitecture(t *testing.T) {
-	cfg := config.DefaultArchwayConfig("go", "hexagonal")
+	cfg := config.DefaultVeriktConfig("go", "hexagonal")
 	rules := GenerateRules(cfg)
 
 	require.NotEmpty(t, rules)
@@ -47,7 +47,7 @@ func TestGenerateRules_HexagonalArchitecture(t *testing.T) {
 }
 
 func TestGenerateRules_HexagonalComponentDeps(t *testing.T) {
-	cfg := config.DefaultArchwayConfig("go", "hexagonal")
+	cfg := config.DefaultVeriktConfig("go", "hexagonal")
 	rules := GenerateRules(cfg)
 	rulesByID := indexByID(rules)
 
@@ -61,7 +61,7 @@ func TestGenerateRules_HexagonalComponentDeps(t *testing.T) {
 }
 
 func TestGenerateRules_PostgresCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"postgres"},
@@ -74,7 +74,7 @@ func TestGenerateRules_PostgresCapability(t *testing.T) {
 }
 
 func TestGenerateRules_MysqlCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"mysql"},
@@ -86,7 +86,7 @@ func TestGenerateRules_MysqlCapability(t *testing.T) {
 }
 
 func TestGenerateRules_DuplicateSQLCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"postgres", "mysql"},
@@ -99,7 +99,7 @@ func TestGenerateRules_DuplicateSQLCapability(t *testing.T) {
 }
 
 func TestGenerateRules_HTTPAPICapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"http-api"},
@@ -112,7 +112,7 @@ func TestGenerateRules_HTTPAPICapability(t *testing.T) {
 }
 
 func TestGenerateRules_GRPCCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"grpc"},
@@ -125,7 +125,7 @@ func TestGenerateRules_GRPCCapability(t *testing.T) {
 }
 
 func TestGenerateRules_AuthJWTCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"auth-jwt"},
@@ -137,7 +137,7 @@ func TestGenerateRules_AuthJWTCapability(t *testing.T) {
 }
 
 func TestGenerateRules_ObservabilityCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"observability"},
@@ -150,7 +150,7 @@ func TestGenerateRules_ObservabilityCapability(t *testing.T) {
 }
 
 func TestGenerateRules_KafkaCapability(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"kafka-consumer"},
@@ -163,7 +163,7 @@ func TestGenerateRules_KafkaCapability(t *testing.T) {
 }
 
 func TestGenerateRules_UnknownCapabilityIgnored(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Language:     "go",
 		Capabilities: []string{"unknown-cap"},
@@ -173,7 +173,7 @@ func TestGenerateRules_UnknownCapabilityIgnored(t *testing.T) {
 }
 
 func TestGenerateRules_CombinedArchAndCaps(t *testing.T) {
-	cfg := config.DefaultArchwayConfig("go", "hexagonal")
+	cfg := config.DefaultVeriktConfig("go", "hexagonal")
 	cfg.Capabilities = []string{"postgres", "http-api"}
 	rules := GenerateRules(cfg)
 
@@ -188,7 +188,7 @@ func TestGenerateRules_CombinedArchAndCaps(t *testing.T) {
 }
 
 func TestGenerateRules_AllRulesAreValid(t *testing.T) {
-	cfg := config.DefaultArchwayConfig("go", "hexagonal")
+	cfg := config.DefaultVeriktConfig("go", "hexagonal")
 	cfg.Capabilities = []string{"postgres", "http-api", "grpc", "auth-jwt", "observability", "kafka-consumer"}
 	rules := GenerateRules(cfg)
 
@@ -199,7 +199,7 @@ func TestGenerateRules_AllRulesAreValid(t *testing.T) {
 }
 
 func TestGenerateRules_ComponentWithEmptyName(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Components: []config.Component{
 			{Name: "", In: []string{"pkg/**"}, MayDependOn: []string{}},
@@ -213,7 +213,7 @@ func TestGenerateRules_ComponentWithEmptyName(t *testing.T) {
 }
 
 func TestGenerateRules_MayDependOnSelf(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Components: []config.Component{
 			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{"domain"}},
@@ -233,7 +233,7 @@ func TestGenerateRules_MayDependOnSelf(t *testing.T) {
 }
 
 func TestGenerateRules_MayDependOnNonExistentComponent(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Components: []config.Component{
 			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{"nonexistent"}},
@@ -259,7 +259,7 @@ func TestGenerateRules_LargeForbiddenList(t *testing.T) {
 		}
 	}
 	// First component depends on nothing, so all 11 others are forbidden.
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Components:   components,
 	}
@@ -275,7 +275,7 @@ func TestGenerateRules_LargeForbiddenList(t *testing.T) {
 }
 
 func TestGenerateRules_DuplicateCapabilities(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Capabilities: []string{"postgres", "postgres"},
 	}
@@ -289,7 +289,7 @@ func TestGenerateRules_DuplicateCapabilities(t *testing.T) {
 func TestBuildForbiddenPattern_EmptyList(t *testing.T) {
 	// Defensive: buildForbiddenPattern shouldn't be called with empty list,
 	// but test that it doesn't panic.
-	pattern := buildForbiddenPattern([]string{})
+	pattern := buildForbiddenPattern([]string{}, "go")
 	assert.NotEmpty(t, pattern) // Returns pattern with empty alternation.
 }
 
@@ -304,12 +304,12 @@ func TestJoinNames_EmptySlice(t *testing.T) {
 }
 
 func TestScopeFromPaths_EmptyPaths(t *testing.T) {
-	result := scopeFromPaths([]string{})
+	result := scopeFromPaths([]string{}, ".go")
 	assert.Empty(t, result)
 }
 
 func TestGenerateCapRules_UnknownCapabilitiesOnly(t *testing.T) {
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Capabilities: []string{"unknown1", "unknown2", "unknown3"},
 	}
 	rules := generateCapRules(cfg)

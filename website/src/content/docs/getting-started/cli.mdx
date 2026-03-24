@@ -1,12 +1,12 @@
 ---
 title: Quick Start with CLI
-description: Scaffold a production-ready service in under 2 minutes — architecture pattern, capabilities, and a full archway.yaml in one wizard run.
+description: Scaffold a production-ready service in under 2 minutes — architecture pattern, capabilities, and a full verikt.yaml in one wizard run.
 ---
 
 import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 <Aside type="note">
-  archway is designed to work with AI agents, not replace them. The CLI sets up your project and keeps architecture context current — your agent does the development. If you haven't already, start with the [Quick Start with AI Agents](/getting-started/ai-agents/) instead.
+  verikt is designed to work with AI agents, not replace them. The CLI sets up your project and keeps architecture context current — your agent does the development. If you haven't already, start with the [Quick Start with AI Agents](/getting-started/ai-agents/) instead.
 </Aside>
 
 <Steps>
@@ -14,24 +14,45 @@ import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 1. **Scaffold your service**
 
    ```bash
-   archway new my-service
+   verikt new my-service
    ```
 
-   You'll pick a service name and module path, choose your architecture (hexagonal, layered, clean, or flat), multi-select capabilities, and accept or skip smart suggestions.
+   You'll pick a service name, choose your language (Go or TypeScript), select an architecture (hexagonal, layered, clean, or flat), multi-select capabilities, and accept or skip smart suggestions.
 
    :::tip
    Know exactly what you want? Skip the wizard:
 
+   <Tabs>
+   <TabItem label="Go">
+
    ```bash
-   archway new my-service \
+   verikt new my-service \
+     --language go \
      --arch hexagonal \
      --cap platform,bootstrap,http-api,mysql,docker \
      --module github.com/myorg/my-service \
      --no-wizard
    ```
+
+   </TabItem>
+   <TabItem label="TypeScript">
+
+   ```bash
+   verikt new my-ts-api \
+     --language typescript \
+     --arch hexagonal \
+     --cap platform,bootstrap,http-api,docker \
+     --no-wizard
+   ```
+
+   </TabItem>
+   </Tabs>
    :::
 
 2. **Explore what you got**
+
+   <Tabs>
+   <TabItem label="Go">
 
    ```
    my-service/
@@ -50,24 +71,56 @@ import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
    ├── config/                         # YAML config loading
    ├── platform/                       # Logging, OTel, lifecycle
    ├── docs/PROJECT.md                 # Full project anatomy
-   ├── archway.yaml                    # Architecture rules
+   ├── verikt.yaml                    # Architecture rules
    └── go.mod
    ```
 
+   </TabItem>
+   <TabItem label="TypeScript">
+
+   ```
+   my-ts-api/
+   ├── src/
+   │   ├── domain/                     # Business logic (zero deps)
+   │   ├── application/                # Use cases and ports
+   │   ├── infrastructure/             # DB, external services
+   │   └── transport/                  # HTTP handlers
+   ├── verikt.yaml                    # Architecture rules
+   ├── package.json
+   └── tsconfig.json
+   ```
+
+   </TabItem>
+   </Tabs>
+
 3. **Run it**
+
+   <Tabs>
+   <TabItem label="Go">
 
    ```bash
    cd my-service
    go run ./cmd/my-service
    ```
 
+   </TabItem>
+   <TabItem label="TypeScript">
+
+   ```bash
+   cd my-ts-api
+   npm install && npm run dev
+   ```
+
+   </TabItem>
+   </Tabs>
+
 4. **Validate the architecture**
 
    ```bash
-   archway check
+   verikt check
    ```
 
-   This catches dependency violations, missing directories, function complexity issues, and anti-patterns — with **11 AST-based detectors**.
+   This catches dependency violations, missing directories, function complexity issues, and anti-patterns. Go uses 11 AST-based detectors; TypeScript uses tree-sitter import graph analysis.
 
 </Steps>
 
@@ -78,7 +131,7 @@ import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 - [How It Works](/concepts/how-it-works/) — understand the composition model
 - [Architectures](/concepts/architectures/) — hexagonal vs flat
-- [Capabilities](/concepts/capabilities/) — all 63 capabilities explained
+- [Capabilities](/concepts/capabilities/) — all capabilities explained
 
 </TabItem>
 <TabItem label="Build">
@@ -91,7 +144,7 @@ import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 - [Capabilities Matrix](/reference/capabilities-matrix/) — everything at a glance
 - [CLI Commands](/reference/cli/) — full flag reference
-- [archway.yaml](/reference/archway-yaml/) — configuration spec
+- [verikt.yaml](/reference/verikt-yaml/) — configuration spec
 
 </TabItem>
 </Tabs>

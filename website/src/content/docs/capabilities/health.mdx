@@ -23,9 +23,9 @@ Any production service behind a load balancer or in Kubernetes needs health endp
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap http-api,health
+verikt new my-service --language go --cap http-api,health
 # or add to an existing service:
-archway add health
+verikt add health
 ```
 
 ## Related Capabilities

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 )
 
 func TestPing(t *testing.T) {
@@ -257,19 +257,19 @@ func newTestClient(t *testing.T) *Client {
 func findEngineBinary(t *testing.T) string {
 	t.Helper()
 
-	if p := os.Getenv("ARCHWAY_ENGINE_BIN"); p != "" {
+	if p := os.Getenv("VERIKT_ENGINE_BIN"); p != "" {
 		return p
 	}
 
 	repoRoot := findRepoRoot(t)
-	debugPath := filepath.Join(repoRoot, "engine", "target", "debug", "archway-engine")
+	debugPath := filepath.Join(repoRoot, "engine", "target", "debug", "verikt-engine")
 	if _, err := os.Stat(debugPath); err == nil {
 		return debugPath
 	}
 
 	// Fall back to the extracted cache binary before trying to build from source.
 	if cacheDir, err := os.UserCacheDir(); err == nil {
-		cachePath := filepath.Join(cacheDir, "archway", "engine-v"+version, "archway-engine")
+		cachePath := filepath.Join(cacheDir, "verikt", "engine-v"+version, "verikt-engine")
 		if _, err := os.Stat(cachePath); err == nil {
 			return cachePath
 		}

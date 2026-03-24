@@ -21,7 +21,17 @@ struct DetFinding {
 
 pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
     let start = Instant::now();
-    let project = PathBuf::from(&req.project_path);
+    let project = match PathBuf::from(&req.project_path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return vec![EngineResponse {
+                payload: Some(Payload::Error(pb::EngineError {
+                    message: format!("invalid project_path: {e}"),
+                    code: "INVALID_PROJECT_PATH".to_string(),
+                })),
+            }];
+        }
+    };
 
     let ap_rules: Vec<_> = req
         .rules

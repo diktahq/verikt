@@ -42,9 +42,9 @@ type OrderRepository interface {
 
 The service depends on that interface, not on the Postgres implementation. The adapter wires everything together at startup via the bootstrap pattern. This makes the service layer fully testable with an in-memory fake — no database required.
 
-## How archway Supports It
+## How verikt Supports It
 
-archway scaffolds the full hexagonal layout — `domain/`, `port/`, `service/`, `adapter/` directories with dependency rules defined in `archway.yaml`. The `archway check` command enforces those rules continuously, catching import violations before they reach code review. See [Architectures](/concepts/architectures/) for the full structure.
+verikt scaffolds the full hexagonal layout — `domain/`, `port/`, `service/`, `adapter/` directories with dependency rules defined in `verikt.yaml`. The `verikt check` command enforces those rules continuously, catching import violations before they reach code review. See [Architectures](/concepts/architectures/) for the full structure.
 
 <Aside type="tip">
 Start with the outbound port interface before writing the adapter. Designing what the service needs from storage — not what Postgres can provide — keeps the domain clean.
@@ -57,7 +57,7 @@ Start with the outbound port interface before writing the adapter. Designing wha
     The alternative name for hexagonal architecture, often used interchangeably. [Ports and Adapters](/glossary/ports-and-adapters/)
   </Card>
   <Card title="Architectures" icon="right-arrow">
-    Compare hexagonal with layered, clean, and flat architectures in archway. [Architectures](/concepts/architectures/)
+    Compare hexagonal with layered, clean, and flat architectures in verikt. [Architectures](/concepts/architectures/)
   </Card>
   <Card title="Repository Pattern" icon="right-arrow">
     The outbound port for data access — the standard way hexagonal services talk to storage. [Repository Pattern](/glossary/repository-pattern/)

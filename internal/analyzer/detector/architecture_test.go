@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dcsg/archway/internal/analyzer/graph"
+	"github.com/diktahq/verikt/internal/analyzer/graph"
 	"golang.org/x/tools/go/packages"
 )
 

@@ -1,9 +1,9 @@
 ---
 title: "Methodology"
-description: "How archway experiments are structured, run, and published — fixture delivery modes, agent abstraction, artifact format, and reproducing instructions."
+description: "How verikt experiments are structured, run, and published — fixture delivery modes, agent abstraction, artifact format, and reproducing instructions."
 ---
 
-Every archway experiment follows the same methodology. This page describes how experiments are structured, what artifacts they produce, and how to reproduce them.
+Every verikt experiment follows the same methodology. This page describes how experiments are structured, what artifacts they produce, and how to reproduce them.
 
 ## Principles
 
@@ -20,7 +20,7 @@ The mode determines how (or whether) the agent sees existing code. This is the m
 
 No existing code. The agent builds from scratch. The only inputs are the system prompt and the task prompt.
 
-`archway check` runs on the full generated project.
+`verikt check` runs on the full generated project.
 
 Used for: EXP-01, EXP-02, EXP-03, EXP-05, EXP-08.
 
@@ -28,7 +28,7 @@ Used for: EXP-01, EXP-02, EXP-03, EXP-05, EXP-08.
 
 The fixture files are read from a committed fixture directory and embedded verbatim in the prompt. The agent sees the codebase as text. No tool access.
 
-`archway check --diff HEAD` runs after overlaying the agent's output on the fixture. Only violations in the agent's changed files count.
+`verikt check --diff HEAD` runs after overlaying the agent's output on the fixture. Only violations in the agent's changed files count.
 
 This mode is reproducible across all agents — every LLM can receive text. The embedded content is deterministic: same git SHA = same prompt.
 
@@ -38,7 +38,7 @@ Used for: EXP-04, EXP-07, EXP-09.
 
 The fixture is copied to a temp directory. The agent gets `Read/Glob/Grep/Edit/Write` tool access and works directly in that copy. Used for large codebases that can't be embedded in a prompt.
 
-`archway check --diff HEAD` runs after the agent finishes. Only violations in agent-touched files count.
+`verikt check --diff HEAD` runs after the agent finishes. Only violations in agent-touched files count.
 
 Currently Claude-only — the `--allowedTools` mechanism is specific to `claude -p`.
 
@@ -69,9 +69,9 @@ Two implementations:
 Agent selection via environment variables:
 
 ```bash
-ARCHWAY_EXPERIMENT_AGENT=1                    # opt-in guard
-ARCHWAY_EXPERIMENT_VENDOR=claude-code         # claude-code | anthropic | openai | google | ollama
-ARCHWAY_EXPERIMENT_MODEL=claude-sonnet-4-6    # model ID
+VERIKT_EXPERIMENT_AGENT=1                    # opt-in guard
+VERIKT_EXPERIMENT_VENDOR=claude-code         # claude-code | anthropic | openai | google | ollama
+VERIKT_EXPERIMENT_MODEL=claude-sonnet-4-6    # model ID
 ```
 
 | Vendor | Endpoint |
@@ -97,7 +97,7 @@ experiments/
         manifest.json          ← verbatim inputs: prompts, agent, fixture SHA
         response.txt           ← raw agent output, unmodified
         files/                 ← generated files parsed from response
-        archway-check.json     ← full archway check output
+        verikt-check.json     ← full verikt check output
         metrics.json           ← violations, tokens, duration, pass/fail
 ```
 
@@ -198,35 +198,35 @@ Each fixture directory is identified by a sha256 of its contents (sorted file pa
 import { Aside } from '@astrojs/starlight/components';
 
 <Aside type="note">
-The experiment harness currently lives in `internal/engineclient/experiment/`. This path will change when the engine is extracted to a standalone package in v0.3.0. A stable `archway experiment run EXP-01` command will replace these instructions at that point.
+The experiment harness currently lives in `internal/engineclient/experiment/`. A stable `verikt experiment run EXP-01` command is planned to replace these instructions.
 </Aside>
 
 ```bash
-# Build archway
-go build -o ./bin/archway ./cmd/archway/
+# Build verikt
+go build -o ./bin/verikt ./cmd/verikt/
 
 # Run via Claude Code CLI (default — no API key needed)
-ARCHWAY_EXPERIMENT_AGENT=1 \
+VERIKT_EXPERIMENT_AGENT=1 \
 go test -run TestEXP01 -v -timeout 300s ./internal/engineclient/experiment/
 
 # Run with Anthropic API directly
-ARCHWAY_EXPERIMENT_AGENT=1 \
-ARCHWAY_EXPERIMENT_VENDOR=anthropic \
-ARCHWAY_EXPERIMENT_MODEL=claude-sonnet-4-6 \
+VERIKT_EXPERIMENT_AGENT=1 \
+VERIKT_EXPERIMENT_VENDOR=anthropic \
+VERIKT_EXPERIMENT_MODEL=claude-sonnet-4-6 \
 ANTHROPIC_API_KEY=your-key \
 go test -run TestEXP01 -v -timeout 300s ./internal/engineclient/experiment/
 
 # Run with GPT-4o
-ARCHWAY_EXPERIMENT_AGENT=1 \
-ARCHWAY_EXPERIMENT_VENDOR=openai \
-ARCHWAY_EXPERIMENT_MODEL=gpt-4o \
+VERIKT_EXPERIMENT_AGENT=1 \
+VERIKT_EXPERIMENT_VENDOR=openai \
+VERIKT_EXPERIMENT_MODEL=gpt-4o \
 OPENAI_API_KEY=your-key \
 go test -run TestEXP01 -v -timeout 300s ./internal/engineclient/experiment/
 
 # Run with a local model via Ollama
-ARCHWAY_EXPERIMENT_AGENT=1 \
-ARCHWAY_EXPERIMENT_VENDOR=ollama \
-ARCHWAY_EXPERIMENT_MODEL=llama3.1:70b \
+VERIKT_EXPERIMENT_AGENT=1 \
+VERIKT_EXPERIMENT_VENDOR=ollama \
+VERIKT_EXPERIMENT_MODEL=llama3.1:70b \
 go test -run TestEXP01 -v -timeout 600s ./internal/engineclient/experiment/
 ```
 

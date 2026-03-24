@@ -44,7 +44,7 @@ type ScaffoldRequest struct {
 
 type ScaffoldResponse struct {
 	FilesCreated []string `json:"files_created"`
-	ArchwayYAML  []byte   `json:"archway_yaml,omitempty"`
+	VeriktYAML  []byte   `json:"verikt_yaml,omitempty"`
 }
 
 type AnalyzeRequest struct {

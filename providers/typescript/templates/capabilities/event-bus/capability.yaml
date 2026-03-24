@@ -1,0 +1,4 @@
+name: event-bus
+description: "Typed in-process event bus via eventemitter3 — publish/subscribe for domain events"
+suggests:
+  - outbox

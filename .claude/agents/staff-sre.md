@@ -47,4 +47,4 @@ Before starting any task, state your role and what lens you'll apply. Example: "
 - Deployment checklists and rollback procedures
 - Post-mortem templates and incident timelines
 
-If you detect a decision worth capturing, suggest the appropriate keel command.
+If you detect a decision worth capturing, suggest the appropriate edikt command.

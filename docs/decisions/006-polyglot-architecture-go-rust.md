@@ -13,11 +13,11 @@ PoC complete on `dev-0.2.0` branch. Phase 1 (ping + grep engine) is done:
 - Experiment E25 result: 2.2x grep speedup vs Go on real codebase (191ms → 86ms, 6 rules)
 - Scope walker bug found and fixed: Go was scanning `.claude/worktrees/` (24 copies), inflating violations 25x. Fix: skip all hidden directories in scope.go.
 
-`//go:embed` (Phase 2) and `archway check` wiring (Phase 3) are next. See `docs/product/plans/PLAN-v0.2.0-rust-engine.md`.
+`//go:embed` (Phase 2) and `verikt check` wiring (Phase 3) are next. See `docs/product/plans/PLAN-v0.2.0-rust-engine.md`.
 
 ## Context
 
-Archway's roadmap targets 7 architectures across multiple languages (Go, TypeScript, Python, Java). The current analysis engine uses `go/ast` and `go/packages`, which are Go-only. Scaling to N languages means either:
+verikt's roadmap targets 7 architectures across multiple languages (Go, TypeScript, Python, Java). The current analysis engine uses `go/ast` and `go/packages`, which are Go-only. Scaling to N languages means either:
 
 1. Reimplementing analyzers per language in Go (0% shareability for detection)
 2. Using a universal parser that works across all languages
@@ -38,22 +38,22 @@ Adopt a **polyglot architecture**: Go orchestrator + Rust analysis engine, commu
 
 ```
 ┌─────────────────────────────────────────────┐
-│  archway (Go)                               │
+│  verikt (Go)                               │
 │  CLI, TUI, config, scaffold, templates      │
 └──────────────┬──────────────────────────────┘
                │ stdin/stdout (protobuf, length-prefixed)
        ┌───────▼───────────────────────┐
-       │  archway-engine (Rust)        │
+       │  verikt-engine (Rust)        │
        │  tree-sitter + rules engine   │
        │  analyze | check | detect     │
        └───────────────────────────────┘
 ```
 
-**Go owns:** CLI (Cobra), TUI wizard (Bubbletea), config (Viper), template rendering, scaffold composition, archway.yaml generation, output formatting.
+**Go owns:** CLI (Cobra), TUI wizard (Bubbletea), config (Viper), template rendering, scaffold composition, verikt.yaml generation, output formatting.
 
 **Rust owns:** Code parsing (tree-sitter), import graph analysis, architecture detection, anti-pattern checking, rule engine, structural queries.
 
-**Distribution:** Rust binary embedded in Go binary via `//go:embed`. Extracted to cache on first run. Single `archway` binary — users don't know it's polyglot. GoReleaser builds Rust engine per target platform first, then Go embeds the right one.
+**Distribution:** Rust binary embedded in Go binary via `//go:embed`. Extracted to cache on first run. Single `verikt` binary — users don't know it's polyglot. GoReleaser builds Rust engine per target platform first, then Go embeds the right one.
 
 ### Internal Protocol: Protobuf
 
@@ -112,7 +112,7 @@ The `.proto` file generates matching types on both sides. A field rename or type
 
 **Streaming:** The Rust engine sends length-prefixed `EngineMessage` packets as findings are discovered. Go reads and displays them incrementally — progress bars, real-time findings on large codebases.
 
-**User-facing formats remain YAML:** archway.yaml, rule definitions, manifests — all human-readable YAML. Protobuf is purely internal, invisible to users.
+**User-facing formats remain YAML:** verikt.yaml, rule definitions, manifests — all human-readable YAML. Protobuf is purely internal, invisible to users.
 
 ## Consequences
 
@@ -131,7 +131,7 @@ The `.proto` file generates matching types on both sides. A field rename or type
 - **Two build toolchains** — CI needs both Go and Rust, cross-compilation for Rust per GOOS/GOARCH. This is the highest-risk item — every release touches it.
 - **Two languages for contributors** — CLI contributors need Go, engine contributors need Rust. Clear boundary mitigates this.
 - **Protobuf toolchain** — adds `protoc` + `prost` (Rust) + `protoc-gen-go` to the build. One-time setup cost.
-- **Embedded binary size** — adds ~5-10MB to the archway binary (total ~20-25MB)
+- **Embedded binary size** — adds ~5-10MB to the verikt binary (total ~20-25MB)
 - **Anti-pattern queries are per-language work** — 8 of 11 current detectors are Go-semantic. Each new language needs its own anti-pattern query set.
 
 ### Timeline

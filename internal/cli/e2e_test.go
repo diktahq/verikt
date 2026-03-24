@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/dcsg/archway/providers/golang"
+	_ "github.com/diktahq/verikt/providers/golang"
 )
 
 func goModTidy(t *testing.T, dir string) {
@@ -56,7 +56,7 @@ func TestE2E_ScaffoldCheckAnalyzeGuide(t *testing.T) {
 	}
 
 	for _, p := range []string{
-		filepath.Join(".claude", "rules", "archway-index.md"),
+		filepath.Join(".claude", "rules", "verikt-index.md"),
 		".cursorrules",
 		filepath.Join(".github", "copilot-instructions.md"),
 		".windsurfrules",
@@ -68,9 +68,9 @@ func TestE2E_ScaffoldCheckAnalyzeGuide(t *testing.T) {
 	}
 
 	// Verify guide content references capabilities.
-	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 	content := string(data)
 	for _, cap := range []string{"http-api"} {
@@ -111,9 +111,9 @@ func TestE2E_FlatPipeline(t *testing.T) {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 	content := string(data)
 	for _, want := range []string{"flat", "no layer restrictions"} {
@@ -160,9 +160,9 @@ func TestE2E_MultipleCapabilities(t *testing.T) {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
-	indexData, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	indexData, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 
 	content := string(indexData)

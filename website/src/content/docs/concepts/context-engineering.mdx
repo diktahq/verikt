@@ -1,6 +1,6 @@
 ---
 title: Context Engineering
-description: What context engineering means, why it matters for AI coding agents, and how archway applies it specifically to software architecture.
+description: What context engineering means, why it matters for AI coding agents, and how verikt applies it specifically to software architecture.
 ---
 
 import ContextQualityChart from '../../../components/ContextQualityChart.astro';
@@ -29,7 +29,7 @@ The shift matters because the failure mode changed. Early LLM usage failed at th
 
 Context engineering operates across four layers:
 
-**1. System instructions** — What the agent is, what rules it must follow, what conventions to apply. Always present. Loaded before every session. The highest-leverage layer because it shapes every response. <span style="color:var(--sl-color-accent)">← archway operates here.</span>
+**1. System instructions** — What the agent is, what rules it must follow, what conventions to apply. Always present. Loaded before every session. The highest-leverage layer because it shapes every response. <span style="color:var(--sl-color-accent)">← verikt operates here.</span>
 
 **2. Tools** — What actions the agent can take: read file, run command, call API, search codebase. Defines the agent's capabilities at runtime.
 
@@ -39,7 +39,7 @@ Context engineering operates across four layers:
 
 Good context engineering means knowing which layer each piece of information belongs in, and keeping each layer clean.
 
-Architecture rules belong in layer 1. They're always relevant — every prompt the agent receives is shaped by knowing your layer boundaries, your capability stack, and your dependency rules. This is why `archway guide` generates system instruction files rather than documentation pages: the architecture lives in the layer that runs before every response, not in a file the agent might or might not read.
+Architecture rules belong in layer 1. They're always relevant — every prompt the agent receives is shaped by knowing your layer boundaries, your capability stack, and your dependency rules. This is why `verikt guide` generates system instruction files rather than documentation pages: the architecture lives in the layer that runs before every response, not in a file the agent might or might not read.
 
 Architecture context includes:
 - Your architecture pattern (hexagonal, clean, layered, flat) and what it means in practice
@@ -50,13 +50,13 @@ Architecture context includes:
 
 Without this in the system instructions layer, the agent defaults to training data patterns. It puts code where training data says code goes, not where your architecture says it goes.
 
-## archway as architecture-layer context engineering
+## verikt as architecture-layer context engineering
 
-`archway guide` is context engineering applied specifically to software architecture. It reads your `archway.yaml` — the authoritative source for your architecture and capability declarations — and generates system instruction files for every major AI agent:
+`verikt guide` is context engineering applied specifically to software architecture. It reads your `verikt.yaml` — the authoritative source for your architecture and capability declarations — and generates system instruction files for every major AI agent:
 
 ```bash
-archway guide
-# Generated .claude/rules/archway.md (1,247 tokens)
+verikt guide
+# Generated .claude/rules/verikt.md (1,247 tokens)
 # Generated .cursorrules (1,247 tokens)
 # Generated .github/copilot-instructions.md (1,247 tokens)
 # Generated .windsurfrules (1,247 tokens)
@@ -64,7 +64,7 @@ archway guide
 
 Each file is a precisely curated system instruction — not a documentation dump. It tells the agent the minimum it needs to know to produce architecture-correct output: the pattern, the layers, the capabilities, the rules, the warnings. 1,247 tokens of high-signal context that applies to every prompt in the session.
 
-This is what Fowler's definition describes: "curating what the model sees so that you get a better result." archway curates the architecture layer.
+This is what Fowler's definition describes: "curating what the model sees so that you get a better result." verikt curates the architecture layer.
 
 ## The gap nobody else fills
 
@@ -72,7 +72,7 @@ Context engineering tools and frameworks (LangChain, Google ADK, Anthropic's gui
 
 Manual `CLAUDE.md` and `.cursorrules` files are the current workaround. Engineers write them once, they go stale, and the agent follows outdated rules. They're not generated from a source of truth — they are the source of truth, which means they drift the moment the architecture changes.
 
-archway closes that loop. The `archway.yaml` is the authoritative source. `archway guide` generates from it. When the architecture changes, re-run `archway guide` — every agent context file updates. The context stays current because it's generated, not maintained.
+verikt closes that loop. The `verikt.yaml` is the authoritative source. `verikt guide` generates from it. When the architecture changes, re-run `verikt guide` — every agent context file updates. The context stays current because it's generated, not maintained.
 
 ## Further reading
 
@@ -84,5 +84,5 @@ archway closes that loop. The `archway.yaml` is the authoritative source. `archw
 ---
 
 → [Agentic Engineering](/concepts/agentic-engineering/) — the discipline that makes context engineering necessary
-→ [Why archway exists](/concepts/why-archway-exists/) — the architectural beliefs behind the tool
+→ [Why verikt exists](/concepts/why-verikt-exists/) — the architectural beliefs behind the tool
 → [Quick Start with AI Agents](/getting-started/ai-agents/) — context engineering in practice

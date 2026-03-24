@@ -15,7 +15,7 @@ The pattern's strength is its familiarity and simplicity. For straightforward CR
 
 ## How It Works
 
-archway's layered architecture scaffold produces:
+verikt's layered architecture scaffold produces:
 
 ```
 cmd/<name>/             → Entry point
@@ -53,9 +53,9 @@ func (s *OrderService) CreateOrder(ctx context.Context, req model.CreateOrderReq
 
 The handler receives an `OrderService` interface (not the concrete struct), making it testable. The repository also hides behind an interface, allowing the service tests to run without a database.
 
-## How archway Supports It
+## How verikt Supports It
 
-archway scaffolds the full layered structure and encodes dependency rules in `archway.yaml`. Run `archway check` to catch violations — a handler importing directly from a repository, or a service calling another service's handler. See [Architectures](/concepts/architectures/) for the full comparison with hexagonal and clean.
+verikt scaffolds the full layered structure and encodes dependency rules in `verikt.yaml`. Run `verikt check` to catch violations — a handler importing directly from a repository, or a service calling another service's handler. See [Architectures](/concepts/architectures/) for the full comparison with hexagonal and clean.
 
 <Aside type="tip">
 Layered works well until your service layer starts accumulating methods for different concerns. When a single `OrderService` has 20+ methods, that's the signal to consider hexagonal or clean architecture with explicit use cases.
@@ -71,6 +71,6 @@ Layered works well until your service layer starts accumulating methods for diff
     The data access layer in detail — interfaces, generics, and the data access contract. [Repository Pattern](/glossary/repository-pattern/)
   </Card>
   <Card title="Architectures" icon="right-arrow">
-    Full comparison of all four architectures archway supports. [Architectures](/concepts/architectures/)
+    Full comparison of all four architectures verikt supports. [Architectures](/concepts/architectures/)
   </Card>
 </CardGrid>

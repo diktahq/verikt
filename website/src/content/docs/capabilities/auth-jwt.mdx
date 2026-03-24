@@ -1,38 +1,112 @@
 ---
 title: "auth-jwt capability"
-description: "Add JWT authentication middleware to your Go service with token validation, claims extraction into request context, and route-level auth."
+description: "Add JWT authentication middleware to your Go or TypeScript service with token signing, verification, claims extraction into request context, and route-level auth."
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-`auth-jwt` adds JWT authentication middleware to your Go service, validating tokens and extracting claims into the request context.
+`auth-jwt` adds JWT authentication middleware to your service, validating tokens on protected routes and making claims available to handlers downstream.
+
+## Why JWT for API Authentication
+
+Server-side sessions require shared state — every instance of your service needs to reach the same session store. That's a coupling point that complicates horizontal scaling and increases operational overhead. JWTs move that state into the token itself: the token is signed, self-contained, and verifiable by any instance that has the signing key.
+
+This works well for microservices where multiple services need to verify identity independently. Each service validates the token signature locally, extracts the claims it needs (user ID, roles, tenant ID), and proceeds without a network hop to a central session store.
+
+The tradeoff is that JWTs can't be individually revoked without additional infrastructure (a token denylist, usually backed by [Redis](/capabilities/redis/)). For most APIs this is acceptable — short token lifetimes combined with refresh token rotation cover the majority of revocation needs. If you need per-token revocation with no latency, you want sessions, not JWTs.
 
 ## What You Get
 
-- Middleware that validates JWT tokens
-- Claims extraction into request context
-- Route-level authentication
+- Middleware that validates JWT tokens on protected routes
+- Claims extraction into request context (Go) or request object (TypeScript)
+- `signToken` and `verifyToken` utility functions
+- Bearer token extraction from the `Authorization` header
+- Route-level opt-in: unprotected routes are unaffected
 
-## When to Use
+## Go Implementation
 
-Use `auth-jwt` for stateless API authentication where you don't need server-side session storage. JWTs carry claims directly in the token, making them well-suited for microservices where every service needs to verify identity independently.
+The Go capability uses [golang-jwt/jwt](https://github.com/golang-jwt/jwt) — the maintained fork of the original `dgrijalva/jwt-go` package. The scaffold provides an `AuthMiddleware` function that validates the token signature, checks expiry, and stores claims in the request context.
+
+```go
+// Middleware wraps protected route groups.
+protected := router.Group("/api", middleware.Auth(cfg.JWT.Secret))
+
+// Handlers retrieve claims from context — no need to re-parse the token.
+claims, ok := middleware.ClaimsFromContext(r.Context())
+if !ok {
+    http.Error(w, "unauthorized", http.StatusUnauthorized)
+    return
+}
+userID := claims.Subject
+```
+
+Token signing is handled by a `SignToken` function that takes a `Claims` struct and returns the signed string. The signing algorithm defaults to HS256 — adequate for most services. If you need asymmetric signing (so multiple services can verify without sharing a secret), switch to RS256 by passing an RSA private key.
+
+The middleware distinguishes between an invalid signature (returns 401) and an expired token (returns 401 with a specific error code that clients can use to trigger a refresh).
+
+<Aside type="caution">
+Store your JWT signing secret in an environment variable, not in code or config files. If the secret leaks, every token ever signed with it is compromised — rotate immediately.
+</Aside>
+
+## TypeScript Implementation
+
+The TypeScript capability uses [jose](https://github.com/panva/jose) — a comprehensive JWT library that implements the JOSE standards (JWS, JWE, JWK, JWT) with full TypeScript types and support for both symmetric and asymmetric algorithms.
+
+The scaffold exports three functions: `signToken`, `verifyToken`, and `extractBearerToken`. These compose into the auth middleware.
+
+```typescript
+import { signToken, verifyToken, extractBearerToken } from './auth/jwt';
+
+// Sign a token at login time.
+const token = await signToken(
+  { sub: user.id, role: user.role },
+  { expiresIn: '1h' }
+);
+
+// Middleware extracts and verifies on every protected request.
+export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  const raw = extractBearerToken(req);
+  if (!raw) return res.status(401).json({ error: 'missing token' });
+
+  const claims = await verifyToken(raw);
+  if (!claims) return res.status(401).json({ error: 'invalid token' });
+
+  req.user = claims;
+  next();
+}
+```
+
+`jose` uses the Web Crypto API under the hood, which is available natively in Node.js 18+ and all modern runtimes. No native bindings, no build-time issues.
+
+## Combining with CORS
+
+If your API serves browser clients, JWT auth and [CORS](/capabilities/cors/) interact at preflight. The browser sends an `OPTIONS` request before the actual request — that preflight must succeed without an auth check, or the browser will never send the credentialed request. The scaffold configures CORS to exclude `OPTIONS` from middleware processing.
+
+For multi-tenant services, extract the tenant ID from JWT claims rather than from request headers. A tenant ID in a header is trivially forged; a tenant ID inside a signed token is not. See [multi-tenancy](/capabilities/multi-tenancy/) for how this pattern is enforced.
 
 ## Requirements & Suggestions
 
 **Requires:** [`http-api`](/capabilities/http-api/)
 
+**Suggests:** [`cors`](/capabilities/cors/), [`rate-limiting`](/capabilities/rate-limiting/)
+
+<Aside type="tip">
+Rate-limit your authentication and token-refresh endpoints. They're the primary target for credential stuffing attacks.
+</Aside>
+
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap http-api,auth-jwt
+verikt new my-service --cap http-api,auth-jwt
 # or add to an existing service:
-archway add auth-jwt
+verikt add auth-jwt
 ```
 
 ## Related Capabilities
 
 <CardGrid>
-  <Card title="oauth2" href="/capabilities/oauth2/">OAuth2 flows that issue JWT tokens.</Card>
   <Card title="cors" href="/capabilities/cors/">CORS headers for browser clients authenticating with JWT.</Card>
+  <Card title="rate-limiting" href="/capabilities/rate-limiting/">Rate limiting to protect authentication endpoints.</Card>
   <Card title="multi-tenancy" href="/capabilities/multi-tenancy/">Tenant isolation using authenticated identity from JWT claims.</Card>
+  <Card title="oauth2" href="/capabilities/oauth2/">OAuth2 flows that issue JWT tokens.</Card>
 </CardGrid>

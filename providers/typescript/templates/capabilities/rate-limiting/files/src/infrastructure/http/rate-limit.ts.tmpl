@@ -1,0 +1,39 @@
+{{- if eq .HttpFramework "fastify"}}
+import type { FastifyInstance } from 'fastify'
+import rateLimit from '@fastify/rate-limit'
+
+// registerRateLimit adds global rate limiting to a Fastify instance.
+// Apply per-route overrides via routeConfig.rateLimit in route definitions.
+export async function registerRateLimit(app: FastifyInstance): Promise<void> {
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: '1 minute',
+    errorResponseBuilder: (_req, context) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `rate limit exceeded, retry in ${context.after}`,
+    }),
+  })
+}
+{{- else}}
+import rateLimit from 'express-rate-limit'
+
+// globalRateLimit applies to all routes. Mount before route handlers.
+// Override per-route by applying a new limiter to that router.
+export const globalRateLimit = rateLimit({
+  windowMs: 60 * 1_000,  // 1 minute
+  limit: 100,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', retryAfter: 60 },
+})
+
+// authRateLimit is stricter — use on login/register endpoints.
+export const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1_000,  // 15 minutes
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', retryAfter: 900 },
+})
+{{- end}}

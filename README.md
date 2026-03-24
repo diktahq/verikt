@@ -1,29 +1,29 @@
-# archway
+# verikt
 
-**Architecture-aware service composer and enforcer.**
+**Your architecture, in every agent session.**
 
-AI agents don't know your architecture. They write correct syntax but put code in the wrong layers, skip production patterns, and drift from your conventions. Archway closes that gap — declare your architecture and capabilities once, and every agent session starts with the right context.
+AI agents don't know your architecture. They write correct syntax but put code in the wrong layers, skip production patterns, and drift from your conventions. verikt closes that gap — declare your architecture and capabilities once, and every agent session starts with the right context.
 
-**[Documentation](https://archway.dcsg.me/)** · **[Quick Start with AI Agents](https://archway.dcsg.me/getting-started/ai-agents/)** · **[Quick Start with CLI](https://archway.dcsg.me/getting-started/cli/)** · **[Capabilities Matrix](https://archway.dcsg.me/reference/capabilities-matrix/)**
+**[Documentation](https://verikt.dev/)** · **[Quick Start with AI Agents](https://verikt.dev/getting-started/ai-agents/)** · **[Quick Start with CLI](https://verikt.dev/getting-started/cli/)** · **[Capabilities Matrix](https://verikt.dev/reference/capabilities-matrix/)**
 
 ## Install
 
 ```bash
 # Homebrew (recommended)
-brew install dcsg/tap/archway
+brew install diktahq/tap/verikt
 
 # Install script (macOS/Linux)
-curl -sSL https://archway.dcsg.me/install.sh | bash
+curl -sSL https://verikt.dev/install.sh | bash
 ```
 
 ## Quick Start
 
 ```bash
 # Interactive wizard — walks you through everything
-archway new my-service
+verikt new my-service
 
 # Non-interactive
-archway new my-api --arch hexagonal \
+verikt new my-api --arch hexagonal \
   --cap platform,bootstrap,http-api,postgres,uuid,health,docker \
   --module github.com/myorg/my-api \
   --no-wizard
@@ -33,14 +33,16 @@ archway new my-api --arch hexagonal \
 
 | Pillar | Command | What It Does |
 |--------|---------|-------------|
-| **Guide** | `archway guide` | Generates architecture context for AI agents (Claude Code, Cursor, Copilot, Windsurf) |
-| **Compose** | `archway new` | Scaffolds services from architecture + capabilities — health checks, graceful shutdown, observability wired by default |
-| **Analyze** | `archway analyze` | Detects architecture patterns in existing codebases |
-| **Enforce** | `archway check` | Validates code against architecture rules — 11 anti-pattern detectors, `--diff main` for CI |
+| **Guide** | `verikt guide` | Generates architecture context for AI agents (Claude Code, Cursor, Copilot, Windsurf) |
+| **Compose** | `verikt new` | Scaffolds services from architecture + capabilities — health checks, graceful shutdown, observability wired by default |
+| **Analyze** | `verikt analyze` | Detects architecture patterns in existing codebases |
+| **Enforce** | `verikt check` | Validates code against architecture rules — 11 anti-pattern detectors, `--diff main` for CI |
 
 ## Language Support
 
-Go is fully supported with 4 architecture patterns and 63 capabilities across 10 categories. TypeScript/Node is next — a new language provider requires tree-sitter grammar bindings and query definitions.
+**Go** — 4 architecture patterns, 63 capabilities across 10 categories. Fully supported.
+
+**TypeScript/Node.js** — 2 architecture patterns (hexagonal, flat), 39 capabilities. HTTP framework choice: Express, Fastify, or Hono.
 
 ## License
 

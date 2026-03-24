@@ -3,9 +3,9 @@ package cli
 import (
 	"testing"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/rules"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/rules"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

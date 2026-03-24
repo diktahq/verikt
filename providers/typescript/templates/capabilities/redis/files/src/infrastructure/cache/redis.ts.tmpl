@@ -1,0 +1,30 @@
+import Redis from 'ioredis'
+
+let client: Redis | null = null
+
+export function getRedisClient(): Redis {
+  if (client) return client
+
+  const url = process.env.REDIS_URL ?? 'redis://localhost:6379'
+  client = new Redis(url, {
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: true,
+    lazyConnect: true,
+  })
+
+  client.on('error', (err) => {
+    console.error('[redis] connection error', err)
+  })
+
+  return client
+}
+
+export async function connectCache(): Promise<void> {
+  await getRedisClient().connect()
+}
+
+export async function disconnectCache(): Promise<void> {
+  if (!client) return
+  await client.quit()
+  client = null
+}

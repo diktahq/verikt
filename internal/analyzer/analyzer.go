@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dcsg/archway/internal/analyzer/detector"
-	"github.com/dcsg/archway/internal/analyzer/graph"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/analyzer/detector"
+	"github.com/diktahq/verikt/internal/analyzer/graph"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/provider"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -92,8 +92,8 @@ func (a *Analyzer) Analyze(_ context.Context) (*provider.AnalyzeResponse, error)
 		},
 	}
 
-	if archwayPath, err := config.FindArchwayYAML(a.path); err == nil {
-		if cfg, err := config.LoadArchwayYAML(archwayPath); err == nil {
+	if veriktPath, err := config.FindVeriktYAML(a.path); err == nil {
+		if cfg, err := config.LoadVeriktYAML(veriktPath); err == nil {
 			result.Violations = graph.LayerViolations(depGraph, cfg.Components)
 		}
 	}
@@ -148,14 +148,14 @@ func withSafeGoEnv() ([]string, error) {
 	}
 
 	if !has("GOCACHE") {
-		cache := filepath.Join(os.TempDir(), "archway-go-build-cache")
+		cache := filepath.Join(os.TempDir(), "verikt-go-build-cache")
 		if err := os.MkdirAll(cache, 0o755); err != nil {
 			return nil, fmt.Errorf("creating build cache dir: %w", err)
 		}
 		env = append(env, "GOCACHE="+cache)
 	}
 	if !has("GOMODCACHE") {
-		modcache := filepath.Join(os.TempDir(), "archway-go-mod-cache")
+		modcache := filepath.Join(os.TempDir(), "verikt-go-mod-cache")
 		if err := os.MkdirAll(modcache, 0o755); err != nil {
 			return nil, fmt.Errorf("creating mod cache dir: %w", err)
 		}

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/dcsg/archway/internal/engineclient/pb"
+	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

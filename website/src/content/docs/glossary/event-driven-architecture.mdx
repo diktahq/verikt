@@ -28,7 +28,7 @@ Each consumer processes independently and at its own pace. If AnalyticsService i
 
 ## In Go
 
-archway provides two event mechanisms: `event-bus` for in-process events within a single service, and `kafka-consumer` or `nats` for cross-service async messaging. The in-process event bus is the right tool when you want to decouple components within a service without a network hop:
+verikt provides two event mechanisms: `event-bus` for in-process events within a single service, and `kafka-consumer` or `nats` for cross-service async messaging. The in-process event bus is the right tool when you want to decouple components within a service without a network hop:
 
 ```go
 // Publishing
@@ -46,9 +46,9 @@ bus.Subscribe(events.OrderPlaced{}, func(ctx context.Context, e events.OrderPlac
 
 For cross-service events, Kafka or NATS provide durable, ordered, scalable message delivery.
 
-## How archway Supports It
+## How verikt Supports It
 
-The `event-bus` capability scaffolds the in-process event publisher and subscriber. For cross-service async, `kafka-consumer` and `nats` are available. archway warns when `event-bus` is used without `outbox` — without the outbox, events can be lost if the process crashes between committing to the database and publishing. See the [Capabilities Matrix](/reference/capabilities-matrix/).
+The `event-bus` capability scaffolds the in-process event publisher and subscriber. For cross-service async, `kafka-consumer` and `nats` are available. verikt warns when `event-bus` is used without `outbox` — without the outbox, events can be lost if the process crashes between committing to the database and publishing. See the [Capabilities Matrix](/reference/capabilities-matrix/).
 
 <Aside type="tip">
 Design events as immutable facts in the past tense (`OrderPlaced`, not `PlaceOrder`). Include all the data consumers need so they don't have to call back for more — but don't include everything just in case.

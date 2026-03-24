@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -135,7 +135,7 @@ func TestWriteDecisionStatus_FormatsCorrectly(t *testing.T) {
 	assert.Contains(t, output, "X authentication-strategy: UNDECIDED")
 	assert.Contains(t, output, "Tier 2 (Infrastructure)")
 	assert.Contains(t, output, "V deployment-model: kubernetes")
-	assert.Contains(t, output, "archway decide")
+	assert.Contains(t, output, "verikt decide")
 }
 
 func TestWriteDecisionStatus_EmptyDecisions(t *testing.T) {
@@ -153,7 +153,7 @@ func TestWriteDecisionStatus_AllDecided(t *testing.T) {
 	writeDecisionStatus(&b, decisions)
 	output := b.String()
 
-	assert.NotContains(t, output, "archway decide")
+	assert.NotContains(t, output, "verikt decide")
 }
 
 func TestDecisionConfigParsing(t *testing.T) {
@@ -173,7 +173,7 @@ decisions:
     tier: 1
     status: undecided
 `
-	var cfg config.ArchwayConfig
+	var cfg config.VeriktConfig
 	err := yaml.Unmarshal([]byte(yamlData), &cfg)
 	require.NoError(t, err)
 

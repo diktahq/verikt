@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════
-   Archway — Docs Theme
+   verikt — Docs Theme
    Aesthetic: Clean developer tool. Confident, not flashy.
    ═══════════════════════════════════════════════════ */
 
@@ -13,7 +13,7 @@
 	--sl-text-h2: clamp(1.5rem, 3vw, 1.875rem);
 	--sl-content-width: 65rem;
 	--sl-color-bg: #111110;
-	--archway-glow: rgba(232, 145, 58, 0.08);
+	--verikt-glow: rgba(232, 145, 58, 0.08);
 
 	/* Structural Amber — warm gray scale (dark mode: foreground=light, background=dark)
 	   Per [[color-temperature]]: warm tones = near, dense, earthy — reinforces "infrastructure" brand.
@@ -53,7 +53,7 @@
 	--sl-color-accent: #8F5819;
 	--sl-color-accent-high: #5C3D1A;
 	--sl-color-bg: #FAF8F5;
-	--archway-glow: rgba(196, 122, 46, 0.06);
+	--verikt-glow: rgba(196, 122, 46, 0.06);
 
 	/* Structural Amber — warm gray scale (light mode: foreground=dark, background=light)
 	   Token semantics FLIP: white=darkest foreground, black=lightest background */
@@ -502,7 +502,7 @@ nav.sidebar .group-label span {
 
 .card:hover {
 	transform: translateY(-3px);
-	box-shadow: 0 8px 24px var(--archway-glow);
+	box-shadow: 0 8px 24px var(--verikt-glow);
 }
 
 /* Asides — softer corners */
@@ -613,14 +613,6 @@ th {
 .context-chart .chart-wrap {
 	max-width: 100%;
 	margin: 0;
-}
-
-/* ── Header — constrain to content width on wide screens ── */
-
-@media (min-width: 72rem) {
-	header.header {
-		padding-inline: calc((100% - var(--sl-content-width)) / 2) !important;
-	}
 }
 
 /* ── Experiment Stat Cards ── */

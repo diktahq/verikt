@@ -1,6 +1,6 @@
 ---
 title: Capabilities
-description: Browse all 63 modular capabilities for service code generation — transport, data, security, resilience, observability, and more with smart suggestions
+description: Browse all 65 modular capabilities for service code generation — transport, data, security, resilience, observability, and more with smart suggestions
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
@@ -10,14 +10,21 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Capabilities are self-contained modules that add specific functionality to your project. Each provides template files, configuration, and wiring code.
 
-archway ships with **63 capabilities** across **10 categories**.
+verikt ships with **65 capabilities** across **10 categories**.
 
 ## Transport & API
 
 ### `http-api`
-REST API built on [Chi](https://github.com/go-chi/chi) v5.
+REST API with a full middleware chain and structured error responses.
 
-**What you get:** Chi router, middleware chain (RequestID, RealIP, Recoverer, OTel), RFC 7807 Problem Detail error responses, pagination helpers, OpenAPI spec, handler patterns with request/response types.
+<Tabs>
+<TabItem label="Go">
+Built on [Chi](https://github.com/go-chi/chi) v5. **What you get:** Chi router, middleware chain (RequestID, RealIP, Recoverer, OTel), RFC 7807 Problem Detail error responses, pagination helpers, OpenAPI spec, handler patterns with request/response types.
+</TabItem>
+<TabItem label="TypeScript">
+Framework is chosen during scaffold (Express, Fastify, or Hono). **What you get:** Router setup, middleware chain, RFC 7807-compatible error responses, handler patterns with typed request/response shapes.
+</TabItem>
+</Tabs>
 
 **Suggests:** `rate-limiting`, `auth-jwt`, `cors`, `health`, `request-id`
 
@@ -85,30 +92,58 @@ API versioning support.
 ## Data & Storage
 
 ### `postgres`
-PostgreSQL database with [pgx](https://github.com/jackc/pgx) driver.
+PostgreSQL database with connection pooling and health checks.
 
-**What you get:** Connection setup, pool configuration, health checks, repository scaffold.
+<Tabs>
+<TabItem label="Go">
+Uses the [pgx](https://github.com/jackc/pgx) driver directly. **What you get:** Connection setup, pool configuration, health checks, repository scaffold.
+</TabItem>
+<TabItem label="TypeScript">
+ORM is chosen during scaffold. **What you get:** Either [Prisma](https://www.prisma.io/) (PrismaClient singleton, schema file, type-safe query client) or [Drizzle ORM](https://orm.drizzle.team/) (schema-in-code, SQL-first query builder with `drizzle-orm` + `postgres`). Both include health check integration.
+</TabItem>
+</Tabs>
 
 **Suggests:** `migrations`, `docker`, `uuid`
 
 ### `mysql`
-MySQL database with connection pooling.
+MySQL database with connection pooling and health checks.
 
-**What you get:** Connection setup with pool configuration, health checks, repository pattern scaffold.
+<Tabs>
+<TabItem label="Go">
+Uses `database/sql` with the MySQL driver. **What you get:** Connection setup with pool configuration, health checks, repository pattern scaffold.
+</TabItem>
+<TabItem label="TypeScript">
+ORM is chosen during scaffold. **What you get:** Either [Prisma](https://www.prisma.io/) with the MySQL provider (PrismaClient singleton, schema file, type-safe query client) or [Drizzle ORM](https://orm.drizzle.team/) (schema-in-code with `drizzle-orm` + `mysql2`). Both include health check integration.
+</TabItem>
+</Tabs>
 
 **Suggests:** `migrations`, `docker`, `uuid`
 
 ### `mongodb`
-MongoDB connection using the official Go driver.
+MongoDB connection with collection abstractions and repository pattern.
 
-**What you get:** Client connection, database/collection abstractions, repository pattern, BSON helpers.
+<Tabs>
+<TabItem label="Go">
+Uses the official Go driver. **What you get:** Client connection, database/collection abstractions, repository pattern, BSON helpers.
+</TabItem>
+<TabItem label="TypeScript">
+Uses [Mongoose ODM](https://mongoosejs.com/). **What you get:** Mongoose connection, schema definitions, model abstractions, repository pattern scaffold.
+</TabItem>
+</Tabs>
 
 **Suggests:** `docker`, `health`, `observability`
 
 ### `sqlite`
-SQLite database with [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) (pure Go, no CGO).
+SQLite database for embedded or single-node applications.
 
-**What you get:** Database connection, query helpers, ideal for embedded or single-node applications.
+<Tabs>
+<TabItem label="Go">
+Uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) — pure Go, no CGO required. **What you get:** Database connection, query helpers.
+</TabItem>
+<TabItem label="TypeScript">
+Uses [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) with WAL mode enabled. **What you get:** Synchronous database client, query helpers, WAL journal mode for concurrent reads.
+</TabItem>
+</Tabs>
 
 **Suggests:** `migrations`
 
@@ -122,7 +157,14 @@ AWS DynamoDB document database client.
 ### `redis`
 Redis connection and repository pattern.
 
-**What you get:** Connection management, repository pattern scaffold.
+<Tabs>
+<TabItem label="Go">
+Uses [go-redis](https://github.com/redis/go-redis). **What you get:** Connection management, repository pattern scaffold.
+</TabItem>
+<TabItem label="TypeScript">
+Uses [ioredis](https://github.com/redis/ioredis) with lazy connect. **What you get:** Redis client with lazy connection, repository pattern scaffold, health check integration.
+</TabItem>
+</Tabs>
 
 **Suggests:** `docker`
 
@@ -141,18 +183,46 @@ AWS S3 object storage client.
 **Requires:** `config` · **Suggests:** `docker`, `observability`
 
 ### `migrations`
-Database migration support with [golang-migrate](https://github.com/golang-migrate/migrate).
+Versioned database schema changes with up/down migrations.
 
-**What you get:** Migration runner, up/down migration files, version tracking.
+<Tabs>
+<TabItem label="Go">
+Uses [golang-migrate](https://github.com/golang-migrate/migrate). **What you get:** Migration runner, up/down migration files, version tracking.
+</TabItem>
+<TabItem label="TypeScript">
+Uses [Prisma Migrate](https://www.prisma.io/docs/concepts/components/prisma-migrate). **What you get:** Migration files generated from schema changes, `prisma migrate dev` for development, `prisma migrate deploy` for production.
+</TabItem>
+</Tabs>
 
 **Suggests:** `docker`
 
 ### `repository`
-Generic repository pattern using Go generics.
+Data access abstraction with a base implementation covering common CRUD operations.
 
-**What you get:** Repository interface, base implementation with common CRUD operations.
+<Tabs>
+<TabItem label="Go">
+Uses Go generics for type-safe repositories. **What you get:** Generic repository interface and base implementation with common CRUD operations.
+</TabItem>
+<TabItem label="TypeScript">
+Uses an abstract `PrismaBaseRepository` class. **What you get:** Abstract base with `toDomain` and `toPersistence` hooks, typed CRUD methods, enforced mapping between persistence and domain models.
+</TabItem>
+</Tabs>
 
 **Suggests:** `postgres`, `mysql`
+
+### `squirrel`
+Fluent SQL query builder for Go — type-safe query construction without string concatenation.
+
+Uses [Squirrel](https://github.com/Masterminds/squirrel). **What you get:** Query builder setup, `QB()` helper with PostgreSQL-aware placeholder formatting (`$1`, `$2`), examples for SELECT/INSERT/UPDATE with dynamic WHERE clauses.
+
+**Suggests:** `postgres`, `mysql`
+
+### `sqlc`
+Compile SQL to type-safe Go code — write `.sql` query files, get generated Go functions.
+
+Uses [sqlc](https://sqlc.dev/). **What you get:** `sqlc.yaml` config, example `.sql` query files with annotations, `sqlc generate` wired into the build, generated Go functions with full type safety at compile time.
+
+**Suggests:** `postgres`, `mysql`, `migrations`
 
 ## Messaging & Events
 
@@ -344,7 +414,7 @@ Command Query Responsibility Segregation.
 ### `ddd`
 Domain-Driven Design building blocks.
 
-DDD requires discipline about where domain types live and what they're allowed to depend on. Without explicit base types, engineers default to plain structs with no identity or invariant enforcement, and AI agents have no signal about where domain logic belongs. `ddd` provides the base types and makes the boundaries explicit — the guide generated by `archway guide` explains the rules to agents so they place domain logic in the right layer from the start.
+DDD requires discipline about where domain types live and what they're allowed to depend on. Without explicit base types, engineers default to plain structs with no identity or invariant enforcement, and AI agents have no signal about where domain logic belongs. `ddd` provides the base types and makes the boundaries explicit — the guide generated by `verikt guide` explains the rules to agents so they place domain logic in the right layer from the start.
 
 **What you get:** AggregateRoot, ValueObject, DomainEvent base types, entity identity patterns.
 
@@ -433,14 +503,28 @@ Makefile with common development targets.
 **What you get:** `Makefile` with build, test, lint, run, and clean targets.
 
 ### `linting`
-Linting configuration.
+Linting configuration with a curated rule set.
 
+<Tabs>
+<TabItem label="Go">
 **What you get:** `.golangci.yaml` with curated linter set (errcheck, govet, staticcheck, bodyclose, noctx, and more).
+</TabItem>
+<TabItem label="TypeScript">
+**What you get:** ESLint config with `@typescript-eslint/recommended`, Prettier integration, and `lint-staged` configuration for pre-commit enforcement.
+</TabItem>
+</Tabs>
 
 ### `testing`
 Test utilities and example tests.
 
-**What you get:** Test helper functions, example table-driven tests, test fixtures pattern.
+<Tabs>
+<TabItem label="Go">
+**What you get:** Test helper functions using [testify](https://github.com/stretchr/testify), example table-driven tests, test fixtures pattern.
+</TabItem>
+<TabItem label="TypeScript">
+**What you get:** [Vitest](https://vitest.dev/) setup with coverage configuration, test helper utilities, example test patterns.
+</TabItem>
+</Tabs>
 
 ### `pre-commit`
 Pre-commit hook configuration.
@@ -448,5 +532,5 @@ Pre-commit hook configuration.
 **What you get:** Pre-commit hooks for formatting, linting, and test execution.
 
 <Aside type="tip">
-Use the interactive wizard (`archway new my-service`) to explore capabilities with descriptions and smart suggestions. Or see the [Capabilities Matrix](/reference/capabilities-matrix/) for a condensed overview. To add capabilities to an existing project, see [Adding Capabilities](/guides/adding-capabilities/).
+Use the interactive wizard (`verikt new my-service`) to explore capabilities with descriptions and smart suggestions. Or see the [Capabilities Matrix](/reference/capabilities-matrix/) for a condensed overview. To add capabilities to an existing project, see [Adding Capabilities](/guides/adding-capabilities/).
 </Aside>

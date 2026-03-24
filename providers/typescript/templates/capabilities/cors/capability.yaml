@@ -1,0 +1,10 @@
+name: cors
+description: "CORS middleware — framework-specific (cors/express, @fastify/cors)"
+variables:
+  - name: HttpFramework
+    type: string
+    default: "express"
+    description: "HTTP framework"
+    choices: ["express", "fastify", "hono"]
+suggests:
+  - http-api

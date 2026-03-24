@@ -1,33 +1,82 @@
 ---
 title: "postgres capability"
-description: "Add PostgreSQL to your Go service using the pgx driver with connection pooling, health checks, and a repository scaffold."
+description: "Add PostgreSQL to your Go or TypeScript service using the pgx driver or Prisma ORM, with connection pooling, health checks, and a repository scaffold."
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-`postgres` wires PostgreSQL into your Go service using the pgx driver, with connection pooling and a repository scaffold ready to use.
+`postgres` wires PostgreSQL into your service with connection pooling, health checks, and a repository scaffold ready to use.
+
+## Why PostgreSQL
+
+Auto-increment integer IDs leak business data (your competitor can count your orders). Random UUIDs fragment B-tree indexes and degrade write performance at scale. Most databases force you to choose. PostgreSQL doesn't — use [UUIDv7](/capabilities/uuid/) for primary keys and you get both time-sortability and index efficiency.
+
+The deeper reason to reach for PostgreSQL over a simpler option is its query model. JSONB lets you store semi-structured data in a proper column, with indexing and operators, without giving up the relational model around it. Full-text search, array types, window functions, and advisory locks are all built in. You rarely need a second database when you use PostgreSQL well.
+
+That said, PostgreSQL is the right tool when you have relational data, need ACID transactions across multiple tables, or when your query patterns are complex enough that key-value lookups don't cut it. If you're storing a handful of configuration values, [Redis](/capabilities/redis/) is cheaper to operate. If you have purely hierarchical document data, [MongoDB](/capabilities/mongodb/) fits better. For most backend services with user data, order data, or any state that changes over time — PostgreSQL is the default.
 
 ## What You Get
 
-- Connection setup with pgx driver
-- Pool configuration
-- Health checks
-- Repository scaffold
+- Connection setup with pgx driver (Go) or Prisma ORM (TypeScript)
+- Connection pool configuration with sensible defaults
+- Health check that verifies the pool is reachable
+- Repository scaffold wired to your data layer
 
-## When to Use
+## Go Implementation
 
-Use `postgres` for relational data with SQL querying, transactional workloads, or when you need PostgreSQL-specific features like JSONB, full-text search, or advanced indexing. Pair with `migrations` for schema management and `uuid` for database-friendly primary keys.
+The Go capability uses [pgx](https://github.com/jackc/pgx) — the most complete PostgreSQL driver for Go. It uses the native PostgreSQL wire protocol rather than the `database/sql` abstraction, which gives you access to PostgreSQL-specific features like `COPY`, `LISTEN/NOTIFY`, and proper handling of `pgtype` types.
+
+The scaffold sets up a `pgxpool.Pool` with connection limits and health check timeout configured via environment variables. Pool acquisition is timeout-aware using the request context, so a slow database doesn't silently block goroutines.
+
+```go
+// The pool is constructed once at startup and injected as a dependency.
+// Queries use context for deadline propagation.
+rows, err := pool.Query(ctx, "SELECT id, name FROM orders WHERE user_id = $1", userID)
+```
+
+Health checks use `pool.Ping(ctx)` with a short timeout so your `/healthz` endpoint reflects actual pool state, not just that the process started.
+
+Pair with [migrations](/capabilities/migrations/) to manage schema changes, and [uuid](/capabilities/uuid/) for `uuid_generate_v7()` primary keys. If you need a testable abstraction over the pool, add [repository](/capabilities/repository/).
+
+## TypeScript Implementation
+
+The TypeScript capability uses [Prisma](https://www.prisma.io) by default — a type-safe ORM that generates a client from your schema file. The generated client covers the majority of query patterns without writing raw SQL, and the schema doubles as your migration source when combined with the [migrations](/capabilities/migrations/) capability.
+
+If you prefer SQL-first development, pass `--set OrmLibrary=drizzle` when scaffolding to switch to [Drizzle ORM](https://orm.drizzle.team). Drizzle exposes a fluent query builder that stays close to SQL and generates TypeScript types from your schema without a code generation step.
+
+```typescript
+// Prisma — schema-first, generated client
+const order = await prisma.order.findUnique({
+  where: { id: orderId },
+  include: { items: true },
+});
+
+// Drizzle — SQL-first, inline types
+const order = await db.select().from(orders).where(eq(orders.id, orderId));
+```
+
+Both options wire connection management through the platform lifecycle so the connection pool is opened on startup and gracefully closed on shutdown.
 
 ## Requirements & Suggestions
 
 **Suggests:** [`migrations`](/capabilities/migrations/), [`docker`](/capabilities/docker/), [`uuid`](/capabilities/uuid/)
 
+<Aside type="caution">
+PostgreSQL without migrations means schema changes are applied manually and inconsistently across environments. Add `migrations` from the start — retrofitting it later is painful.
+</Aside>
+
+<Aside type="tip">
+Auto-increment IDs leak row counts to clients and fragment indexes when combined with UUID foreign keys. Use `uuid` from day one to avoid a costly migration later.
+</Aside>
+
 ## Add to Your Service
 
 ```bash
-archway new my-service --cap postgres
+verikt new my-service --cap postgres
+# with Drizzle instead of Prisma (TypeScript only):
+verikt new my-service --cap postgres --set OrmLibrary=drizzle
 # or add to an existing service:
-archway add postgres
+verikt add postgres
 ```
 
 ## Related Capabilities
@@ -36,4 +85,5 @@ archway add postgres
   <Card title="migrations" href="/capabilities/migrations/">Versioned schema migrations with golang-migrate.</Card>
   <Card title="uuid" href="/capabilities/uuid/">UUIDv7 primary keys for index-friendly IDs.</Card>
   <Card title="repository" href="/capabilities/repository/">Generic repository pattern using Go generics.</Card>
+  <Card title="docker" href="/capabilities/docker/">Local PostgreSQL instance via Docker Compose.</Card>
 </CardGrid>

@@ -1,6 +1,6 @@
 ---
 title: Quick Start with AI Agents
-description: archway guide feeds your architecture into AI coding agents so they write structurally correct code from the first prompt — no more explaining your architecture every session.
+description: verikt guide feeds your architecture into AI coding agents so they write structurally correct code from the first prompt — no more explaining your architecture every session.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
@@ -8,22 +8,22 @@ import AgentCardGrid from '../../../components/AgentCardGrid.astro';
 
 Every time you open a new AI coding session, the agent starts cold. It doesn't know your architecture, your layer boundaries, or which capabilities you've wired. So you explain it. Every session. Or the agent puts things in the wrong place and you spend time correcting it.
 
-`archway guide` fixes this permanently.
+`verikt guide` fixes this permanently.
 
 ## Install
 
 ```bash
 # Homebrew (recommended)
-brew install dcsg/tap/archway
+brew install diktahq/tap/verikt
 
 # Install script (macOS/Linux)
-curl -sSL https://archway.dcsg.me/install.sh | bash
+curl -sSL https://verikt.dev/install.sh | bash
 ```
 
 ## The Workflow
 
 <Aside type="tip">
-  **Existing project?** Skip step 1 — go straight to step 2. Run `archway analyze` first if you don't have an `archway.yaml` yet.
+  **Existing project?** Skip step 1 — go straight to step 2. Run `verikt analyze` first if you don't have an `verikt.yaml` yet.
 </Aside>
 
 <Steps>
@@ -33,20 +33,20 @@ curl -sSL https://archway.dcsg.me/install.sh | bash
    Run this once in your terminal:
 
    ```bash
-   archway init --ai
+   verikt init --ai
    ```
 
-   This prints the AI interview protocol to stdout. Paste it into your AI agent. The agent will interview you — asking about your service name, architecture, capabilities, and guide mode — then run `archway new` and generate everything.
+   This prints the AI interview protocol to stdout. Paste it into your AI agent. The agent will interview you — asking about your service name, architecture, capabilities, and guide mode — then run `verikt new` and generate everything.
 
    No TUI. No switching context. The whole setup happens inside your AI session.
 
 2. **Generate architecture context**
 
    ```bash
-   archway guide
+   verikt guide
    ```
 
-   archway reads your `archway.yaml` and generates context files for every supported AI agent — directly in your project.
+   verikt reads your `verikt.yaml` and generates context files for every supported AI agent — directly in your project.
 
    <AgentCardGrid />
 
@@ -58,7 +58,7 @@ curl -sSL https://archway.dcsg.me/install.sh | bash
 
    <TabItem label="Claude Code">
 
-   Claude Code reads `.claude/rules/archway.md` automatically on every session start. No setup needed beyond running `archway guide`.
+   Claude Code reads `.claude/rules/verikt.md` automatically on every session start. No setup needed beyond running `verikt guide`.
 
    Open Claude Code in your project directory:
 
@@ -78,17 +78,17 @@ curl -sSL https://archway.dcsg.me/install.sh | bash
    Commit the generated file so every engineer on the team gets the same context:
 
    ```bash
-   git add .claude/rules/archway.md
-   git commit -m "chore: add archway architecture context"
+   git add .claude/rules/verikt.md
+   git commit -m "chore: add verikt architecture context"
    ```
 
-   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+   Re-run `verikt guide` whenever you add capabilities or change your architecture. The file updates automatically.
 
    </TabItem>
 
    <TabItem label="Cursor">
 
-   Cursor reads `.cursorrules` automatically when you open the project folder. No setup needed beyond running `archway guide`.
+   Cursor reads `.cursorrules` automatically when you open the project folder. No setup needed beyond running `verikt guide`.
 
    1. Open Cursor
    2. `File → Open Folder` → select your project directory
@@ -106,10 +106,10 @@ curl -sSL https://archway.dcsg.me/install.sh | bash
 
    ```bash
    git add .cursorrules
-   git commit -m "chore: add archway architecture context"
+   git commit -m "chore: add verikt architecture context"
    ```
 
-   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+   Re-run `verikt guide` whenever you add capabilities or change your architecture. The file updates automatically.
 
    </TabItem>
 
@@ -145,16 +145,16 @@ curl -sSL https://archway.dcsg.me/install.sh | bash
 
    ```bash
    git add .github/copilot-instructions.md
-   git commit -m "chore: add archway architecture context"
+   git commit -m "chore: add verikt architecture context"
    ```
 
-   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+   Re-run `verikt guide` whenever you add capabilities or change your architecture. The file updates automatically.
 
    </TabItem>
 
    <TabItem label="Windsurf">
 
-   Windsurf reads `.windsurfrules` automatically when you open the project folder. No setup needed beyond running `archway guide`.
+   Windsurf reads `.windsurfrules` automatically when you open the project folder. No setup needed beyond running `verikt guide`.
 
    1. Open Windsurf
    2. `File → Open Folder` → select your project directory
@@ -172,19 +172,19 @@ curl -sSL https://archway.dcsg.me/install.sh | bash
 
    ```bash
    git add .windsurfrules
-   git commit -m "chore: add archway architecture context"
+   git commit -m "chore: add verikt architecture context"
    ```
 
-   Re-run `archway guide` whenever you add capabilities or change your architecture. The file updates automatically.
+   Re-run `verikt guide` whenever you add capabilities or change your architecture. The file updates automatically.
 
    </TabItem>
 
    <TabItem label="Other">
 
-   For any other AI tool (Zed, Aider, Continue, raw API, etc.), `archway guide` still generates all context files. Use `.cursorrules` — it's plain markdown and works as a starting point for any tool.
+   For any other AI tool (Zed, Aider, Continue, raw API, etc.), `verikt guide` still generates all context files. Use `.cursorrules` — it's plain markdown and works as a starting point for any tool.
 
    ```bash
-   archway guide
+   verikt guide
    ```
 
    This generates `.cursorrules` (among others) — a self-contained markdown file with your full architecture context: layer boundaries, capability stack, dependency rules, and interaction warnings.
@@ -241,44 +241,44 @@ For a prompt like *"I need to handle payments"*, you get a complete answer — S
 ```
 ## Architecture Notes
 - ⚠️  Missing `idempotency` — payment operations must be safe to retry.
-  Run: archway add idempotency
+  Run: verikt add idempotency
 - ⚠️  Missing `audit-log` — financial mutations require an append-only audit trail.
-  Run: archway add audit-log
+  Run: verikt add audit-log
 - ✓  `circuit-breaker` is installed — wire it to your Stripe HTTP client.
 ```
 
 Then you add the missing capabilities and re-run guide:
 
 ```bash
-archway add idempotency audit-log
-archway guide
+verikt add idempotency audit-log
+verikt guide
 ```
 
 The agent now knows how all of them are wired.
 
 ## Keeping Context Fresh
 
-Re-run `archway guide` whenever your architecture changes:
+Re-run `verikt guide` whenever your architecture changes:
 
 ```bash
 # After adding capabilities
-archway add kafka-consumer
-archway guide
+verikt add kafka-consumer
+verikt guide
 
-# After changing archway.yaml manually
-archway guide
+# After changing verikt.yaml manually
+verikt guide
 ```
 
 ## Guide Modes
 
-Configure how AI agents use the architecture guide in your `archway.yaml`:
+Configure how AI agents use the architecture guide in your `verikt.yaml`:
 
 ```yaml
 guide:
   mode: passive   # passive | audit | prompted
 ```
 
-The wizard asks for this when you run `archway new`.
+The wizard asks for this when you run `verikt new`.
 
 ### passive (default)
 
@@ -288,25 +288,25 @@ Best for: day-to-day coding. Low friction, always on.
 
 ### audit
 
-On every session start, the agent reads the codebase, cross-references it against `archway.yaml`, and leads with an `## Architecture Audit` section listing violations, missing capabilities, and drift — before answering any question.
+On every session start, the agent reads the codebase, cross-references it against `verikt.yaml`, and leads with an `## Architecture Audit` section listing violations, missing capabilities, and drift — before answering any question.
 
 Best for: onboarding a new service, pre-release review, team handoffs.
 
 ### prompted
 
-Same as passive, but the generated guide file includes a **Suggested Prompts** section at the bottom — copy-paste queries that unlock the most value from archway:
+Same as passive, but the generated guide file includes a **Suggested Prompts** section at the bottom — copy-paste queries that unlock the most value from verikt:
 
 ```
-Audit this codebase against archway.yaml and list all violations
+Audit this codebase against verikt.yaml and list all violations
 What capabilities am I missing before going to production?
 I need to add [feature] — what capabilities do I need and how should I wire them?
 What dangerous capability combinations do I have that need fixing?
 ```
 
-Best for: teams new to archway, or when you want to teach others what to ask.
+Best for: teams new to verikt, or when you want to teach others what to ask.
 
 ---
 
-- [Capabilities Matrix](/reference/capabilities-matrix/) — all 63 capabilities across 10 categories
-- [How It Works](/concepts/how-it-works/) — the composition model behind archway
+- [Capabilities Matrix](/reference/capabilities-matrix/) — all capabilities across 10 categories
+- [How It Works](/concepts/how-it-works/) — the composition model behind verikt
 - [Quick Start with CLI](/getting-started/cli/) — prefer the terminal wizard? start here

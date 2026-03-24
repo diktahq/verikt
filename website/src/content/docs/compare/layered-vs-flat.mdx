@@ -5,7 +5,7 @@ description: "Compare Layered and Flat architecture for Go services — when the
 
 import { Aside } from '@astrojs/starlight/components';
 
-Both Layered and Flat architecture are supported by archway. Layered is the classic Go web service structure — handler, service, repository — with enforced dependency direction. Flat is a single package with no imposed organization. The question is whether your project warrants any formal layering at all.
+Both Layered and Flat architecture are supported by verikt. Layered is the classic Go web service structure — handler, service, repository — with enforced dependency direction. Flat is a single package with no imposed organization. The question is whether your project warrants any formal layering at all.
 
 ## At a Glance
 
@@ -36,7 +36,7 @@ internal/model/         → Shared types and domain models
 | service | repository, model |
 | handler | service, model |
 
-Dependencies only flow downward. Handlers can't import from each other. Repositories can't import from services. `archway check` catches violations in CI. The structure maps closely to how most Go developers already think about web services, which makes it easy to navigate and easy to explain.
+Dependencies only flow downward. Handlers can't import from each other. Repositories can't import from services. `verikt check` catches violations in CI. The structure maps closely to how most Go developers already think about web services, which makes it easy to navigate and easy to explain.
 
 ## Flat Architecture
 
@@ -73,14 +73,14 @@ You can still add capabilities — `http-api` works, `postgres` works — but th
 - You want to move fast without structural decisions
 - The codebase will stay small enough that a single `main.go` is readable
 
-## Scaffold Either with archway
+## Scaffold Either with verikt
 
 ```bash
 # Layered
-archway new my-service --arch layered
+verikt new my-service --language go --arch layered
 
 # Flat
-archway new my-tool --arch flat
+verikt new my-tool --language go --arch flat
 ```
 
 <Aside type="tip">

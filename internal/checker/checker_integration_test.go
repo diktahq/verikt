@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 )
 
 func testdataDir(t *testing.T) string {
@@ -20,7 +20,7 @@ func testdataDir(t *testing.T) string {
 func TestCheck_Integration_HexagonalProject(t *testing.T) {
 	projectPath := filepath.Join(testdataDir(t), "hexagonal-project")
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language:     "go",
 		Architecture: "hexagonal",
 		Components: []config.Component{
@@ -101,7 +101,7 @@ func TestCheck_Integration_CleanProject(t *testing.T) {
 	// Test with a minimal config and the same project — structure only.
 	projectPath := filepath.Join(testdataDir(t), "hexagonal-project")
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language:     "go",
 		Architecture: "hexagonal",
 		Rules: config.RulesConfig{

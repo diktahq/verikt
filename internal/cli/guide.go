@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/guide"
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/guide"
+	"github.com/diktahq/verikt/internal/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -20,22 +20,22 @@ func newGuideCommand(_ *globalOptions) *cobra.Command {
 		Short: "Generate AI agent architecture instructions",
 		Long: `Generate architecture guidance files for AI coding agents.
 
-Reads archway.yaml from the current directory and generates instruction files
+Reads verikt.yaml from the current directory and generates instruction files
 for Claude Code, Cursor, GitHub Copilot, and Windsurf.
 
 Use --catalog-only to generate only the capability catalog without requiring
-an archway.yaml configuration file.`,
-		Example: `  archway guide
-  archway guide --target claude
-  archway guide --target cursor
-  archway guide --catalog-only`,
+an verikt.yaml configuration file.`,
+		Example: `  verikt guide
+  verikt guide --target claude
+  verikt guide --target cursor
+  verikt guide --catalog-only`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runGuide(target, catalogOnly)
 		},
 	}
 
 	cmd.Flags().StringVar(&target, "target", "all", "Output target: all, claude, cursor, copilot, windsurf")
-	cmd.Flags().BoolVar(&catalogOnly, "catalog-only", false, "Generate only the capability catalog (no archway.yaml required)")
+	cmd.Flags().BoolVar(&catalogOnly, "catalog-only", false, "Generate only the capability catalog (no verikt.yaml required)")
 	_ = cmd.RegisterFlagCompletionFunc("target", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"all", "claude", "cursor", "copilot", "windsurf"}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -47,7 +47,7 @@ func runGuide(target string, catalogOnly bool) error {
 	projectDir := "."
 
 	if catalogOnly {
-		// Catalog-only mode: no archway.yaml required, but load capabilities if present
+		// Catalog-only mode: no verikt.yaml required, but load capabilities if present
 		// so the dynamic "Your Stack: Specific Warnings" section fires.
 		p, provErr := provider.Get("go")
 		opts := guide.GenerateOptions{
@@ -58,8 +58,8 @@ func runGuide(target string, catalogOnly bool) error {
 		if provErr == nil {
 			opts.TemplateFS = p.GetTemplateFS()
 		}
-		if cfgPath, cfgErr := config.FindArchwayYAML("."); cfgErr == nil {
-			if cfg, cfgErr := config.LoadArchwayYAML(cfgPath); cfgErr == nil {
+		if cfgPath, cfgErr := config.FindVeriktYAML("."); cfgErr == nil {
+			if cfg, cfgErr := config.LoadVeriktYAML(cfgPath); cfgErr == nil {
 				opts.Capabilities = cfg.Capabilities
 			}
 		}
@@ -70,14 +70,14 @@ func runGuide(target string, catalogOnly bool) error {
 		return nil
 	}
 
-	cfgPath, err := config.FindArchwayYAML(".")
+	cfgPath, err := config.FindVeriktYAML(".")
 	if err != nil {
-		return fmt.Errorf("no archway.yaml found in current directory or parents: %w", err)
+		return fmt.Errorf("no verikt.yaml found in current directory or parents: %w", err)
 	}
 
-	cfg, err := config.LoadArchwayYAML(cfgPath)
+	cfg, err := config.LoadVeriktYAML(cfgPath)
 	if err != nil {
-		return fmt.Errorf("load archway.yaml: %w", err)
+		return fmt.Errorf("load verikt.yaml: %w", err)
 	}
 
 	// Look up the language provider to get the template FS for pattern extraction.

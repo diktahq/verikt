@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ var controlAntiPatterns = []string{
 
 // TestAntiPatterns_GoPath runs anti-pattern detection via the Go AST path.
 func TestAntiPatterns_GoPath(t *testing.T) {
-	cfg := &config.ArchwayConfig{Language: "go"}
+	cfg := &config.VeriktConfig{Language: "go"}
 	projectPath := hexagonalProjectPath(t)
 
 	start := time.Now()
@@ -66,7 +66,7 @@ func TestAntiPatterns_EnginePath(t *testing.T) {
 // TestAntiPatterns_Parity compares Go and engine paths detector-by-detector.
 func TestAntiPatterns_Parity(t *testing.T) {
 	client := newEngineClient(t)
-	cfg := &config.ArchwayConfig{Language: "go"}
+	cfg := &config.VeriktConfig{Language: "go"}
 	projectPath := hexagonalProjectPath(t)
 
 	goStart := time.Now()

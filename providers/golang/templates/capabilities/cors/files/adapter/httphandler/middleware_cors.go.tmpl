@@ -18,7 +18,7 @@ type CORSConfig struct {
 // DefaultCORSConfig returns a safe default CORS configuration.
 func DefaultCORSConfig() CORSConfig {
 	return CORSConfig{
-		AllowedOrigins: []string{"*"},
+		AllowedOrigins: []string{}, // SECURITY: configure allowed origins for your environment
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		MaxAge:         86400,

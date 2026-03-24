@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -211,7 +211,7 @@ func TestClaudeTarget_WritesCorrectPath(t *testing.T) {
 	err := target.Write(dir, "test content\n")
 	require.NoError(t, err)
 
-	path := filepath.Join(dir, ".claude", "rules", "archway.md")
+	path := filepath.Join(dir, ".claude", "rules", "verikt.md")
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 
@@ -262,13 +262,13 @@ func TestGenerate_EmptyProjectDir(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should create the index file even in an empty dir.
-	path := filepath.Join(emptyDir, ".claude", "rules", "archway-index.md")
+	path := filepath.Join(emptyDir, ".claude", "rules", "verikt-index.md")
 	assert.FileExists(t, path)
 }
 
 func TestGenerateFromConfig_NilComponents(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Capabilities: nil,
 		Components:   nil,
@@ -278,7 +278,7 @@ func TestGenerateFromConfig_NilComponents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Split output: index file should exist.
-	path := filepath.Join(dir, ".claude", "rules", "archway-index.md")
+	path := filepath.Join(dir, ".claude", "rules", "verikt-index.md")
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 
@@ -417,7 +417,7 @@ func TestBuildContent_CatalogOnly(t *testing.T) {
 	content := buildContent(opts)
 
 	// Should contain header and catalog-related sections.
-	assert.Contains(t, content, "# Archway -- Architecture Guide")
+	assert.Contains(t, content, "# verikt -- Architecture Guide")
 
 	// Should NOT contain architecture-specific sections.
 	assert.NotContains(t, content, "Architecture: hexagonal")
@@ -445,7 +445,7 @@ func TestBuildContent_CatalogOnlyFalse_FullOutput(t *testing.T) {
 
 func TestWriteRuleSummaries_WithRules(t *testing.T) {
 	dir := t.TempDir()
-	rulesDir := filepath.Join(dir, ".archway", "rules")
+	rulesDir := filepath.Join(dir, ".verikt", "rules")
 	require.NoError(t, os.MkdirAll(rulesDir, 0o755))
 
 	// Create a valid rule file.
@@ -470,7 +470,7 @@ scope:
 	assert.Contains(t, content, "no-fmt-println")
 	assert.Contains(t, content, "grep")
 	assert.Contains(t, content, "warning")
-	assert.Contains(t, content, "archway check")
+	assert.Contains(t, content, "verikt check")
 }
 
 func TestWriteRuleSummaries_NoRulesDir(t *testing.T) {
@@ -485,8 +485,8 @@ func TestWriteRuleSummaries_NoRulesDir(t *testing.T) {
 func TestGuideIntegration_FullOutputWithCatalogAndRules(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create .archway/rules/ with a proxy rule.
-	rulesDir := filepath.Join(dir, ".archway", "rules")
+	// Create .verikt/rules/ with a proxy rule.
+	rulesDir := filepath.Join(dir, ".verikt", "rules")
 	require.NoError(t, os.MkdirAll(rulesDir, 0o755))
 	ruleYAML := `id: domain-isolation
 engine: grep
@@ -501,7 +501,7 @@ scope:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "domain"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "domain", "entity.go"), []byte("package domain\n"), 0o644))
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Capabilities: []string{"http-api", "mysql", "auth-jwt"},
 		Components: []config.Component{
@@ -516,7 +516,7 @@ scope:
 	require.NoError(t, err)
 
 	// Claude target now produces split files.
-	indexData, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "archway-index.md"))
+	indexData, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
 	require.NoError(t, err)
 	indexContent := string(indexData)
 
@@ -533,15 +533,15 @@ scope:
 	assert.Contains(t, indexContent, "domain-isolation")
 
 	// Category files exist.
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway-http.md"))
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway-data.md"))
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway-security.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-http.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-data.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-security.md"))
 
 	// Old monolithic file should not exist.
-	assert.NoFileExists(t, filepath.Join(dir, ".claude", "rules", "archway.md"))
+	assert.NoFileExists(t, filepath.Join(dir, ".claude", "rules", "verikt.md"))
 
 	// HTTP category has adding code and warnings.
-	httpData, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "archway-http.md"))
+	httpData, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-http.md"))
 	require.NoError(t, err)
 	httpContent := string(httpData)
 	assert.Contains(t, httpContent, "## Adding Code")
@@ -563,7 +563,7 @@ func TestGuideIntegration_CatalogOnlyMode(t *testing.T) {
 	require.NoError(t, err)
 
 	// CatalogOnly uses monolithic output even for Claude.
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "archway.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt.md"))
 	require.NoError(t, err)
 	content := string(data)
 
@@ -596,10 +596,10 @@ func TestGuideTokenCompliance(t *testing.T) {
 	words := len(strings.Fields(content))
 	approxTokens := int(float64(words) * 1.3)
 
-	// Guide should stay under 2900 tokens (INV-001 upper bound for rules files is 1500,
+	// Guide should stay under 3100 tokens (INV-001 upper bound for rules files is 1500,
 	// but guide is a generated composite with mode instructions, AI interview protocol,
-	// and codebase mapping table — so we allow up to 2900).
-	if approxTokens > 2900 {
+	// codebase mapping table, and governance checkpoint — so we allow up to 3100).
+	if approxTokens > 3100 {
 		t.Errorf("guide output too large: ~%d tokens (%d words); consider trimming", approxTokens, words)
 	}
 }
@@ -623,7 +623,7 @@ func TestForbiddenDeps_ComponentWithNoForbidden(t *testing.T) {
 
 func TestFullGuideWithDecisions(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Capabilities: []string{"http-api", "mysql", "auth-jwt"},
 		Components: []config.Component{
@@ -645,16 +645,16 @@ func TestFullGuideWithDecisions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Index file exists.
-	indexData, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "archway-index.md"))
+	indexData, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
 	require.NoError(t, err)
 	indexContent := string(indexData)
 
 	assert.Contains(t, indexContent, "Architecture: hexagonal")
 
 	// Category files exist.
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway-http.md"))
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway-data.md"))
-	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "archway-security.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-http.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-data.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-security.md"))
 
 	// Monolithic output for non-Claude targets includes decisions.
 	err = GenerateFromConfig(dir, cfg, "cursor")
@@ -680,7 +680,7 @@ func TestOutputTargetPaths(t *testing.T) {
 	require.NoError(t, Generate(opts))
 
 	expected := []string{
-		filepath.Join(dir, ".claude", "rules", "archway-index.md"),
+		filepath.Join(dir, ".claude", "rules", "verikt-index.md"),
 		filepath.Join(dir, ".cursorrules"),
 		filepath.Join(dir, ".github", "copilot-instructions.md"),
 		filepath.Join(dir, ".windsurfrules"),
@@ -924,7 +924,7 @@ func TestWriteSuggestedPrompts(t *testing.T) {
 	content := b.String()
 
 	assert.Contains(t, content, "## Suggested Prompts")
-	assert.Contains(t, content, "Audit this codebase against archway.yaml")
+	assert.Contains(t, content, "Audit this codebase against verikt.yaml")
 	assert.Contains(t, content, "capabilities am I missing")
 	assert.Contains(t, content, "dangerous capability combinations")
 }
@@ -983,7 +983,7 @@ func TestGuideModeConfig_InvalidDefaultsToPassive(t *testing.T) {
 
 func TestGenerateFromConfig_PropagatesGuideMode(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
 		Capabilities: []string{"http-api"},
 		Guide:        config.GuideConfig{Mode: "prompted"},
@@ -992,14 +992,14 @@ func TestGenerateFromConfig_PropagatesGuideMode(t *testing.T) {
 	err := GenerateFromConfig(dir, cfg, "claude")
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "Suggested Prompts")
 }
 
 func TestGenerateFromConfig_AuditMode_IndexHasAuditInstructions(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Architecture: "flat",
 		Guide:        config.GuideConfig{Mode: "audit"},
 	}
@@ -1007,9 +1007,112 @@ func TestGenerateFromConfig_AuditMode_IndexHasAuditInstructions(t *testing.T) {
 	err := GenerateFromConfig(dir, cfg, "claude")
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
 	require.NoError(t, err)
 	content := string(data)
 	assert.Contains(t, content, "session start")
 	assert.Contains(t, content, "Architecture Audit")
+}
+
+// --- Tests for Governance Checkpoint ---
+
+func TestBuildContent_ContainsGovernanceCheckpoint(t *testing.T) {
+	opts := GenerateOptions{
+		Architecture: "hexagonal",
+		Capabilities: []string{"http-api"},
+	}
+
+	content := BuildContent(opts)
+
+	assert.Contains(t, content, "## Governance Checkpoint")
+}
+
+func TestBuildContent_GovernanceCheckpointBeforeArchitecture(t *testing.T) {
+	opts := GenerateOptions{
+		Architecture: "hexagonal",
+		Capabilities: []string{"http-api"},
+	}
+
+	content := BuildContent(opts)
+
+	checkpointPos := strings.Index(content, "## Governance Checkpoint")
+	architecturePos := strings.Index(content, "## Architecture:")
+	require.NotEqual(t, -1, checkpointPos, "Governance Checkpoint section not found")
+	require.NotEqual(t, -1, architecturePos, "Architecture section not found")
+	assert.Less(t, checkpointPos, architecturePos, "Governance Checkpoint must appear before Architecture")
+}
+
+func TestBuildContent_GovernanceCheckpoint_PassiveMode(t *testing.T) {
+	opts := GenerateOptions{
+		Architecture: "hexagonal",
+		Capabilities: []string{"http-api"},
+		GuideMode:    "passive",
+	}
+
+	content := BuildContent(opts)
+
+	assert.Contains(t, content, "## Governance Checkpoint")
+	assert.Contains(t, content, "Before modifying any file, pause and verify:")
+	assert.Contains(t, content, "re-check compliance before taking the next action")
+}
+
+func TestBuildContent_GovernanceCheckpoint_AuditMode(t *testing.T) {
+	opts := GenerateOptions{
+		Architecture: "flat",
+		GuideMode:    "audit",
+	}
+
+	content := BuildContent(opts)
+
+	assert.Contains(t, content, "## Governance Checkpoint")
+}
+
+func TestBuildContent_GovernanceCheckpoint_PromptedMode(t *testing.T) {
+	opts := GenerateOptions{
+		Architecture: "hexagonal",
+		Capabilities: []string{"http-api"},
+		GuideMode:    "prompted",
+	}
+
+	content := BuildContent(opts)
+
+	assert.Contains(t, content, "## Governance Checkpoint")
+}
+
+func TestBuildSplitContent_IndexContainsGovernanceCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.VeriktConfig{
+		Architecture: "hexagonal",
+		Capabilities: []string{"http-api"},
+	}
+
+	err := GenerateFromConfig(dir, cfg, "claude")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
+	require.NoError(t, err)
+	content := string(data)
+
+	assert.Contains(t, content, "## Governance Checkpoint")
+}
+
+func TestBuildSplitContent_GovernanceCheckpointBeforeArchitecture(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.VeriktConfig{
+		Architecture: "hexagonal",
+		Capabilities: []string{"http-api"},
+	}
+
+	err := GenerateFromConfig(dir, cfg, "claude")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt-index.md"))
+	require.NoError(t, err)
+	content := string(data)
+
+	checkpointPos := strings.Index(content, "## Governance Checkpoint")
+	architecturePos := strings.Index(content, "## Architecture:")
+	require.NotEqual(t, -1, checkpointPos, "Governance Checkpoint section not found in index")
+	require.NotEqual(t, -1, architecturePos, "Architecture section not found in index")
+	assert.Less(t, checkpointPos, architecturePos, "Governance Checkpoint must appear before Architecture in split index")
 }

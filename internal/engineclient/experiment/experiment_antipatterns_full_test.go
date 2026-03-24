@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +36,7 @@ var fullDetectors = []struct {
 
 // TestAntiPatternsFull_GoPath validates that all remaining detectors fire via the Go AST path.
 func TestAntiPatternsFull_GoPath(t *testing.T) {
-	cfg := &config.ArchwayConfig{Language: "go"}
+	cfg := &config.VeriktConfig{Language: "go"}
 	projectPath := antipatternFullProjectPath(t)
 
 	start := time.Now()
@@ -89,7 +89,7 @@ func TestAntiPatternsFull_FalsePositives(t *testing.T) {
 	cleanPath := filepath.Join(filepath.Dir(filename), "testdata", "antipatterns-full", "clean")
 
 	// Go path.
-	cfg := &config.ArchwayConfig{Language: "go"}
+	cfg := &config.VeriktConfig{Language: "go"}
 	goResult, err := checker.Check(cfg, cleanPath)
 	require.NoError(t, err)
 	assert.Empty(t, goResult.AntiPatternViolations,
@@ -104,7 +104,7 @@ func TestAntiPatternsFull_FalsePositives(t *testing.T) {
 
 // TestAntiPatternsFull_GodPackage confirms god_package fires (cross-package, needs full project).
 func TestAntiPatternsFull_GodPackage(t *testing.T) {
-	cfg := &config.ArchwayConfig{Language: "go"}
+	cfg := &config.VeriktConfig{Language: "go"}
 	projectPath := antipatternFullProjectPath(t)
 
 	result, err := checker.Check(cfg, projectPath)

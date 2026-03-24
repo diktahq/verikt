@@ -35,13 +35,13 @@ Traffic policies (retry counts, timeouts, circuit breaking) are configured in me
 
 Service meshes are deliberately transparent to application code. A Go service running behind Envoy makes normal HTTP or gRPC calls — the mesh handles the rest. This means the service mesh and in-process resilience patterns (circuit breaker, retry) can overlap.
 
-The common guidance: use in-process circuit breakers and retry logic (which archway scaffolds) for immediate, application-aware error handling, and rely on the mesh for cluster-level traffic management, mTLS, and observability. They serve different granularities.
+The common guidance: use in-process circuit breakers and retry logic (which verikt scaffolds) for immediate, application-aware error handling, and rely on the mesh for cluster-level traffic management, mTLS, and observability. They serve different granularities.
 
 Go services benefit from the mesh's telemetry when combined with OpenTelemetry: the mesh captures network-level spans, while the application captures business logic spans, and they compose in the same trace.
 
-## How archway Supports It
+## How verikt Supports It
 
-archway doesn't scaffold service mesh configuration (that's infrastructure territory), but its `observability` capability generates OpenTelemetry instrumentation that integrates naturally with mesh-level telemetry. The `circuit-breaker` and `retry` capabilities provide in-process resilience that complements mesh-level policies. See [Capabilities](/concepts/capabilities/).
+verikt doesn't scaffold service mesh configuration (that's infrastructure territory), but its `observability` capability generates OpenTelemetry instrumentation that integrates naturally with mesh-level telemetry. The `circuit-breaker` and `retry` capabilities provide in-process resilience that complements mesh-level policies. See [Capabilities](/concepts/capabilities/).
 
 <Aside type="tip">
 Don't replace all in-process resilience with mesh policies. The mesh handles network-level concerns; your application code still needs to handle business-level failures that the mesh cannot see — like a downstream service returning 200 with an error payload.

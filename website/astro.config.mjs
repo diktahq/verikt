@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://archway.dcsg.me',
+	site: 'https://verikt.dev',
 	base: '/',
 	redirects: {
 		'/for/ai-coding-agents/': '/for/engineers/',
@@ -15,7 +15,7 @@ export default defineConfig({
 	},
 	integrations: [
 		starlight({
-			title: 'Archway',
+			title: 'verikt',
 			tagline: 'The architecture layer for agentic engineering',
 			expressiveCode: {
 				themes: ['gruvbox-dark-soft', 'gruvbox-dark-soft'],
@@ -35,27 +35,24 @@ export default defineConfig({
 					},
 				},
 			},
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/dcsg/archway' }],
+			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/diktahq/verikt' }],
 			components: {
+				Head: './src/components/Head.astro',
 				Header: './src/components/Header.astro',
 				SiteTitle: './src/components/SiteTitle.astro',
 				Footer: './src/components/Footer.astro',
 			},
 			editLink: {
-				baseUrl: 'https://github.com/dcsg/archway/edit/main/website/',
+				baseUrl: 'https://github.com/diktahq/verikt/edit/main/website/',
 			},
 			customCss: ['./src/styles/custom.css'],
 			head: [
 				{ tag: 'script', attrs: { async: true, src: 'https://www.googletagmanager.com/gtag/js?id=G-PSXJ5N0EDV' } },
 				{ tag: 'script', content: "window.dataLayer = window.dataLayer || [];\nfunction gtag(){dataLayer.push(arguments);}\ngtag('js', new Date());\ngtag('config', 'G-PSXJ5N0EDV');" },
 				{ tag: 'meta', attrs: { property: 'og:type', content: 'website' } },
-				{ tag: 'meta', attrs: { property: 'og:title', content: 'archway — Your architecture, in every agent session' } },
-				{ tag: 'meta', attrs: { property: 'og:description', content: 'AI agents write correct syntax. They don\'t always remember your architecture. archway generates architecture context for every major AI coding agent — so every session is reliable, every engineer is consistent, and your architecture doesn\'t drift.' } },
-				{ tag: 'meta', attrs: { property: 'og:image', content: 'https://archway.dcsg.me/og.png' } },
+				{ tag: 'meta', attrs: { property: 'og:image', content: 'https://verikt.dev/og.png' } },
 				{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
-				{ tag: 'meta', attrs: { name: 'twitter:title', content: 'archway — Your architecture, in every agent session' } },
-				{ tag: 'meta', attrs: { name: 'twitter:description', content: 'AI agents write correct syntax. They don\'t always remember your architecture. archway generates architecture context for every major AI coding agent — so every session is reliable, every engineer is consistent, and your architecture doesn\'t drift.' } },
-				{ tag: 'meta', attrs: { name: 'twitter:image', content: 'https://archway.dcsg.me/og.png' } },
+				{ tag: 'meta', attrs: { name: 'twitter:image', content: 'https://verikt.dev/og.png' } },
 				{ tag: 'link', attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' } },
 				{ tag: 'link', attrs: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true } },
 				{ tag: 'link', attrs: { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@1&family=JetBrains+Mono:wght@400;500&display=swap' } },
@@ -84,6 +81,9 @@ export default defineConfig({
 						{ label: 'Adding Capabilities', slug: 'guides/adding-capabilities' },
 						{ label: 'CI Integration', slug: 'guides/ci-integration' },
 						{ label: 'Detecting Architecture Drift', slug: 'guides/architecture-drift' },
+						{ label: 'Architecture Rules for Claude Code', slug: 'guides/claude-code-architecture-rules' },
+						{ label: 'Architecture Rules for Cursor', slug: 'guides/cursor-rules-architecture' },
+						{ label: 'Architecture Rules for Copilot', slug: 'guides/copilot-instructions-architecture' },
 					],
 				},
 				{
@@ -105,7 +105,7 @@ export default defineConfig({
 				{
 					label: 'Concepts',
 					items: [
-						{ label: 'Why archway exists', slug: 'concepts/why-archway-exists' },
+						{ label: 'Why verikt exists', slug: 'concepts/why-verikt-exists' },
 						{ label: 'Agentic Engineering', slug: 'concepts/agentic-engineering' },
 						{ label: 'Context Engineering', slug: 'concepts/context-engineering' },
 						{ label: 'How It Works', slug: 'concepts/how-it-works' },
@@ -119,8 +119,8 @@ export default defineConfig({
 						{ label: 'Capabilities Matrix', slug: 'reference/capabilities-matrix' },
 						{ label: 'Feature Matrix', slug: 'reference/features' },
 						{ label: 'CLI Commands', slug: 'reference/cli' },
-						{ label: 'archway.yaml', slug: 'reference/archway-yaml' },
-						{ label: 'archway guide', slug: 'reference/guide' },
+						{ label: 'verikt.yaml', slug: 'reference/verikt-yaml' },
+						{ label: 'verikt guide', slug: 'reference/guide' },
 					],
 				},
 				{
@@ -296,6 +296,8 @@ export default defineConfig({
 						{ label: 'Service Mesh', slug: 'glossary/service-mesh' },
 					],
 				},
+				{ label: 'Changelog', slug: 'changelog' },
+				{ label: 'About', slug: 'about' },
 			],
 		}),
 	],

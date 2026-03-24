@@ -1,0 +1,76 @@
+---
+title: TypeScript / Node.js
+description: verikt supports TypeScript/Node.js with 39 capabilities and two architecture patterns — scaffold a production-ready service the same way you would in Go.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+verikt treats TypeScript as a first-class language. You get the same composition model — pick an architecture, select capabilities, scaffold — with 39 capabilities and two architecture patterns (hexagonal and flat).
+
+## Scaffold a TypeScript service
+
+The wizard handles everything interactively:
+
+```bash
+verikt new my-ts-api --language typescript
+```
+
+Or skip the wizard if you know what you want:
+
+```bash
+verikt new my-ts-api \
+  --language typescript \
+  --arch hexagonal \
+  --cap platform,bootstrap,http-api,docker \
+  --no-wizard
+```
+
+## What's different from Go
+
+**HTTP framework.** During scaffolding you choose between Express, Fastify, and Hono. The `http-api` capability wires the framework you pick, including middleware for request IDs, health endpoints, and graceful shutdown.
+
+**Database libraries.** verikt selects the right library per capability:
+
+- `postgres` and `mysql` — [Prisma](https://www.prisma.io/) by default, or [Drizzle ORM](https://orm.drizzle.team/) if you pass `--set OrmLibrary=drizzle`. Drizzle uses schema-in-code with a SQL-first query builder — no Prisma schema file, no code generation step.
+- `mongodb` — [Mongoose](https://mongoosejs.com/)
+- `redis` — [ioredis](https://github.com/redis/ioredis)
+
+**Testing.** The `testing` capability sets up [Vitest](https://vitest.dev/) with a test script and sensible defaults. Tests run with `npm test`.
+
+**Linting.** The `linting` capability configures [ESLint](https://eslint.org/) and [Prettier](https://prettier.io/). Run `npm run lint` to check.
+
+## Architecture patterns
+
+TypeScript supports hexagonal and flat. The hexagonal pattern enforces strict layer boundaries:
+
+```
+src/domain/          # Business logic — no external imports
+src/application/     # Use cases, ports
+src/infrastructure/  # DB, external services
+src/transport/       # HTTP handlers
+```
+
+`verikt check` enforces these boundaries using tree-sitter import graph analysis. If `src/domain/` imports from `src/infrastructure/`, it's caught at the command line.
+
+## Available capabilities
+
+39 capabilities are available for TypeScript, covering the most common production needs:
+
+- **Transport:** http-api, http-client, kafka-consumer
+- **Data:** postgres, mysql, mongodb, redis, sqlite, migrations, repository, uuid
+- **Resilience:** circuit-breaker, retry, timeout, rate-limiting, idempotency
+- **Security:** auth-jwt, cors, audit-log, encryption
+- **Patterns:** event-bus, worker, scheduler, outbox, cqrs, email-gateway
+- **Observability:** health, observability, request-id
+- **Infrastructure:** platform, bootstrap, docker, graceful, devcontainer, ci-github, pre-commit, makefile
+- **Quality:** testing, linting
+
+<Aside type="note">
+  Some capabilities are Go-only in the current release: grpc, graphql, websocket, nats, ddd, saga, templ, and others. The [Capabilities Matrix](/reference/capabilities-matrix/) shows language availability for every capability.
+</Aside>
+
+## Next steps
+
+- [Quick Start with CLI](/getting-started/cli/) — scaffold your first service
+- [Capabilities](/concepts/capabilities/) — full capability descriptions
+- [Capabilities Matrix](/reference/capabilities-matrix/) — language availability at a glance

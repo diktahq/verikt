@@ -1,0 +1,37 @@
+import EventEmitter from 'eventemitter3'
+
+// DomainEvent is the base contract for all domain events.
+// Events are past-tense facts: OrderPlaced, UserRegistered, PaymentReceived.
+export interface DomainEvent {
+  readonly type: string
+  readonly occurredAt: Date
+}
+
+type EventMap = Record<string, DomainEvent>
+type Handler<E extends DomainEvent> = (event: E) => void | Promise<void>
+
+// EventBus is a typed in-process publish/subscribe bus.
+// Use for decoupled communication between bounded contexts within one process.
+// For cross-service events, pair with the outbox pattern.
+export class EventBus<TEvents extends EventMap = EventMap> {
+  private readonly emitter = new EventEmitter()
+
+  subscribe<K extends keyof TEvents & string>(
+    type: K,
+    handler: Handler<TEvents[K]>,
+  ): () => void {
+    this.emitter.on(type, handler)
+    return () => this.emitter.off(type, handler)
+  }
+
+  async publish<K extends keyof TEvents & string>(
+    type: K,
+    event: TEvents[K],
+  ): Promise<void> {
+    const listeners = this.emitter.listeners(type)
+    await Promise.all(listeners.map((fn) => (fn as Handler<TEvents[K]>)(event)))
+  }
+}
+
+// Global singleton — replace with DI container binding in production.
+export const eventBus = new EventBus()

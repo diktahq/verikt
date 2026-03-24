@@ -1,0 +1,30 @@
+// AuditLog — append-only structured audit trail.
+// Writes to stdout as structured JSON for log aggregation.
+// Replace the writer with a database or queue sink for durable storage.
+
+export interface AuditEntry {
+  timestamp: string
+  actor: string          // who performed the action (user ID, service name)
+  action: string         // what happened (e.g. 'order.created', 'user.deleted')
+  resource: string       // what was affected (e.g. 'order:abc-123')
+  outcome: 'success' | 'failure'
+  metadata?: Record<string, unknown>
+}
+
+export interface AuditLogger {
+  log(entry: Omit<AuditEntry, 'timestamp'>): void
+}
+
+// StdoutAuditLogger writes audit entries as JSON lines to stdout.
+// Structured log collectors (Datadog, Loki, CloudWatch) pick these up automatically.
+export class StdoutAuditLogger implements AuditLogger {
+  log(entry: Omit<AuditEntry, 'timestamp'>): void {
+    const record: AuditEntry = {
+      timestamp: new Date().toISOString(),
+      ...entry,
+    }
+    process.stdout.write(JSON.stringify({ level: 'audit', ...record }) + '\n')
+  }
+}
+
+export const auditLog: AuditLogger = new StdoutAuditLogger()

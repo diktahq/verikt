@@ -1,8 +1,20 @@
-# Soul — Archway
+# Soul — verikt
 
 ## Tagline
 
-The architecture layer for agentic engineering.
+Your architecture, in every agent session.
+
+## Pain Line
+
+The agent writes correct syntax. It doesn't always remember your architecture.
+
+## Category
+
+Agentic Engineering Infrastructure.
+
+## Value Pillars
+
+Reliability, Consistency, Predictability.
 
 ## Vision
 
@@ -18,22 +30,22 @@ Give developers the tools to declare their architecture, compose services from p
 2. **Composition beats generation** — modular capabilities snap together; the rules travel with the code
 3. **The gap should be zero** — if you can describe your architecture, your tooling should enforce it
 4. **AI agents need architectural context** — prevention beats correction; feed the agent before it writes
-5. **Tool-agnostic, universally enforced** — Archway works with every AI coding tool. Rules go in `.cursorrules`, `AGENTS.md`, `.github/copilot-instructions.md` — wherever your tool reads. Pre-commit enforcement works regardless of which AI wrote the code. Claude Code gets real-time enforcement via hooks as a bonus.
+5. **Tool-agnostic, universally enforced** — verikt works with every AI coding tool. Rules go in `.cursorrules`, `AGENTS.md`, `.github/copilot-instructions.md` — wherever your tool reads. Pre-commit enforcement works regardless of which AI wrote the code. Claude Code gets real-time enforcement via hooks as a bonus.
 
 ## What This Is
 
-The architecture layer for agentic engineering. Feeds AI agents architectural context before they write the first line (`archway guide`). Scaffolds production-ready services from architecture patterns and capability modules (`archway new`). Detects what's in any existing codebase (`archway analyze`). Enforces structural rules in CI with 11 AST-based detectors (`archway check`). The gap between intended architecture and actual architecture is zero.
+The architecture layer for agentic engineering. Feeds AI agents architectural context before they write the first line (`verikt guide`). Scaffolds production-ready services from architecture patterns and capability modules (`verikt new`). Detects what's in any existing codebase (`verikt analyze`). Enforces structural rules in CI with 11 AST-based detectors (`verikt check`). The gap between intended architecture and actual architecture is zero.
 
 ## Product Pillars
 
 | Belief | Pillar | CLI command |
 |---|---|---|
-| AI agents need context | **Guide** | `archway guide` |
-| Composition beats generation | **Compose** | `archway new` |
-| Architecture is code | **Analyze** | `archway analyze` |
-| The gap should be zero | **Enforce** | `archway check` |
+| AI agents need context | **Guide** | `verikt guide` |
+| Composition beats generation | **Compose** | `verikt new` |
+| Architecture is code | **Analyze** | `verikt analyze` |
+| The gap should be zero | **Enforce** | `verikt check` |
 
-Guide (prevention) + Enforce (detection) = the gap is zero. Future: `archway plan`, `archway diff` complete the lifecycle.
+Guide (prevention) + Enforce (detection) = the gap is zero. Future: `verikt plan`, `verikt diff` complete the lifecycle.
 
 ## Stack
 
@@ -48,7 +60,7 @@ Guide (prevention) + Enforce (detection) = the gap is zero. Future: `archway pla
 
 ## Current State
 
-Active development. v1 CLI ships with composition-based scaffolding (`archway new` with `--arch` + `--cap`), architecture validation (`archway check`), brownfield analysis (`archway analyze`), and init (`archway init`). Templates use composable architecture + capability modules with partial-based main.go assembly. Smart wizard suggests missing capabilities. Complements Keel (AI context layer) — Archway owns code + architecture, Keel owns AI guardrails.
+Active development. v1 CLI ships with composition-based scaffolding (`verikt new` with `--arch` + `--cap`), architecture validation (`verikt check`), brownfield analysis (`verikt analyze`), and init (`verikt init`). Templates use composable architecture + capability modules with partial-based main.go assembly. Smart wizard suggests missing capabilities. Complements Edikt (governance layer) — verikt owns code + architecture, edikt owns AI guardrails.
 
 ## Users
 
@@ -68,3 +80,4 @@ Active development. v1 CLI ships with composition-based scaffolding (`archway ne
 
 *Initialized: 2026-02-14*
 *Updated: 2026-03-15 — updated tagline and What This Is to "architecture layer for agentic engineering" positioning*
+*Updated: 2026-03-22 — Renamed archway → verikt, headline from GTM workshop, keel → edikt*

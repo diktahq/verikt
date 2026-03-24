@@ -39,7 +39,7 @@ The service is constructed with the interface — the production binary gets the
 
 ## In Go
 
-archway's `repository` capability scaffolds a generic repository using Go generics:
+verikt's `repository` capability scaffolds a generic repository using Go generics:
 
 ```go
 type Repository[T any, ID comparable] interface {
@@ -54,7 +54,7 @@ The generic interface covers the common CRUD operations. Domain-specific query m
 
 The `postgres` and `mysql` capabilities both suggest `repository` — the scaffolded database connections include a repository pattern example.
 
-## How archway Supports It
+## How verikt Supports It
 
 The `repository` capability scaffolds a generic repository interface and base implementation using Go generics. It pairs with `postgres`, `mysql`, and `mongodb` capabilities. In the hexagonal architecture, repositories are the canonical outbound ports. See [Capabilities](/concepts/capabilities/).
 

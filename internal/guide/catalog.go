@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/scaffold"
 )
 
 // CatalogEntry describes a single capability in the catalog.

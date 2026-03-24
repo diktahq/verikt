@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dcsg/archway/internal/analyzer/detector"
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/output"
-	"github.com/dcsg/archway/internal/provider"
+	"github.com/diktahq/verikt/internal/analyzer/detector"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/output"
+	"github.com/diktahq/verikt/internal/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -28,9 +28,9 @@ func newAnalyzeCommand(rootOpts *globalOptions) *cobra.Command {
 		Use:   "analyze",
 		Short: "Analyze an existing codebase",
 		Long:  "Analyze project architecture, framework choices, and conventions for a codebase.",
-		Example: `  archway analyze
-  archway analyze --path . --output json
-  archway analyze --init`,
+		Example: `  verikt analyze
+  verikt analyze --path . --output json
+  verikt analyze --init`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if opts.Output == "" {
 				opts.Output = rootOpts.Output
@@ -42,7 +42,7 @@ func newAnalyzeCommand(rootOpts *globalOptions) *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Path, "path", ".", "Path to project")
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "Output format: terminal|json|markdown")
-	cmd.Flags().BoolVar(&opts.Init, "init", false, "Generate archway.yaml from analysis")
+	cmd.Flags().BoolVar(&opts.Init, "init", false, "Generate verikt.yaml from analysis")
 	cmd.Flags().StringVar(&opts.Language, "language", "", "Force language")
 
 	return cmd
@@ -83,9 +83,9 @@ func runAnalyze(ctx context.Context, opts *analyzeCommandOptions) error {
 	fmt.Println(formatted)
 
 	if opts.Init {
-		archCfg := config.DefaultArchwayConfig(language, result.Architecture.Pattern)
-		path := filepath.Join(opts.Path, "archway.yaml")
-		if err := config.SaveArchwayYAML(path, archCfg); err != nil {
+		archCfg := config.DefaultVeriktConfig(language, result.Architecture.Pattern)
+		path := filepath.Join(opts.Path, "verikt.yaml")
+		if err := config.SaveVeriktYAML(path, archCfg); err != nil {
 			return err
 		}
 		fmt.Printf("Generated %s\n", path)

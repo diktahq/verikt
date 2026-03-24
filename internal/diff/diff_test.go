@@ -4,10 +4,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dcsg/archway/internal/provider"
-	"github.com/dcsg/archway/internal/scaffold"
+	"github.com/diktahq/verikt/internal/provider"
+	"github.com/diktahq/verikt/internal/scaffold"
 
-	_ "github.com/dcsg/archway/providers/golang"
+	_ "github.com/diktahq/verikt/providers/golang"
 )
 
 func composePlan(t *testing.T, arch string, caps []string) (*scaffold.CompositionPlan, provider.LanguageProvider) {

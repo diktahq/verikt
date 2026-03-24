@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dcsg/archway/internal/config"
-	"github.com/dcsg/archway/internal/guide"
+	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/guide"
 	"github.com/spf13/cobra"
 )
 
@@ -19,9 +19,9 @@ func newDecideCommand(_ *globalOptions) *cobra.Command {
 		Use:   "decide [topic]",
 		Short: "Resolve architecture decisions",
 		Long:  `Interactive CLI for resolving architecture decision gates.`,
-		Example: `  archway decide                          # Interactive
-  archway decide authentication-strategy  # Specific topic
-  archway decide --list                   # Show all decisions`,
+		Example: `  verikt decide                          # Interactive
+  verikt decide authentication-strategy  # Specific topic
+  verikt decide --list                   # Show all decisions`,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if list {
 				return runDecideList()
@@ -48,8 +48,8 @@ func runDecideList() error {
 	if len(decisions) == 0 {
 		decisions = guide.AutoPopulateDecisions(cfg.Architecture, cfg.Capabilities)
 		cfg.Decisions = decisions
-		if saveErr := config.SaveArchwayYAML(cfgPath, cfg); saveErr != nil {
-			return fmt.Errorf("save archway.yaml: %w", saveErr)
+		if saveErr := config.SaveVeriktYAML(cfgPath, cfg); saveErr != nil {
+			return fmt.Errorf("save verikt.yaml: %w", saveErr)
 		}
 		fmt.Println("Auto-populated decisions from project config.")
 	}
@@ -72,7 +72,7 @@ func runDecideList() error {
 
 	undecided := guide.UndecidedDecisions(decisions)
 	if len(undecided) > 0 {
-		fmt.Printf("\n%d undecided. Run `archway decide` to resolve.\n", len(undecided))
+		fmt.Printf("\n%d undecided. Run `verikt decide` to resolve.\n", len(undecided))
 	} else {
 		fmt.Println("\nAll decisions resolved.")
 	}
@@ -87,8 +87,8 @@ func runDecide(topic string) error {
 
 	if len(cfg.Decisions) == 0 {
 		cfg.Decisions = guide.AutoPopulateDecisions(cfg.Architecture, cfg.Capabilities)
-		if saveErr := config.SaveArchwayYAML(cfgPath, cfg); saveErr != nil {
-			return fmt.Errorf("save archway.yaml: %w", saveErr)
+		if saveErr := config.SaveVeriktYAML(cfgPath, cfg); saveErr != nil {
+			return fmt.Errorf("save verikt.yaml: %w", saveErr)
 		}
 		fmt.Println("Auto-populated decisions from project config.")
 	}
@@ -152,23 +152,23 @@ func runDecide(topic string) error {
 	}
 	cfg.Decisions = updated
 
-	if saveErr := config.SaveArchwayYAML(cfgPath, cfg); saveErr != nil {
-		return fmt.Errorf("save archway.yaml: %w", saveErr)
+	if saveErr := config.SaveVeriktYAML(cfgPath, cfg); saveErr != nil {
+		return fmt.Errorf("save verikt.yaml: %w", saveErr)
 	}
 
 	fmt.Printf("Decided: %s = %s\n", topic, choice)
 	return nil
 }
 
-func loadDecideConfig() (string, *config.ArchwayConfig, error) {
-	cfgPath, err := config.FindArchwayYAML(".")
+func loadDecideConfig() (string, *config.VeriktConfig, error) {
+	cfgPath, err := config.FindVeriktYAML(".")
 	if err != nil {
-		return "", nil, fmt.Errorf("no archway.yaml found: %w", err)
+		return "", nil, fmt.Errorf("no verikt.yaml found: %w", err)
 	}
 
-	cfg, err := config.LoadArchwayYAML(cfgPath)
+	cfg, err := config.LoadVeriktYAML(cfgPath)
 	if err != nil {
-		return "", nil, fmt.Errorf("load archway.yaml: %w", err)
+		return "", nil, fmt.Errorf("load verikt.yaml: %w", err)
 	}
 
 	return cfgPath, cfg, nil

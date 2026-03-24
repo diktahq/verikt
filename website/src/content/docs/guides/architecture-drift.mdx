@@ -1,26 +1,26 @@
 ---
 title: Detecting Architecture Drift
-description: Detect architecture drift in your services with archway diff — find structural gaps between your declared archway.yaml and actual files on disk, with CI integration
+description: Detect architecture drift in your services with verikt diff — find structural gaps between your declared verikt.yaml and actual files on disk, with CI integration
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Architecture drift happens when the files on disk no longer match what your `archway.yaml` declares. A capability is listed but its files were deleted. A directory was renamed. Someone removed a file during refactoring.
+Architecture drift happens when the files on disk no longer match what your `verikt.yaml` declares. A capability is listed but its files were deleted. A directory was renamed. Someone removed a file during refactoring.
 
-`archway diff` detects this — like `terraform plan` for code structure.
+`verikt diff` detects this — like `terraform plan` for code structure.
 
 ## Basic Usage
 
 ```bash
-archway diff
+verikt diff
 ```
 
-This reads your `archway.yaml`, computes what files should exist based on the declared architecture and capabilities, then checks which ones actually exist on disk.
+This reads your `verikt.yaml`, computes what files should exist based on the declared architecture and capabilities, then checks which ones actually exist on disk.
 
 ### Example Output
 
 ```
-archway Diff — hexagonal + 4 capabilities
+verikt Diff — hexagonal + 4 capabilities
 ═══════════════════════════════════════════════════════
   ✓ architecture       all files present
   ✓ http-api           all files present
@@ -42,7 +42,7 @@ Summary: 3/4 capabilities fully present | drift score: 0.12
 |--------|---------|--------|
 | `✓ ok` | All expected files present | None needed |
 | `✗ partial` | Some files missing | Investigate — was this intentional? |
-| `✗ missing` | All files for this capability are gone | Re-add with `archway add` or remove from `archway.yaml` |
+| `✗ missing` | All files for this capability are gone | Re-add with `verikt add` or remove from `verikt.yaml` |
 
 ### Drift Score
 
@@ -56,7 +56,7 @@ Summary: 3/4 capabilities fully present | drift score: 0.12
 ### Terminal (default)
 
 ```bash
-archway diff
+verikt diff
 ```
 
 Human-readable output with checkmarks and colors.
@@ -64,7 +64,7 @@ Human-readable output with checkmarks and colors.
 ### JSON
 
 ```bash
-archway diff -o json
+verikt diff -o json
 ```
 
 Machine-readable output for CI pipelines:
@@ -91,7 +91,7 @@ Machine-readable output for CI pipelines:
 ### Markdown
 
 ```bash
-archway diff -o markdown
+verikt diff -o markdown
 ```
 
 Table format suitable for PR comments or documentation.
@@ -100,11 +100,11 @@ Table format suitable for PR comments or documentation.
 
 ### After Refactoring
 
-Run `archway diff` after any significant refactoring to catch accidentally deleted files:
+Run `verikt diff` after any significant refactoring to catch accidentally deleted files:
 
 ```bash
 # Refactor, then check
-archway diff
+verikt diff
 ```
 
 ### In CI
@@ -113,20 +113,20 @@ Add drift detection to your CI pipeline:
 
 ```bash
 # Fail if any drift is detected
-archway diff -o json | jq -e '.summary.drift_score == 0'
+verikt diff -o json | jq -e '.summary.drift_score == 0'
 ```
 
 ### Fixing Drift
 
 When drift is detected, you have two options:
 
-1. **Re-add the missing files** — use `archway add` to regenerate them:
+1. **Re-add the missing files** — use `verikt add` to regenerate them:
    ```bash
-   archway add redis
+   verikt add redis
    ```
 
-2. **Update the declaration** — if the drift is intentional, remove the capability from `archway.yaml`
+2. **Update the declaration** — if the drift is intentional, remove the capability from `verikt.yaml`
 
 <Aside type="tip">
-Combine `archway diff` with `archway check` for complete architecture validation. `diff` catches structural gaps (missing files), while `check` catches behavioral violations (wrong imports, anti-patterns).
+Combine `verikt diff` with `verikt check` for complete architecture validation. `diff` catches structural gaps (missing files), while `check` catches behavioral violations (wrong imports, anti-patterns).
 </Aside>

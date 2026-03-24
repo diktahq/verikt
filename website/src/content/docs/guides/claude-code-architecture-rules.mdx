@@ -1,0 +1,93 @@
+---
+title: "Architecture Rules for Claude Code — Generate .claude/rules from verikt"
+description: "How to generate architecture rules for Claude Code using verikt guide. One command creates .claude/rules/verikt.md with your layer boundaries, dependency rules, and capability inventory."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Claude Code starts every session without knowing your architecture. It knows Go. It knows TypeScript. It doesn't know that domain must never import from infrastructure in your service, or that you use hexagonal architecture, or which 14 capabilities are installed and wired. So it guesses. Sometimes correctly.
+
+`verikt guide --target claude` fixes this. One command generates `.claude/rules/verikt.md` — a file Claude Code reads at session start — with your exact layer boundaries, dependency rules, and capability inventory derived from `verikt.yaml`.
+
+## Quick start
+
+Install verikt, then generate the rules file:
+
+```bash
+brew install diktahq/tap/verikt
+verikt guide --target claude
+```
+
+The generated file lands at `.claude/rules/verikt.md`. Claude Code picks it up automatically on next session start via the `**/*` glob in your `CLAUDE.md`.
+
+## What gets generated
+
+The file contains everything the agent needs to make correct architectural decisions without asking:
+
+**Layer boundaries and dependency direction.** For a hexagonal service, this looks like:
+
+```
+## Dependency Rules
+- domain/ must NOT import from port/, service/, adapter/
+- port/ must NOT import from service/, adapter/
+- service/ must NOT import from adapter/
+```
+
+Explicit rules, not general principles. The agent knows the exact constraint, not a vague instruction to "follow clean architecture."
+
+**Installed capabilities.** Every capability in your `verikt.yaml` is listed with its wiring:
+
+```
+## Capabilities
+- http-api: REST API with Chi router, RFC 7807 errors
+- postgres: Connection pool, pgx driver
+- platform: Config, structured logging, lifecycle management
+- circuit-breaker: Wraps outbound HTTP calls
+```
+
+When the agent suggests adding retry logic, it knows to check whether `idempotency` is also installed — because the guide includes the interaction warnings.
+
+**Smart suggestions.** Missing capabilities that pair with what you have are listed explicitly. If you have `http-client` but not `circuit-breaker`, the guide flags it. The agent surfaces this in context before writing code.
+
+**Anti-patterns to avoid.** Rules derived from your architecture — no domain importing adapters, no SQL string concatenation, no fat HTTP handlers — appear as explicit NEVER rules.
+
+## Why `.claude/rules/` works
+
+Claude Code loads all files matching `**/*` in `.claude/rules/` at session start. This means architecture rules are available from the first message, without any prompt engineering on your part.
+
+Commit `.claude/rules/verikt.md` to the repository. Every engineer on the team, every CI session, every new agent thread gets the same architecture context automatically.
+
+<Aside type="tip">
+Re-run `verikt guide --target claude` after adding a capability with `verikt add`. The rules file reflects the current state of `verikt.yaml` — stale context is worse than no context.
+</Aside>
+
+## What this changes
+
+Without the guide, architecture compliance depends on the prompt. Write a detailed prompt and the agent usually gets it right. Write a short one and it guesses.
+
+With the guide, the prompt is just the task. The experiments bear this out: in [EXP-01](/experiments/exp-01/), the same agent ran the same task in two conditions — with guide, 100% hexagonal compliance; without guide, flat output with 0% compliance. Same model, same task. The variable was the loaded context.
+
+[EXP-03](/experiments/exp-03/) measured architecture violations on a greenfield job runner: `[6, 8, 7]` without the guide, `[1, 1, 1]` with it.
+
+## Keeping the guide current
+
+The guide is generated from `verikt.yaml`. It goes stale when you add capabilities or change architecture. Two ways to keep it current:
+
+Run it manually after changes:
+
+```bash
+verikt guide --target claude
+```
+
+Or add it to your Makefile:
+
+```makefile
+guide:
+	verikt guide --target claude
+```
+
+---
+
+→ [verikt guide reference](/reference/guide/) — all flags and supported targets
+→ [Experiments](/experiments/) — measured effect of guide on agent compliance
+→ [Prompt Engineering with verikt](/guides/prompt-engineering/) — how to write prompts once the guide is loaded

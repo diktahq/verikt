@@ -19,13 +19,33 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
     let mut findings_warning: u32 = 0;
     let mut findings_info: u32 = 0;
 
-    let project = PathBuf::from(&req.project_path);
+    let project = match PathBuf::from(&req.project_path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return vec![EngineResponse {
+                payload: Some(Payload::Error(pb::EngineError {
+                    message: format!("invalid project_path: {e}"),
+                    code: "INVALID_PROJECT_PATH".to_string(),
+                })),
+            }];
+        }
+    };
 
-    // Collect target files — either explicit list or walk project
+    // Collect target files — either explicit list or walk project.
+    // All paths are validated to stay within the project boundary.
     let files = if req.target_files.is_empty() {
         walk_files(&project)
     } else {
-        req.target_files.iter().map(PathBuf::from).collect()
+        req.target_files
+            .iter()
+            .filter_map(|f| {
+                let resolved = project.join(f);
+                match resolved.canonicalize() {
+                    Ok(p) if p.starts_with(&project) => Some(p),
+                    _ => None, // skip paths outside project boundary
+                }
+            })
+            .collect()
     };
 
     let files_checked = files.len() as u32;

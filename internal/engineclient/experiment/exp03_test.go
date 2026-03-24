@@ -6,7 +6,7 @@ package experiment
 // With the guide it produces hexagonal structure with domain/port/service/adapter layers.
 //
 // Run:
-//   ARCHWAY_EXPERIMENT_AGENT=1 go test -run TestEXP03 -v -timeout 300s ./internal/engineclient/experiment/
+//   VERIKT_EXPERIMENT_AGENT=1 go test -run TestEXP03 -v -timeout 300s ./internal/engineclient/experiment/
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const exp03ArchwayYAML = `language: go
+const exp03VeriktYAML = `language: go
 architecture: hexagonal
 
 components:
@@ -52,7 +52,7 @@ Module name: github.com/example/notifications`
 func TestEXP03_Control(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	m := runAgentExperiment(t, "EXP03-control", exp03TaskPrompt, exp03ArchwayYAML)
+	m := runAgentExperiment(t, "EXP03-control", exp03TaskPrompt, exp03VeriktYAML)
 
 	t.Logf("=== EXP-03 Control: packages=%v hexagonal=%v violations=%d passed=%v",
 		m.Packages, isHexagonalShape(m.Packages), m.ViolationsTotal, m.Passed)
@@ -64,16 +64,16 @@ func TestEXP03_Control(t *testing.T) {
 func TestEXP03_Test(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	bin := archwayBin(t)
-	guide := generateGuideFromYAML(t, bin, exp03ArchwayYAML)
+	bin := veriktBin(t)
+	guide := generateGuideFromYAML(t, bin, exp03VeriktYAML)
 	promptWithGuide := guide + "\n\n---\n\n" + exp03TaskPrompt
 
-	m := runAgentExperiment(t, "EXP03-test", promptWithGuide, exp03ArchwayYAML)
+	m := runAgentExperiment(t, "EXP03-test", promptWithGuide, exp03VeriktYAML)
 
 	t.Logf("=== EXP-03 Test: packages=%v hexagonal=%v violations=%d passed=%v",
 		m.Packages, isHexagonalShape(m.Packages), m.ViolationsTotal, m.Passed)
 
-	assert.True(t, m.Passed, "archway check should pass with guide")
+	assert.True(t, m.Passed, "verikt check should pass with guide")
 	assert.True(t, isHexagonalShape(m.Packages), "should produce hexagonal structure")
 
 	t.Logf("=== EXP-03 Test: Response ===")
@@ -84,11 +84,11 @@ func TestEXP03_Test(t *testing.T) {
 func TestEXP03_Contrast(t *testing.T) {
 	agentGuardOrSkip(t)
 
-	bin := archwayBin(t)
-	guide := generateGuideFromYAML(t, bin, exp03ArchwayYAML)
+	bin := veriktBin(t)
+	guide := generateGuideFromYAML(t, bin, exp03VeriktYAML)
 
-	without := runAgentExperiment(t, "EXP03-control", exp03TaskPrompt, exp03ArchwayYAML)
-	with := runAgentExperiment(t, "EXP03-test", guide+"\n\n---\n\n"+exp03TaskPrompt, exp03ArchwayYAML)
+	without := runAgentExperiment(t, "EXP03-control", exp03TaskPrompt, exp03VeriktYAML)
+	with := runAgentExperiment(t, "EXP03-test", guide+"\n\n---\n\n"+exp03TaskPrompt, exp03VeriktYAML)
 
 	logContrast(t, without, with)
 }

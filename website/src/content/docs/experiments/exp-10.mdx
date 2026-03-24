@@ -1,0 +1,104 @@
+---
+title: "EXP-10 — Governance Checkpoint"
+description: Adding an 80-token verification prompt to the guide eliminated variance in agent compliance and reduced violations by 25% on greenfield builds.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every previous experiment compared guide vs no guide. This one isolates a single section inside the guide: the governance checkpoint — an instruction that tells the agent to pause and verify architecture rules before modifying files and after receiving tool results.
+
+The pattern comes from Anthropic's [think tool research](https://www.anthropic.com/engineering/claude-think-tool), which showed 54% improvement in policy adherence when agents pause to verify rules at decision points.
+
+<div class="exp-stats">
+  <div class="exp-stat">
+    <span class="exp-stat-number small">0.89→0.00</span>
+    <span class="exp-stat-label">variance (greenfield)</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">25%</span>
+    <span class="exp-stat-label">fewer violations</span>
+  </div>
+  <div class="exp-stat">
+    <span class="exp-stat-number">80</span>
+    <span class="exp-stat-label">tokens added</span>
+  </div>
+</div>
+
+## What the agent produced
+
+**Greenfield — violations across 3 runs**
+
+```
+Without checkpoint          With checkpoint
+─────────────────────       ──────────────────────────────
+Run 1: 2 violations         Run 1: 1 violation
+Run 2: 0 violations         Run 2: 1 violation
+Run 3: 2 violations         Run 3: 1 violation
+Mean:  1.33                 Mean:  1.00
+Var:   0.89                 Var:   0.00
+```
+
+**Feature addition — violations across 3 runs**
+
+```
+Without checkpoint          With checkpoint
+─────────────────────       ──────────────────────────────
+Run 1: 0 violations         Run 1: 0 violations
+Run 2: 0 violations         Run 2: 0 violations
+Run 3: 0 violations         Run 3: 0 violations
+```
+
+## Metrics
+
+| | Without checkpoint | With checkpoint |
+|---|---|---|
+| Greenfield violations | [2, 0, 2] | **[1, 1, 1]** |
+| Greenfield mean | 1.33 | **1.00** |
+| Greenfield variance | 0.89 | **0.00** |
+| Feature addition violations | [0, 0, 0] | [0, 0, 0] |
+
+## Finding
+
+Two things happened, one expected and one not.
+
+**Variance dropped to zero.** Without the checkpoint, the same agent on the same task produced 0 violations one run and 2 the next. With the checkpoint, every run produced exactly 1 violation — a structural issue (missing component directory) the checkpoint can't influence. The checkpoint didn't just reduce violations, it made the agent deterministic.
+
+**Feature addition hit the ceiling.** On an existing well-structured codebase, the agent produces 0 violations with or without the checkpoint. The existing code does the teaching — the guide and checkpoint add nothing measurable. This matches EXP-04 and EXP-07: brownfield with a conforming fixture leaves no room for improvement.
+
+<Aside type="note">
+The remaining `arch=1` violation in every checkpoint run is a missing component directory — a structural issue that happens at project creation time, before the checkpoint's verification loop engages. The checkpoint eliminated the `fn` (function metric) and `ap` (anti-pattern) violations that appeared inconsistently in the control condition.
+</Aside>
+
+## The checkpoint
+
+80 tokens, added to every guide output:
+
+```
+## Governance Checkpoint
+
+Before modifying any file, pause and verify:
+1. List which architecture rules from this guide apply to the change
+   you are about to make.
+2. Check if the change introduces any pattern these rules explicitly prohibit.
+3. If multiple rules conflict, state the conflict before proceeding.
+
+After receiving tool results (test output, lint output, build errors),
+re-check compliance before taking the next action.
+Do not chain corrections without verifying each step against these rules.
+```
+
+The principle: telling agents *what the rules are* is necessary but not sufficient. Telling agents *when to check* — before acting and after feedback — is what produces consistency. This maps directly to Anthropic's finding that the think tool's effect was largest in "policy-heavy environments" with "sequential decision making where errors compound."
+
+## Setup
+
+- **Task (greenfield):** Build a notification service in Go — email and SMS, HTTP API
+- **Task (feature addition):** Add a discount system to an existing orders service
+- **Agent:** claude-sonnet-4-6 via claude-code CLI
+- **Runs:** 3 per condition per fixture (12 total)
+- **Variable isolated:** Governance checkpoint section (both conditions receive the full guide)
+
+[→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
+
+[→ Artifacts on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-10)
+
+[→ Back to all experiments](/experiments/)

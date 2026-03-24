@@ -1,0 +1,64 @@
+// Typed CommandBus and QueryBus — separates writes (commands) from reads (queries).
+// Commands mutate state and return void or an ID.
+// Queries read state and return data; they must not mutate anything.
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+
+export interface Command {
+  readonly type: string
+}
+
+export interface CommandHandler<TCommand extends Command, TResult = void> {
+  handle(command: TCommand): Promise<TResult>
+}
+
+export class CommandBus {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly handlers = new Map<string, CommandHandler<any, any>>()
+
+  register<TCommand extends Command, TResult>(
+    type: TCommand['type'],
+    handler: CommandHandler<TCommand, TResult>,
+  ): void {
+    this.handlers.set(type, handler)
+  }
+
+  async dispatch<TCommand extends Command, TResult = void>(
+    command: TCommand,
+  ): Promise<TResult> {
+    const handler = this.handlers.get(command.type)
+    if (!handler) throw new Error(`no handler registered for command "${command.type}"`)
+    return handler.handle(command) as Promise<TResult>
+  }
+}
+
+// ─── Queries ─────────────────────────────────────────────────────────────────
+
+export interface Query {
+  readonly type: string
+}
+
+export interface QueryHandler<TQuery extends Query, TResult> {
+  handle(query: TQuery): Promise<TResult>
+}
+
+export class QueryBus {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly handlers = new Map<string, QueryHandler<any, any>>()
+
+  register<TQuery extends Query, TResult>(
+    type: TQuery['type'],
+    handler: QueryHandler<TQuery, TResult>,
+  ): void {
+    this.handlers.set(type, handler)
+  }
+
+  async dispatch<TQuery extends Query, TResult>(query: TQuery): Promise<TResult> {
+    const handler = this.handlers.get(query.type)
+    if (!handler) throw new Error(`no handler registered for query "${query.type}"`)
+    return handler.handle(query) as Promise<TResult>
+  }
+}
+
+export const commandBus = new CommandBus()
+export const queryBus = new QueryBus()

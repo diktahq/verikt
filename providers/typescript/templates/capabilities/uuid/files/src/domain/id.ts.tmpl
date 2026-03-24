@@ -1,0 +1,9 @@
+import { v7 as uuidv7 } from 'uuid'
+
+// newId returns a new UUIDv7 — time-sortable, index-friendly.
+// Use this for all primary keys instead of random UUIDs or auto-increment IDs.
+export function newId(): string {
+  return uuidv7()
+}
+
+export type ID = string

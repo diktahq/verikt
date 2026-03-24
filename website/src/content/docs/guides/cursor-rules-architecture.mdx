@@ -1,0 +1,92 @@
+---
+title: "Architecture Rules for Cursor — Generate .cursorrules from verikt"
+description: "How to generate .cursorrules for code architecture using verikt guide. Keep Cursor aligned with your layer boundaries and dependency rules."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Cursor reads `.cursorrules` at session start and prepends it to every request. Most teams put coding style preferences there — linting rules, naming conventions. Almost none put architecture rules. The file exists, but the architectural context that would make the agent most useful isn't in it.
+
+`verikt guide --target cursor` generates `.cursorrules` with your exact layer boundaries, dependency direction, installed capabilities, and anti-patterns — derived from `verikt.yaml`. Cursor gets your architecture on every request, not just when you remember to explain it.
+
+## Quick start
+
+Install verikt, then generate the rules file:
+
+```bash
+brew install diktahq/tap/verikt
+verikt guide --target cursor
+```
+
+The generated content lands in `.cursorrules`. Cursor picks it up automatically on the next session.
+
+## What gets generated
+
+The file contains the same content regardless of target — what differs is the format and location. For a hexagonal service with postgres and an HTTP API:
+
+```
+# Architecture: hexagonal
+# Components: domain, port, service, adapter
+
+## Dependency Rules
+- domain/ must NOT import from port/, service/, adapter/
+- port/ must NOT import from service/, adapter/
+- service/ must NOT import from adapter/
+
+## Capabilities
+- http-api: REST API with Chi router, RFC 7807 errors
+- postgres: Connection pool, pgx driver, UUIDv7 primary keys
+- migrations: Versioned schema changes via golang-migrate
+
+## Anti-patterns to Avoid
+- No domain importing adapters
+- No SQL string concatenation (use parameterized queries)
+- No fat HTTP handlers (business logic belongs in the service layer)
+```
+
+The agent now knows your layer names, the direction dependencies flow, and the explicit rules — without you restating them in each prompt.
+
+## Sentinel-based merging
+
+If you already have content in `.cursorrules`, verikt uses sentinel markers to update only its section:
+
+```
+# your existing rules stay here
+
+<!-- verikt:start -->
+# Architecture: hexagonal
+...generated content...
+<!-- verikt:end -->
+
+# your other custom rules stay here too
+```
+
+The sentinels let you maintain your own rules alongside the generated architecture content. Re-running `verikt guide --target cursor` updates only the content between the markers. Everything outside is untouched.
+
+If `.cursorrules` doesn't exist yet, verikt creates it.
+
+<Aside type="tip">
+Commit `.cursorrules` to the repository. Every engineer working in Cursor gets the architecture context automatically — no setup step, no documentation to read first.
+</Aside>
+
+## Keeping the guide current
+
+The guide is generated from `verikt.yaml`. After adding a capability with `verikt add`, re-run the guide to keep the rules current:
+
+```bash
+verikt guide --target cursor
+```
+
+Stale architecture rules are worse than no rules — the agent follows the outdated context confidently.
+
+## What this changes
+
+In [EXP-01](/experiments/exp-01/), the same task ran without any guide and with verikt context loaded. Without: the agent defaulted to flat structure, 0% hexagonal compliance. With: 100% compliance across all three runs. The variable was the loaded context.
+
+The same effect applies in Cursor. `.cursorrules` is just the delivery mechanism.
+
+---
+
+→ [verikt guide reference](/reference/guide/) — all flags and supported targets
+→ [Experiments](/experiments/) — measured effect of guide on agent compliance
+→ [Architecture Rules for Claude Code](/guides/claude-code-architecture-rules/) — Claude Code equivalent

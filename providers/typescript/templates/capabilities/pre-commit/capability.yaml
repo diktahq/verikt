@@ -1,0 +1,4 @@
+name: pre-commit
+description: "husky + lint-staged — ESLint and Prettier run on staged TypeScript files before commit"
+suggests:
+  - linting

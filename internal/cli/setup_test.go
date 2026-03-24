@@ -20,7 +20,7 @@ func makeAgent(t *testing.T, home, name, configDir, rulesSubDir string) AIAgent 
 		Name:      name,
 		ConfigDir: configPath,
 		RulesDir:  rulesPath,
-		RulesFile: "archway.md",
+		RulesFile: "verikt.md",
 	}
 }
 
@@ -81,12 +81,12 @@ func TestSetup_WritesRulesFile(t *testing.T) {
 	}
 
 	content := string(data)
-	sentinel := "<!-- archway:global:v" + version + " -->"
+	sentinel := "<!-- verikt:global:v" + version + " -->"
 	if !strings.Contains(content, sentinel) {
 		t.Errorf("expected sentinel %q in file", sentinel)
 	}
-	if !strings.Contains(content, "archway") {
-		t.Error("expected 'archway' in file content")
+	if !strings.Contains(content, "verikt") {
+		t.Error("expected 'verikt' in file content")
 	}
 	if !strings.Contains(content, "## AI Interview:") {
 		t.Error("expected interview section in file content")
@@ -135,7 +135,7 @@ func TestSetup_UpgradeDetection(t *testing.T) {
 	if err := os.MkdirAll(agent.RulesDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	oldContent := "<!-- archway:global:v0.0.1 -->\nold content\n"
+	oldContent := "<!-- verikt:global:v0.0.1 -->\nold content\n"
 	if err := os.WriteFile(rulesFile, []byte(oldContent), 0o644); err != nil { //nolint:gosec
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestSetup_UpgradeDetection(t *testing.T) {
 	}
 	content := string(data)
 
-	expectedSentinel := "<!-- archway:global:v" + version + " -->"
+	expectedSentinel := "<!-- verikt:global:v" + version + " -->"
 	if !strings.Contains(content, expectedSentinel) {
 		t.Errorf("expected updated sentinel %q after upgrade, got:\n%s", expectedSentinel, content)
 	}
@@ -199,7 +199,7 @@ func TestSetup_CheckMode_Stale(t *testing.T) {
 	if err := os.MkdirAll(agent.RulesDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	oldContent := "<!-- archway:global:v0.0.1 -->\nold content\n"
+	oldContent := "<!-- verikt:global:v0.0.1 -->\nold content\n"
 	if err := os.WriteFile(rulesFile, []byte(oldContent), 0o644); err != nil { //nolint:gosec
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestSetup_Uninstall(t *testing.T) {
 		t.Fatalf("runUninstall: %v", err)
 	}
 
-	// archway.md should be gone.
+	// verikt.md should be gone.
 	if _, err := os.Stat(rulesFile); !os.IsNotExist(err) {
 		t.Error("expected rules file to be removed after uninstall")
 	}
@@ -270,7 +270,7 @@ func TestSetup_ForceOverwrite(t *testing.T) {
 	}
 
 	// Write a file with current version but different body to simulate manual edit.
-	modifiedContent := "<!-- archway:global:v" + version + " -->\nmanually modified content\n"
+	modifiedContent := "<!-- verikt:global:v" + version + " -->\nmanually modified content\n"
 	if err := os.WriteFile(rulesFile, []byte(modifiedContent), 0o644); err != nil { //nolint:gosec
 		t.Fatal(err)
 	}

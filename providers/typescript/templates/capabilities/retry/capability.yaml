@@ -1,0 +1,2 @@
+name: retry
+description: "Exponential backoff retry via p-retry — handles transient failures from external services"

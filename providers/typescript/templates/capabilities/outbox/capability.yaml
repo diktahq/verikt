@@ -1,0 +1,6 @@
+name: outbox
+description: "Transactional outbox pattern — guarantees event delivery by persisting before publishing"
+suggests:
+  - event-bus
+  - postgres
+  - mysql

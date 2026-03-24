@@ -1,0 +1,35 @@
+import cron, { type ScheduledTask } from 'node-cron'
+
+export interface ScheduledJob {
+  name: string
+  expression: string   // cron expression e.g. '0 * * * *' (every hour)
+  handler: () => void | Promise<void>
+}
+
+const tasks: ScheduledTask[] = []
+
+// scheduleJob registers a cron job. Call during application startup.
+// Jobs run in the process — for durable scheduling use BullMQ (worker capability).
+export function scheduleJob(job: ScheduledJob): void {
+  if (!cron.validate(job.expression)) {
+    throw new Error(`[scheduler] invalid cron expression for job "${job.name}": ${job.expression}`)
+  }
+
+  const task = cron.schedule(job.expression, async () => {
+    try {
+      await job.handler()
+    } catch (err) {
+      console.error(`[scheduler] job "${job.name}" failed`, err)
+    }
+  })
+
+  tasks.push(task)
+  console.info(`[scheduler] registered "${job.name}" (${job.expression})`)
+}
+
+// stopAllJobs gracefully stops all scheduled tasks.
+// Register this with the graceful shutdown handler.
+export function stopAllJobs(): void {
+  tasks.forEach((t) => t.stop())
+  console.info('[scheduler] all jobs stopped')
+}

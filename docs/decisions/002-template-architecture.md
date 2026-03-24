@@ -6,7 +6,7 @@
 
 ## Context
 
-Archway scaffolds new projects from templates. The template system must support 66+ Go templates covering hexagonal architecture, CQRS, multiple transports, data stores, auth, email, and observability. Templates must be extensible by users without Go knowledge.
+verikt scaffolds new projects from templates. The template system must support 66+ Go templates covering hexagonal architecture, CQRS, multiple transports, data stores, auth, email, and observability. Templates must be extensible by users without Go knowledge.
 
 ## Constraints
 

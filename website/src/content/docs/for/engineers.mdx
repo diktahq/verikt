@@ -1,6 +1,6 @@
 ---
 title: "For Engineers"
-description: "AI agents write correct syntax. They don't remember your architecture. archway fixes that — generate context once, every agent session starts with your patterns."
+description: "AI agents write correct syntax. They don't remember your architecture. verikt fixes that — generate context once, every agent session starts with your patterns."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -18,15 +18,15 @@ Agentic engineering — writing software by orchestrating AI agents rather than 
 
 Manual `.cursorrules` and `CLAUDE.md` files work until they don't. You write them once, the architecture evolves, and the files don't. Three months later the agent follows rules that no longer match your codebase.
 
-archway generates them from `archway.yaml` — the same file that drives scaffolding and enforcement. When you add a capability or change your architecture, run `archway guide` and every context file updates. The source of truth is the code, not documentation that drifts.
+verikt generates them from `verikt.yaml` — the same file that drives scaffolding and enforcement. When you add a capability or change your architecture, run `verikt guide` and every context file updates. The source of truth is the code, not documentation that drifts.
 
-## What archway does
+## What verikt does
 
-`archway guide` reads your `archway.yaml` and generates architecture context files for every AI agent you use — Claude Code, Cursor, GitHub Copilot, Windsurf. One command. Every session starts with your architecture already loaded.
+`verikt guide` reads your `verikt.yaml` and generates architecture context files for every AI agent you use — Claude Code, Cursor, GitHub Copilot, Windsurf. One command. Every session starts with your architecture already loaded.
 
 ```bash
-archway guide
-# Generated .claude/rules/archway.md (1,247 tokens)
+verikt guide
+# Generated .claude/rules/verikt.md (1,247 tokens)
 # Generated .cursorrules (1,247 tokens)
 # Generated .github/copilot-instructions.md (1,247 tokens)
 # Generated .windsurfrules (1,247 tokens)
@@ -36,15 +36,15 @@ The generated files tell the agent your architecture pattern, your layer boundar
 
 ## The workflow
 
-Run `archway guide` once. Then open your agent and prompt naturally — no architectural preamble, no re-explaining layer boundaries.
+Run `verikt guide` once. Then open your agent and prompt naturally — no architectural preamble, no re-explaining layer boundaries.
 
 ```bash
-archway guide          # generates context for all agents
+verikt guide          # generates context for all agents
 # open Claude Code / Cursor / Copilot / Windsurf
 # start prompting
 ```
 
-If you want the agent to surface canonical prompts inside the session itself, use `prompted` guide mode in your `archway.yaml`:
+If you want the agent to surface canonical prompts inside the session itself, use `prompted` guide mode in your `verikt.yaml`:
 
 ```yaml
 guide:
@@ -61,47 +61,47 @@ These are the prompts you write in your agent session. The agent already knows y
   { prompt: "Add a GET /orders?customer_id= endpoint. Query by customer ID, return paginated results with RFC 7807 errors, follow our existing repository pattern.", knows: "Agent places the handler in the right layer, uses your error format, wires the router correctly — without being told where anything goes." },
   { prompt: "Here's the PRD for the order history feature [paste]. Implement the API endpoints in section 3.", knows: "Agent reads the spec, maps requirements to your declared architecture, produces implementation that fits existing patterns — placement, boundaries, capabilities all correct." },
   { prompt: "What capabilities am I missing before going to production?", knows: "Agent cross-references installed capabilities against smart suggestion rules — flags missing health, request-id, observability if http-api is present." },
-  { prompt: "I need to add payments — what do I need?", knows: "Agent identifies idempotency and audit-log as required, explains why, suggests <code>archway add idempotency audit-log</code>." },
+  { prompt: "I need to add payments — what do I need?", knows: "Agent identifies idempotency and audit-log as required, explains why, suggests <code>verikt add idempotency audit-log</code>." },
   { prompt: "Walk me through this codebase.", knows: "Agent explains the architecture, layer boundaries, and capability set from the guide — not from guessing based on file structure." },
   { prompt: "Where should I put this logic?", knows: "Agent answers based on your declared architecture — domain, service, adapter, handler — without you having to explain the pattern." },
-  { prompt: "Review this PR for architecture violations before I submit it.", knows: "Agent runs <code>archway check --diff main</code>, surfaces violations before the PR is opened — not after." },
-  { prompt: "I just added kafka, update the architecture context.", knows: "Agent runs <code>archway add kafka-consumer && archway guide</code> — context updated in one step." },
+  { prompt: "Review this PR for architecture violations before I submit it.", knows: "Agent runs <code>verikt check --diff main</code>, surfaces violations before the PR is opened — not after." },
+  { prompt: "I just added kafka, update the architecture context.", knows: "Agent runs <code>verikt add kafka-consumer && verikt guide</code> — context updated in one step." },
 ]} />
 
 ## Starting a new service
 
-If you're greenfield, use `archway init --ai` to let your agent handle the entire setup — no TUI, no context switch:
+If you're greenfield, use `verikt init --ai` to let your agent handle the entire setup — no TUI, no context switch:
 
 ```bash
-archway init --ai
+verikt init --ai
 ```
 
-This prints an interview protocol to stdout. Paste it into your agent. The agent interviews you — service name, architecture pattern, capabilities — then runs `archway new` and generates context files. The whole setup happens inside your agent session.
+This prints an interview protocol to stdout. Paste it into your agent. The agent interviews you — service name, architecture pattern, capabilities — then runs `verikt new` and generates context files. The whole setup happens inside your agent session.
 
-`archway guide` runs automatically after scaffold. By the time the agent finishes setup, it already has the architecture context loaded for the next prompt.
+`verikt guide` runs automatically after scaffold. By the time the agent finishes setup, it already has the architecture context loaded for the next prompt.
 
 ## Working with existing services
 
-`archway analyze` detects your architecture pattern in an existing codebase and generates an `archway.yaml`. Then run `archway guide` to generate context files.
+`verikt analyze` detects your architecture pattern in an existing codebase and generates an `verikt.yaml`. Then run `verikt guide` to generate context files.
 
 ```bash
-archway analyze        # detects architecture, generates archway.yaml
-archway guide          # generates agent context from archway.yaml
-archway check          # run enforcement against current codebase
+verikt analyze        # detects architecture, generates verikt.yaml
+verikt guide          # generates agent context from verikt.yaml
+verikt check          # run enforcement against current codebase
 ```
 
-`archway check` uses 11 AST-based detectors — wrong-layer dependencies, missing capabilities, pattern violations. Run it locally before pushing, or in CI on every PR.
+`verikt check` uses 11 AST-based detectors — wrong-layer dependencies, missing capabilities, pattern violations. Run it locally before pushing, or in CI on every PR.
 
 <Aside type="tip">
-The capability suggestion system catches dangerous combinations before they reach production. `retry` without `idempotency` means retrying a payment endpoint will double-charge. archway flags this at scaffold time.
+The capability suggestion system catches dangerous combinations before they reach production. `retry` without `idempotency` means retrying a payment endpoint will double-charge. verikt flags this at scaffold time.
 </Aside>
 
 ## Get started
 
 ```bash
-brew install dcsg/tap/archway
-archway init --ai      # let your agent set up the project
-archway guide          # or run directly if you have an existing archway.yaml
+brew install diktahq/tap/verikt
+verikt init --ai      # let your agent set up the project
+verikt guide          # or run directly if you have an existing verikt.yaml
 ```
 
 → [Quick Start with AI Agents](/getting-started/ai-agents/) — full walkthrough of the agent-first workflow

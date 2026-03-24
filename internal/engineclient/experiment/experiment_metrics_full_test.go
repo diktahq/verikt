@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dcsg/archway/internal/checker"
-	"github.com/dcsg/archway/internal/config"
+	"github.com/diktahq/verikt/internal/checker"
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +16,7 @@ func TestMetrics_MaxParams(t *testing.T) {
 	rules := config.FunctionRules{MaxParams: 2}
 	projectPath := hexagonalProjectPath(t)
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: rules},
 	}
@@ -50,7 +50,7 @@ func TestMetrics_MaxReturnValues(t *testing.T) {
 	rules := config.FunctionRules{MaxReturnValues: 1}
 	projectPath := hexagonalProjectPath(t)
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: rules},
 	}
@@ -79,7 +79,7 @@ func TestMetrics_ZeroConstraint(t *testing.T) {
 	rules := config.FunctionRules{MaxLines: 0, MaxParams: 0, MaxReturnValues: 0}
 	projectPath := hexagonalProjectPath(t)
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: rules},
 	}
@@ -100,7 +100,7 @@ func TestMetrics_CombinedConstraints(t *testing.T) {
 	rules := config.FunctionRules{MaxLines: 5, MaxParams: 2, MaxReturnValues: 1}
 	projectPath := hexagonalProjectPath(t)
 
-	cfg := &config.ArchwayConfig{
+	cfg := &config.VeriktConfig{
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: rules},
 	}

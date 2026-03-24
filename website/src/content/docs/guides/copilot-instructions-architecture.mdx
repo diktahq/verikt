@@ -1,0 +1,99 @@
+---
+title: "Architecture Rules for GitHub Copilot — Generate copilot-instructions from verikt"
+description: "How to generate .github/copilot-instructions.md for code architecture using verikt guide. Feed Copilot your architecture rules automatically."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+GitHub Copilot reads `.github/copilot-instructions.md` and includes it in every chat request. Most teams either don't know this file exists or fill it with vague guidelines like "follow best practices." It rarely contains the specific, structural rules that would make suggestions actually fit the codebase.
+
+`verikt guide --target copilot` generates `.github/copilot-instructions.md` with your layer boundaries, dependency direction, installed capabilities, and interaction warnings — derived directly from `verikt.yaml`. Copilot gets your architecture on every request.
+
+## Quick start
+
+Install verikt, then generate the instructions file:
+
+```bash
+brew install diktahq/tap/verikt
+verikt guide --target copilot
+```
+
+The generated content lands at `.github/copilot-instructions.md`. Copilot picks it up automatically on next session.
+
+## What gets generated
+
+The file contains your architecture context in a format Copilot can act on. For a layered service with postgres and a gRPC transport:
+
+```
+# Architecture: layered
+# Components: handler, service, repository, domain
+
+## Dependency Rules
+- handler/ must NOT import from domain/
+- service/ must NOT import from handler/
+- repository/ must NOT import from handler/ or service/
+
+## Capabilities
+- grpc: gRPC server with protobuf, graceful shutdown
+- postgres: Connection pool, pgx driver
+- circuit-breaker: Wraps outbound HTTP calls in service layer
+- migrations: Versioned schema changes via golang-migrate
+
+## Anti-patterns to Avoid
+- No business logic in gRPC handlers (delegate to service layer)
+- No SQL in service layer (use repository interfaces)
+- No direct infrastructure imports from domain
+```
+
+The agent knows the exact constraint — "handler/ must NOT import from domain/" — not a vague principle. Specific rules produce specific compliance.
+
+## Sentinel-based merging
+
+If `.github/copilot-instructions.md` already exists with your own content, verikt uses sentinel markers to update only its section:
+
+```markdown
+## Our coding standards
+...your existing content stays here...
+
+<!-- verikt:start -->
+# Architecture: layered
+...generated content...
+<!-- verikt:end -->
+
+## Other team guidelines
+...also stays here...
+```
+
+Re-running `verikt guide --target copilot` updates only the content between `<!-- verikt:start -->` and `<!-- verikt:end -->`. Everything outside is untouched.
+
+<Aside type="tip">
+Commit `.github/copilot-instructions.md` to the repository. It's in `.github/` already — the directory every engineer expects for repository-level configuration. No extra setup required for anyone joining the project.
+</Aside>
+
+## Keeping the guide current
+
+The guide reflects the current state of `verikt.yaml`. Re-run it after adding capabilities:
+
+```bash
+verikt guide --target copilot
+```
+
+If you want to update all targets at once:
+
+```bash
+verikt guide
+```
+
+Running without `--target` regenerates all supported formats — `.claude/rules/verikt.md`, `.cursorrules`, `.github/copilot-instructions.md`, and `.windsurfrules` — in a single pass.
+
+## What this changes
+
+In [EXP-09](/experiments/exp-09/), the guide changed not just what the agent built but what it recommended. Without the guide: vague suggestions to "consider adding retries." With the guide: an exact `verikt add retry circuit-breaker idempotency` command, because the guide's interaction warnings made the dependency chain explicit.
+
+The same pattern applies in Copilot. The instructions file is the mechanism — the effect is the same.
+
+---
+
+→ [verikt guide reference](/reference/guide/) — all flags and supported targets
+→ [Experiments](/experiments/) — measured effect of guide on agent compliance
+→ [Architecture Rules for Cursor](/guides/cursor-rules-architecture/) — Cursor equivalent

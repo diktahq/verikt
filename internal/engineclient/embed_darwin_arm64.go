@@ -4,5 +4,5 @@ package engineclient
 
 import _ "embed"
 
-//go:embed bin/archway-engine-darwin-arm64
+//go:embed bin/verikt-engine-darwin-arm64
 var engineBinary []byte

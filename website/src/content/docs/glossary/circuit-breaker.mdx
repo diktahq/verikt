@@ -26,7 +26,7 @@ The trip threshold is typically a combination of failure count and failure rate 
 
 ## In Go
 
-archway's `circuit-breaker` capability scaffolds a wrapper around your outbound HTTP client or service call:
+verikt's `circuit-breaker` capability scaffolds a wrapper around your outbound HTTP client or service call:
 
 ```go
 cb := circuitbreaker.New(circuitbreaker.Config{
@@ -45,9 +45,9 @@ if errors.Is(err, circuitbreaker.ErrOpen) {
 
 When `ErrOpen` is returned, the caller can respond immediately with a degraded response instead of waiting for a timeout.
 
-## How archway Supports It
+## How verikt Supports It
 
-The `circuit-breaker` capability is scaffolded as part of the resilience toolkit. archway warns when `http-client` is used without `circuit-breaker` — a slow external service without a circuit breaker is a cascade failure waiting to happen. See the [Capabilities Matrix](/reference/capabilities-matrix/) for the full warning list.
+The `circuit-breaker` capability is scaffolded as part of the resilience toolkit. verikt warns when `http-client` is used without `circuit-breaker` — a slow external service without a circuit breaker is a cascade failure waiting to happen. See the [Capabilities Matrix](/reference/capabilities-matrix/) for the full warning list.
 
 <Aside type="tip">
 Pair the circuit breaker with a fallback response. When the circuit is open, return a cached result, a degraded response, or a clear error — never silently hang. Observability metrics on circuit state changes are essential for on-call debugging.

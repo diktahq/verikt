@@ -30,6 +30,11 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 			return nil // skip unreadable entries
 		}
 
+		// Skip symlinked directories — they point outside the project boundary (INV-002).
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+
 		// Skip hidden directories (starting with ".") and known non-source dirs.
 		if d.IsDir() {
 			name := d.Name()

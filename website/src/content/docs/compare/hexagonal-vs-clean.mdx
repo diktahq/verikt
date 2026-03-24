@@ -5,7 +5,7 @@ description: "Compare Hexagonal (Ports & Adapters) and Clean Architecture for Go
 
 import { Aside } from '@astrojs/starlight/components';
 
-Both Hexagonal and Clean Architecture are supported by archway. They share the same core principle — strict inward dependency direction — but differ in vocabulary, directory structure, and how they handle the boundary between business logic and infrastructure.
+Both Hexagonal and Clean Architecture are supported by verikt. They share the same core principle — strict inward dependency direction — but differ in vocabulary, directory structure, and how they handle the boundary between business logic and infrastructure.
 
 ## At a Glance
 
@@ -32,7 +32,7 @@ internal/bootstrap/  → Dependency wiring
 cmd/<name>/          → Entry point
 ```
 
-The dependency rules are enforced by `archway check`:
+The dependency rules are enforced by `verikt check`:
 
 | Component | May Depend On |
 |-----------|--------------|
@@ -85,14 +85,14 @@ The key difference from hexagonal is that `infrastructure` is explicitly allowed
 - You want use cases to be the primary organizing concept — each use case is a discrete file or type
 - You're working on a large codebase where enforcing the entity → usecase → interface → infrastructure ring model provides meaningful guardrails
 
-## Scaffold Either with archway
+## Scaffold Either with verikt
 
 ```bash
 # Hexagonal
-archway new my-service --arch hexagonal
+verikt new my-service --language go --arch hexagonal
 
 # Clean Architecture
-archway new my-service --arch clean
+verikt new my-service --language go --arch clean
 ```
 
 <Aside type="tip">

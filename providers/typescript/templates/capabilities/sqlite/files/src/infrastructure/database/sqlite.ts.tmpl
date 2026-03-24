@@ -1,0 +1,25 @@
+import Database from 'better-sqlite3'
+import path from 'node:path'
+
+let db: Database.Database | null = null
+
+export function getDatabase(filePath?: string): Database.Database {
+  if (db) return db
+
+  const dbPath = filePath ?? process.env.SQLITE_PATH ?? path.join(process.cwd(), 'data.db')
+  db = new Database(dbPath, {
+    verbose: process.env.NODE_ENV === 'development' ? console.log : undefined,
+  })
+
+  // Enable WAL mode for better concurrent read performance.
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+
+  return db
+}
+
+export function closeDatabase(): void {
+  if (!db) return
+  db.close()
+  db = null
+}

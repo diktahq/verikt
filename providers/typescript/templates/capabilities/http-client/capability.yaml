@@ -1,0 +1,5 @@
+name: http-client
+description: "Typed fetch wrapper with base URL, timeout, and error handling — Node 20 built-in fetch"
+suggests:
+  - circuit-breaker
+  - retry

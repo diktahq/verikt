@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/dcsg/archway/providers/golang"
+	_ "github.com/diktahq/verikt/providers/golang"
 )
 
 func executeCommand(t *testing.T, args ...string) (string, error) {
@@ -78,7 +78,7 @@ func TestNewHexagonalWithHTTPAPI(t *testing.T) {
 	// Verify key files and dirs exist.
 	for _, p := range []string{
 		"go.mod",
-		"archway.yaml",
+		"verikt.yaml",
 		"domain",
 		"adapter",
 		"port",
@@ -90,13 +90,13 @@ func TestNewHexagonalWithHTTPAPI(t *testing.T) {
 		}
 	}
 
-	// Verify archway.yaml contains architecture: hexagonal.
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	// Verify verikt.yaml contains architecture: hexagonal.
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "architecture: hexagonal") {
-		t.Errorf("archway.yaml should contain 'architecture: hexagonal', got:\n%s", string(data))
+		t.Errorf("verikt.yaml should contain 'architecture: hexagonal', got:\n%s", string(data))
 	}
 }
 
@@ -122,7 +122,7 @@ func TestNewHexagonalWithBFF(t *testing.T) {
 		"adapter/bffgateway/gateway.go",
 		"adapter/bffgateway/httpclient.go",
 		"adapter/httphandler/handler.go",
-		"archway.yaml",
+		"verikt.yaml",
 	} {
 		full := filepath.Join(svcDir, p)
 		if _, err := os.Stat(full); os.IsNotExist(err) {
@@ -130,13 +130,13 @@ func TestNewHexagonalWithBFF(t *testing.T) {
 		}
 	}
 
-	// Verify archway.yaml includes bff capability.
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	// Verify verikt.yaml includes bff capability.
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "bff") {
-		t.Errorf("archway.yaml should list bff capability")
+		t.Errorf("verikt.yaml should list bff capability")
 	}
 }
 
@@ -159,7 +159,7 @@ func TestNewFlat(t *testing.T) {
 	for _, p := range []string{
 		"main.go",
 		"go.mod",
-		"archway.yaml",
+		"verikt.yaml",
 	} {
 		full := filepath.Join(svcDir, p)
 		if _, err := os.Stat(full); os.IsNotExist(err) {
@@ -167,12 +167,12 @@ func TestNewFlat(t *testing.T) {
 		}
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "architecture: flat") {
-		t.Errorf("archway.yaml should contain 'architecture: flat', got:\n%s", string(data))
+		t.Errorf("verikt.yaml should contain 'architecture: flat', got:\n%s", string(data))
 	}
 }
 
@@ -194,7 +194,7 @@ func TestNewLayered(t *testing.T) {
 
 	for _, p := range []string{
 		"go.mod",
-		"archway.yaml",
+		"verikt.yaml",
 		filepath.Join("internal", "handler"),
 		filepath.Join("internal", "service"),
 		filepath.Join("internal", "repository"),
@@ -206,12 +206,12 @@ func TestNewLayered(t *testing.T) {
 		}
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "architecture: layered") {
-		t.Errorf("archway.yaml should contain 'architecture: layered', got:\n%s", string(data))
+		t.Errorf("verikt.yaml should contain 'architecture: layered', got:\n%s", string(data))
 	}
 }
 
@@ -233,7 +233,7 @@ func TestNewClean(t *testing.T) {
 
 	for _, p := range []string{
 		"go.mod",
-		"archway.yaml",
+		"verikt.yaml",
 		filepath.Join("internal", "entity"),
 		filepath.Join("internal", "usecase"),
 		filepath.Join("internal", "interface", "handler"),
@@ -245,12 +245,12 @@ func TestNewClean(t *testing.T) {
 		}
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "architecture: clean") {
-		t.Errorf("archway.yaml should contain 'architecture: clean', got:\n%s", string(data))
+		t.Errorf("verikt.yaml should contain 'architecture: clean', got:\n%s", string(data))
 	}
 }
 
@@ -279,9 +279,9 @@ func TestGuide_CleanArchitecture(t *testing.T) {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 
 	content := string(data)
@@ -320,9 +320,9 @@ func TestGuide_LayeredArchitecture(t *testing.T) {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 
 	content := string(data)
@@ -367,15 +367,15 @@ func TestNewMultipleCapabilities(t *testing.T) {
 	}
 
 	svcDir := filepath.Join(tmp, "test-multi")
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 
 	content := string(data)
 	for _, cap := range []string{"http-api", "mysql", "docker"} {
 		if !strings.Contains(content, cap) {
-			t.Errorf("archway.yaml should list capability %q, got:\n%s", cap, content)
+			t.Errorf("verikt.yaml should list capability %q, got:\n%s", cap, content)
 		}
 	}
 }
@@ -439,7 +439,7 @@ func TestGuide_GeneratesAllTargets(t *testing.T) {
 	}
 
 	for _, p := range []string{
-		filepath.Join(".claude", "rules", "archway-index.md"),
+		filepath.Join(".claude", "rules", "verikt-index.md"),
 		".cursorrules",
 		filepath.Join(".github", "copilot-instructions.md"),
 		".windsurfrules",
@@ -459,7 +459,7 @@ func TestGuide_SingleTarget(t *testing.T) {
 	rulesDir := filepath.Join(svcDir, ".claude", "rules")
 	entries, _ := os.ReadDir(rulesDir)
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "archway-") {
+		if strings.HasPrefix(e.Name(), "verikt-") {
 			_ = os.Remove(filepath.Join(rulesDir, e.Name()))
 		}
 	}
@@ -478,9 +478,9 @@ func TestGuide_SingleTarget(t *testing.T) {
 	}
 
 	// Claude target should exist (split files).
-	claudePath := filepath.Join(svcDir, ".claude", "rules", "archway-index.md")
+	claudePath := filepath.Join(svcDir, ".claude", "rules", "verikt-index.md")
 	if _, err := os.Stat(claudePath); os.IsNotExist(err) {
-		t.Error("expected .claude/rules/archway-index.md to exist")
+		t.Error("expected .claude/rules/verikt-index.md to exist")
 	}
 
 	// Other targets should NOT exist.
@@ -503,16 +503,16 @@ func TestGuide_InvalidTarget(t *testing.T) {
 	}
 }
 
-func TestGuide_NoArchwayYAML(t *testing.T) {
+func TestGuide_NoVeriktYAML(t *testing.T) {
 	tmp := t.TempDir()
 	chdir(t, tmp)
 
 	_, err := executeCommand(t, "guide")
 	if err == nil {
-		t.Fatal("expected error when no archway.yaml exists")
+		t.Fatal("expected error when no verikt.yaml exists")
 	}
-	if !strings.Contains(err.Error(), "archway.yaml") {
-		t.Fatalf("expected error about archway.yaml, got: %v", err)
+	if !strings.Contains(err.Error(), "verikt.yaml") {
+		t.Fatalf("expected error about verikt.yaml, got: %v", err)
 	}
 }
 
@@ -526,9 +526,9 @@ func TestGuide_ContentContainsArchitecture(t *testing.T) {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 
 	content := string(data)
@@ -549,9 +549,9 @@ func TestGuide_FlatArchitecture(t *testing.T) {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "archway-index.md"))
+	data, err := os.ReadFile(filepath.Join(svcDir, ".claude", "rules", "verikt-index.md"))
 	if err != nil {
-		t.Fatalf("failed to read archway-index.md: %v", err)
+		t.Fatalf("failed to read verikt-index.md: %v", err)
 	}
 
 	content := string(data)
@@ -574,15 +574,15 @@ func TestCheck_CleanHexagonalProject(t *testing.T) {
 	}
 }
 
-func TestCheck_NoArchwayYAML(t *testing.T) {
+func TestCheck_NoVeriktYAML(t *testing.T) {
 	tmp := t.TempDir()
 
 	_, err := executeCommand(t, "check", "--path", tmp)
 	if err == nil {
-		t.Fatal("expected error when no archway.yaml exists")
+		t.Fatal("expected error when no verikt.yaml exists")
 	}
-	if !strings.Contains(err.Error(), "archway.yaml") {
-		t.Fatalf("expected error about archway.yaml, got: %v", err)
+	if !strings.Contains(err.Error(), "verikt.yaml") {
+		t.Fatalf("expected error about verikt.yaml, got: %v", err)
 	}
 }
 
@@ -669,12 +669,12 @@ func TestAddCapabilityToExistingProject(t *testing.T) {
 		t.Fatalf("add redis failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	if !strings.Contains(string(data), "redis") {
-		t.Errorf("archway.yaml should contain 'redis' after add, got:\n%s", string(data))
+		t.Errorf("verikt.yaml should contain 'redis' after add, got:\n%s", string(data))
 	}
 }
 
@@ -723,16 +723,16 @@ func TestAddUnknownCapability(t *testing.T) {
 	}
 }
 
-func TestAddWithoutArchwayYaml(t *testing.T) {
+func TestAddWithoutVeriktYaml(t *testing.T) {
 	tmp := t.TempDir()
 	chdir(t, tmp)
 
 	_, err := executeCommand(t, "add", "redis")
 	if err == nil {
-		t.Fatal("expected error when no archway.yaml exists")
+		t.Fatal("expected error when no verikt.yaml exists")
 	}
-	if !strings.Contains(err.Error(), "no archway.yaml found") {
-		t.Fatalf("expected 'no archway.yaml found' error, got: %v", err)
+	if !strings.Contains(err.Error(), "no verikt.yaml found") {
+		t.Fatalf("expected 'no verikt.yaml found' error, got: %v", err)
 	}
 }
 
@@ -760,22 +760,22 @@ func TestAddCapabilityWithTransitiveDeps(t *testing.T) {
 		t.Fatalf("add bff failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(svcDir, "archway.yaml"))
+	data, err := os.ReadFile(filepath.Join(svcDir, "verikt.yaml"))
 	if err != nil {
-		t.Fatalf("failed to read archway.yaml: %v", err)
+		t.Fatalf("failed to read verikt.yaml: %v", err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "bff") {
-		t.Errorf("archway.yaml should contain 'bff', got:\n%s", content)
+		t.Errorf("verikt.yaml should contain 'bff', got:\n%s", content)
 	}
 	if !strings.Contains(content, "http-api") {
-		t.Errorf("archway.yaml should contain 'http-api' (transitive dep of bff), got:\n%s", content)
+		t.Errorf("verikt.yaml should contain 'http-api' (transitive dep of bff), got:\n%s", content)
 	}
 }
 
 // --- Init command tests ---
 
-func TestInit_CreatesArchwayYAML(t *testing.T) {
+func TestInit_CreatesVeriktYAML(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Create a minimal Go project.
@@ -791,32 +791,32 @@ func TestInit_CreatesArchwayYAML(t *testing.T) {
 		t.Fatalf("init should succeed: %v", err)
 	}
 
-	archwayPath := filepath.Join(tmp, "archway.yaml")
-	if _, err := os.Stat(archwayPath); os.IsNotExist(err) {
-		t.Fatal("expected archway.yaml to be created")
+	veriktPath := filepath.Join(tmp, "verikt.yaml")
+	if _, err := os.Stat(veriktPath); os.IsNotExist(err) {
+		t.Fatal("expected verikt.yaml to be created")
 	}
 
-	data, err := os.ReadFile(archwayPath)
+	data, err := os.ReadFile(veriktPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), "architecture:") {
-		t.Errorf("archway.yaml should contain architecture field, got:\n%s", string(data))
+		t.Errorf("verikt.yaml should contain architecture field, got:\n%s", string(data))
 	}
 }
 
-func TestInit_ExistingArchwayYAML(t *testing.T) {
+func TestInit_ExistingVeriktYAML(t *testing.T) {
 	tmp := t.TempDir()
 
-	// Create an existing archway.yaml.
-	archwayPath := filepath.Join(tmp, "archway.yaml")
-	if err := os.WriteFile(archwayPath, []byte("architecture: flat\n"), 0o644); err != nil {
+	// Create an existing verikt.yaml.
+	veriktPath := filepath.Join(tmp, "verikt.yaml")
+	if err := os.WriteFile(veriktPath, []byte("architecture: flat\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err := executeCommand(t, "init", "--path", tmp, "--no-wizard")
 	if err == nil {
-		t.Fatal("expected error when archway.yaml already exists")
+		t.Fatal("expected error when verikt.yaml already exists")
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected 'already exists' error, got: %v", err)
