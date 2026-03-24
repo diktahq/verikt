@@ -40,7 +40,7 @@
   <!-- Go column -->
   <text x="420" y="340" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Go</text>
   <text x="420" y="370" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="600" fill="#E8913A" text-anchor="middle">63 capabilities</text>
-  <text x="420" y="395" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="14" fill="#57534E" text-anchor="middle">hexagonal · clean · layered · flat</text>
+  <text x="420" y="398" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" fill="#A8A29E" text-anchor="middle">hexagonal · clean · layered · flat</text>
 
   <!-- Divider between columns -->
   <line x1="600" y1="325" x2="600" y2="405" stroke="#2a2520" stroke-width="1" />
@@ -48,7 +48,7 @@
   <!-- TypeScript column -->
   <text x="780" y="340" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">TypeScript</text>
   <text x="780" y="370" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="600" fill="#E8913A" text-anchor="middle">39 capabilities</text>
-  <text x="780" y="395" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="14" fill="#57534E" text-anchor="middle">hexagonal · flat</text>
+  <text x="780" y="398" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" fill="#A8A29E" text-anchor="middle">hexagonal · flat</text>
 
   <!-- Bottom section -->
   <line x1="340" y1="430" x2="860" y2="430" stroke="#2a2520" stroke-width="1" />
