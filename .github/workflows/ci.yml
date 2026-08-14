@@ -109,18 +109,31 @@ jobs:
         run: go build -o /tmp/verikt ./cmd/verikt
       - name: Check architecture
         run: /tmp/verikt check
-      # Reports the warning-level debt in the job summary without gating on it, so
-      # it stays visible rather than accumulating unseen.
-      - name: Report warning-level findings
-        if: always()
+      # Warning-level findings are real debt that does not fail the build. Without
+      # a ceiling they accumulate unnoticed, so the count is ratcheted: it may fall
+      # freely, and rising above the baseline fails the job.
+      - name: Ratchet warning-level debt
         run: |
-          /tmp/verikt check --output json > verikt-check.json || true
+          /tmp/verikt check --output json > verikt-check.json
+          baseline=$(grep -vE '^\s*#|^\s*$' .github/verikt-debt-baseline | head -1)
+          current=$(jq '[.violations[], .anti_patterns[]] | map(select(.severity != "error")) | length' verikt-check.json)
+
           jq -r '
             [.violations[], .anti_patterns[]]
             | group_by(.severity)
-            | map("\(length)\t\(.[0].severity)")
+            | map("  \(length)\t\(.[0].severity)")
             | .[]
-          ' verikt-check.json | sed 's/^/findings: /'
+          ' verikt-check.json
+
+          echo "non-error findings: $current (baseline $baseline)"
+          if [ "$current" -gt "$baseline" ]; then
+            echo "::error::Warning-level findings rose from $baseline to $current."
+            echo "Fix the new findings, or raise .github/verikt-debt-baseline deliberately with a reason."
+            exit 1
+          fi
+          if [ "$current" -lt "$baseline" ]; then
+            echo "::notice::Debt fell to $current. Lower .github/verikt-debt-baseline to lock the gain in."
+          fi
 
   template-matrix:
     runs-on: ubuntu-latest
