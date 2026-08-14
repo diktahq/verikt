@@ -15,3 +15,22 @@ Symlinks in a project directory typically point to external tooling, generated a
 ---
 
 *Captured by edikt:invariant — 2026-03-13*
+
+## Scope
+
+Every symlink, not only symlinked directories. A symlink to a regular file is equally
+not project-local code.
+
+This needed stating: the constraint said "symlinked directories", the three engine
+walkers implemented exactly that, and symlinks to files were still collected and
+analysed. The wording was narrower than the intent and the code matched the wording.
+
+## Proven by
+
+- `internal/rules/scope_test.go` — `TestExpandScope_RelativeDotRootStillSkipsHiddenDirs`
+- `engine/crates/engine-bin/src/import_graph.rs` — `collect_go_files_skips_symlinked_dirs`,
+  `collect_go_files_skips_symlinked_files`
+- `engine/crates/engine-bin/src/typescript_imports.rs` — `collect_ts_files_skips_symlinked_dirs`
+
+An invariant with no named test is an intention. Naming them makes scope drift greppable:
+if the constraint changes and no test moves, the gap is visible.
