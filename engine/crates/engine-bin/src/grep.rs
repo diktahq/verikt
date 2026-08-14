@@ -232,12 +232,27 @@ fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
             continue;
         }
 
-        // Skip hidden dirs, vendor, node_modules, target, .git
+        // Skip hidden dirs, vendor, node_modules, target, .git, testdata.
+        //
+        // testdata is skipped for the same reason the Go and TypeScript
+        // collectors skip it: fixtures contain the patterns rules look for, on
+        // purpose. Without it the same directory was simultaneously out of scope
+        // for every detector and in scope for every proxy grep rule, so a
+        // fixture holding a deliberate `fmt.Sprintf("SELECT ...")` failed the
+        // build at error severity while the detectors correctly ignored it.
+        //
+        // A fixture is still greppable by pointing --path at it, which is the
+        // same escape hatch the detectors have.
+        //
+        // `_`-prefixed directories are ignored by the Go toolchain too, so code
+        // there is not part of the build and should not be part of the check.
         if path.is_dir() {
             if name_str.starts_with('.')
+                || name_str.starts_with('_')
                 || name_str == "vendor"
                 || name_str == "node_modules"
                 || name_str == "target"
+                || name_str == "testdata"
             {
                 continue;
             }
@@ -350,6 +365,38 @@ mod tests {
             Status::Stale as i32,
             "a scope matching no files is a rule that did not run"
         );
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// Fixtures are out of scope for grep rules, as they are for detectors.
+    ///
+    /// testdata holds the patterns rules look for on purpose. The Go and
+    /// TypeScript collectors skip it and this walk did not, so the same
+    /// directory was simultaneously invisible to every detector and visible to
+    /// every proxy rule.
+    #[test]
+    fn walk_skips_testdata_and_underscore_dirs() {
+        let project = fixture(
+            "verikt-grep-testdata-skip",
+            &[
+                ("internal/real.go", "package p\nvar _ = Sprintf\n"),
+                (
+                    "internal/testdata/fixture/bad.go",
+                    "package q\nvar _ = Sprintf\n",
+                ),
+                ("_scratch/old.go", "package r\nvar _ = Sprintf\n"),
+                ("vendor/dep.go", "package s\nvar _ = Sprintf\n"),
+            ],
+        );
+
+        let files = walk_files(&project);
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
 
         let _ = fs::remove_dir_all(&project);
     }

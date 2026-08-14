@@ -53,7 +53,8 @@ func TestCheckFilterRuleResult_MatchingViolationsAndStatuses(t *testing.T) {
 		},
 	}
 
-	filtered := filterRuleResult(result, "rule-a")
+	filtered, err := filterRuleResult(result, "rule-a")
+	require.NoError(t, err)
 
 	assert.Len(t, filtered.Violations, 2)
 	assert.Len(t, filtered.Statuses, 1)
@@ -64,6 +65,9 @@ func TestCheckFilterRuleResult_MatchingViolationsAndStatuses(t *testing.T) {
 	assert.Equal(t, "rule-a", filtered.Statuses[0].Rule.ID)
 }
 
+// A rule ID that matches nothing is an error, not an empty pass. This asserted
+// the empty-result behaviour, which is what let `--rule <typo>` print "All proxy
+// rules pass" and exit 0.
 func TestCheckFilterRuleResult_NoMatch(t *testing.T) {
 	result := &rules.RunResult{
 		Duration: 50 * time.Millisecond,
@@ -75,11 +79,11 @@ func TestCheckFilterRuleResult_NoMatch(t *testing.T) {
 		},
 	}
 
-	filtered := filterRuleResult(result, "nonexistent")
+	_, err := filterRuleResult(result, "nonexistent")
 
-	assert.Empty(t, filtered.Violations)
-	assert.Empty(t, filtered.Statuses)
-	assert.Equal(t, result.Duration, filtered.Duration)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
+	assert.Contains(t, err.Error(), "rule-a", "the error names the rules that do exist")
 }
 
 // --- printProxyRuleSection ---
@@ -533,7 +537,7 @@ func TestCheckFilterRuleResult_NilRunResult(t *testing.T) {
 			t.Fatal("expected panic when filterRuleResult receives nil, but got none")
 		}
 	}()
-	filterRuleResult(nil, "any-rule")
+	_, _ = filterRuleResult(nil, "any-rule")
 }
 
 func TestCheckFilterRuleResult_EmptyRuleID(t *testing.T) {
@@ -548,12 +552,10 @@ func TestCheckFilterRuleResult_EmptyRuleID(t *testing.T) {
 		},
 	}
 
-	filtered := filterRuleResult(result, "")
+	_, err := filterRuleResult(result, "")
 
-	// Empty rule ID matches nothing since no violation has RuleID == "".
-	assert.Empty(t, filtered.Violations)
-	assert.Empty(t, filtered.Statuses)
-	assert.Equal(t, result.Duration, filtered.Duration)
+	// An empty rule ID matches nothing, which is the unknown-rule case.
+	require.Error(t, err)
 }
 
 func TestCheckPrintCombinedJSON_NilBothResults(t *testing.T) {

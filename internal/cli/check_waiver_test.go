@@ -8,6 +8,7 @@ import (
 
 	"github.com/diktahq/verikt/internal/checker"
 	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/rules"
 )
 
 // The upgrade notes and the CI guide both tell users to "fix them or scope them
@@ -158,4 +159,27 @@ func TestWaivedFindingsArePrinted(t *testing.T) {
 	assert.Contains(t, out, "internal/core/rules.go")
 	assert.Contains(t, out, "the shared domain vocabulary",
 		"the reason is what makes a waiver reviewable")
+}
+
+// A rule ID that matches nothing is the strongest form of "did not run".
+//
+// --rule with a typo filtered every rule away and then reported "All proxy rules
+// pass", exit 0. A pipeline pinned to a renamed or deleted rule would go on
+// passing indefinitely while enforcing nothing — the same silent-degradation
+// failure as a stale rule, arriving by a different route.
+func TestFilterRuleResultRejectsAnUnknownRuleID(t *testing.T) {
+	result := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "no-sprintf"}, Filename: "r.yaml", Status: "valid"},
+		},
+	}
+
+	_, err := filterRuleResult(result, "does-not-exist")
+	require.Error(t, err, "a rule ID that matches no rule must not be reported as passing")
+	assert.Contains(t, err.Error(), "does-not-exist")
+	assert.Contains(t, err.Error(), "no-sprintf", "the error should name the rules that do exist")
+
+	filtered, err := filterRuleResult(result, "no-sprintf")
+	require.NoError(t, err)
+	assert.Len(t, filtered.Statuses, 1)
 }

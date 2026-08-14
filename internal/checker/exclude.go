@@ -29,6 +29,12 @@ func applyExcludes(result *CheckResult, excludes []string) {
 	}
 	result.AntiPatternViolations = kept
 
+	// Both callers run computeMetrics immediately after this, and RulesChecked is
+	// still 0 at this point, so this recalculation is currently a no-op. It is
+	// kept because applyExcludes must leave a consistent result for any caller,
+	// not only the two that happen to recompute afterwards — a filter that
+	// removes findings and leaves the counts describing the unfiltered set is the
+	// kind of quiet inconsistency this package exists to catch.
 	result.RecalculateMetrics()
 }
 

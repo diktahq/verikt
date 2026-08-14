@@ -54,13 +54,70 @@ func EnginePath() (string, error) {
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
 
-	if err := os.WriteFile(path, engineBinary, 0o755); err != nil {
-		return "", fmt.Errorf("write engine binary: %w", err)
+	if err := extractEngineAtomically(path, dir); err != nil {
+		return "", err
 	}
 
 	pruneStaleEngineCaches(filepath.Dir(dir), filepath.Base(dir))
 
 	return path, nil
+}
+
+// extractEngineAtomically writes the engine to a temporary file in the same
+// directory and renames it into place.
+//
+// Writing straight to the final path leaves a window in which the file exists but
+// is incomplete, and the Stat above treats existence as "ready": a second process
+// starting during that window execs a truncated binary. On Linux, exec of a file
+// another process still holds open for writing fails with ETXTBSY.
+//
+// The content-addressed cache key makes this more likely rather than less. Every
+// engine change forces a fresh extraction, and `go test ./...` runs the packages
+// that need the engine concurrently, so the first run after any engine edit is
+// exactly the race.
+//
+// rename within a directory is atomic on POSIX and on Windows for a destination
+// that does not yet exist. If another process won the race, its file is already
+// complete and correct — the content hash is in the directory name — so losing
+// the rename is not an error.
+func extractEngineAtomically(path, dir string) error {
+	tmp, err := os.CreateTemp(dir, ".verikt-engine-*")
+	if err != nil {
+		return fmt.Errorf("create temp engine file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		// No-op once the rename has succeeded.
+		_ = os.Remove(tmpName)
+	}()
+
+	if _, err := tmp.Write(engineBinary); err != nil {
+		// The write already failed; the close error adds nothing and the temp
+		// file is removed by the deferred cleanup either way.
+		_ = tmp.Close()
+		return fmt.Errorf("write engine binary: %w", err)
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod engine binary: %w", err)
+	}
+	// Close before rename: Windows cannot rename an open file, and the exec that
+	// follows must not see a handle still open for writing.
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close engine binary: %w", err)
+	}
+
+	if err := os.Rename(tmpName, path); err != nil {
+		// A concurrent process may have completed the same extraction first. Its
+		// content is identical — the directory name is the content hash — so an
+		// existing, readable binary is success.
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("install engine binary: %w", err)
+	}
+
+	return nil
 }
 
 // staleEngineCacheAge is how long an unused engine cache directory must have been
