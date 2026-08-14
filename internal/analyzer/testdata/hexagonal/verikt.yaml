@@ -1,0 +1,18 @@
+# Every package in this fixture is claimed by a component, so analyze must report
+# no orphan packages. Without its own config the fixture would inherit the
+# repository's verikt.yaml via the ancestor search.
+language: go
+architecture: hexagonal
+
+components:
+  - name: domain
+    in: [internal/domain/**]
+  - name: ports
+    in: [internal/port/**]
+    may_depend_on: [domain]
+  - name: adapters
+    in: [internal/adapter/**]
+    may_depend_on: [domain, ports]
+  - name: entrypoint
+    in: [cmd/**]
+    may_depend_on: [domain, ports, adapters]
