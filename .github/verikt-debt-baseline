@@ -13,4 +13,4 @@
 # Measure with a freshly embedded engine — `mise run verify` does this — or the number
 # reflects whatever engine your binary happens to carry rather than the one CI builds.
 # A figure of 69 recorded earlier was measured against a stale engine and was four short.
-PLACEHOLDER
+69
