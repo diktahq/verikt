@@ -1,4 +1,4 @@
-.PHONY: build test lint run dev clean typecheck
+.PHONY: build test lint typecheck verify run dev clean
 
 build:
 	npm run build
@@ -8,6 +8,15 @@ test:
 
 lint:
 	npm run lint
+
+# verify: every gate — typecheck, lint, test, build, architecture. What CI should invoke.
+# One definition means a green local run means something.
+verify: typecheck lint test build
+	@if command -v verikt >/dev/null 2>&1 && [ -f verikt.yaml ]; then \
+		verikt check; \
+	else \
+		echo "verikt not installed or no verikt.yaml — skipping architecture check"; \
+	fi
 
 run:
 	npm start

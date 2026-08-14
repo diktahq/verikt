@@ -142,7 +142,7 @@ var whenToUse = map[string]string{
 	"health":          "Orchestrator readiness/liveness probes",
 	"request-id":      "End-to-end request tracing across services",
 	"docker":          "Containerized deployments, local dev with dependencies",
-	"ci-github":       "GitHub Actions CI/CD pipeline",
+	"ci-github":       "Standardised GitHub issue and pull request templates",
 	"ci-gitlab":       "GitLab CI/CD pipeline",
 	"makefile":        "Standard build targets (build, test, lint, run)",
 	"devcontainer":    "VS Code Dev Containers for reproducible environments",
