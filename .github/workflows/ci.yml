@@ -77,6 +77,51 @@ jobs:
         with:
           version: v2.11.3
 
+  # verikt checks itself. Every architecture bug found in this repository so far
+  # was found by hand; the root verikt.yaml makes that automatic.
+  #
+  # Gates on error severity only, which is what `verikt check` exits non-zero for.
+  # The warning-level findings it reports are real debt and are deliberately not
+  # silenced — see the self-governance commit.
+  self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version: '1.26.x'
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get install -y musl-tools protobuf-compiler
+      # The engine is the default analysis path, so verikt must check itself with
+      # it present — the Go fallback exercises different code.
+      - name: Build engine
+        working-directory: engine
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Place engine binary for embed
+        run: |
+          mkdir -p internal/engineclient/bin
+          cp engine/target/x86_64-unknown-linux-musl/release/verikt-engine internal/engineclient/bin/verikt-engine-linux-amd64
+          chmod +x internal/engineclient/bin/verikt-engine-linux-amd64
+      - name: Build verikt
+        run: go build -o /tmp/verikt ./cmd/verikt
+      - name: Check architecture
+        run: /tmp/verikt check
+      # Reports the warning-level debt in the job summary without gating on it, so
+      # it stays visible rather than accumulating unseen.
+      - name: Report warning-level findings
+        if: always()
+        run: |
+          /tmp/verikt check --output json > verikt-check.json || true
+          jq -r '
+            [.violations[], .anti_patterns[]]
+            | group_by(.severity)
+            | map("\(length)\t\(.[0].severity)")
+            | .[]
+          ' verikt-check.json | sed 's/^/findings: /'
+
   template-matrix:
     runs-on: ubuntu-latest
     strategy:
