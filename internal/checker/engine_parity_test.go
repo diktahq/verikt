@@ -71,7 +71,10 @@ var (
 // were Go-only for exactly this reason: two architecture checks that never ran
 // for most users.
 func TestDetectorSetsMatchEngine(t *testing.T) {
-	goSet := detectorNames(t, filepath.Join("antipatterns.go"), goDetectorName)
+	// Every non-test file in this package is scanned. Reading only antipatterns.go
+	// made the guard blind to detectors defined elsewhere — nil_map_write and
+	// type_assertion_without_ok live in panic_detectors.go and slipped straight past it.
+	goSet := detectorNamesInDir(t, ".", goDetectorName)
 	enginePath := filepath.Join("..", "..", "engine", "crates", "engine-bin", "src", "antipatterns.rs")
 	if _, err := os.Stat(enginePath); err != nil {
 		t.Skipf("engine source not available: %v", err)
@@ -84,6 +87,33 @@ func TestDetectorSetsMatchEngine(t *testing.T) {
 	for name := range rustSet {
 		assert.Contains(t, goSet, name, "detector %q exists in the engine but not in Go — it will not run when the engine is unavailable", name)
 	}
+}
+
+// detectorNamesInDir extracts detector identifiers from every non-test Go file in dir.
+func detectorNamesInDir(t *testing.T, dir string, pattern *regexp.Regexp) map[string]bool {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	names := map[string]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, m := range pattern.FindAllStringSubmatch(string(source), -1) {
+			names[m[1]] = true
+		}
+	}
+	if len(names) == 0 {
+		t.Fatalf("no detectors parsed from %s — did the literal shape change?", dir)
+	}
+	return names
 }
 
 // detectorNames extracts detector identifiers from a source file.

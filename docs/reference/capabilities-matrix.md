@@ -147,6 +147,8 @@ Warnings are advisory — they don't block scaffolding.
 | `global_mutable_state` | warning | Package-level vars with mutable types (maps, slices, pointers) |
 | `init_abuse` | warning | `init()` with 5+ statements or heavy I/O |
 | `naked_goroutine` | warning | Bare `go` statements — an unrecovered panic in the body crashes the process |
+| `nil_map_write` | error | Write to a map declared but never allocated — writing to a nil map panics |
+| `type_assertion_without_ok` | warning | `x.(T)` without the comma-ok form — panics if the type differs |
 | `swallowed_error` | error | `if err != nil {}` or `if err != nil { return nil }` |
 | `uuid_v4_as_key` | info | `uuid.New()` for DB keys — suggests UUIDv7 |
 

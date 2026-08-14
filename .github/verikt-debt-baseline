@@ -1,11 +1,12 @@
 # Ratchet for warning-level findings from `verikt check` on this repository.
 #
-# These are real findings, not false positives: 51 functions over the 50-line
-# limit in code-quality.md, and 34 advisory anti-patterns. They do not fail the
+# These are real findings, not false positives: functions over the 50-line limit in
+# code-quality.md, plus advisory anti-patterns. Generated code is excluded via
+# check.exclude in verikt.yaml, so everything counted here is hand-written. They do not fail the
 # build, because only error severity does — but without a ceiling they accumulate
 # unnoticed, and "warnings we live with" quietly becomes the baseline.
 #
 # The self-check CI job fails if the count rises above this number. Lower it when
 # you pay debt down; raising it should be a deliberate, reviewed decision with a
 # reason in the commit message.
-85
+78
