@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diktahq/verikt/internal/checker"
 	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +21,7 @@ func TestMetrics_MaxParams(t *testing.T) {
 	}
 
 	goStart := time.Now()
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	goDuration := time.Since(goStart)
 	require.NoError(t, err)
 
@@ -56,7 +55,7 @@ func TestMetrics_MaxReturnValues(t *testing.T) {
 	}
 
 	goStart := time.Now()
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	goDuration := time.Since(goStart)
 	require.NoError(t, err)
 
@@ -84,7 +83,7 @@ func TestMetrics_ZeroConstraint(t *testing.T) {
 		Rules:    config.RulesConfig{Functions: rules},
 	}
 
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	require.NoError(t, err)
 	assert.Empty(t, goResult.FunctionViolations,
 		"zero constraints must produce no function violations")
@@ -106,7 +105,7 @@ func TestMetrics_CombinedConstraints(t *testing.T) {
 	}
 
 	goStart := time.Now()
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	goDuration := time.Since(goStart)
 	require.NoError(t, err)
 
