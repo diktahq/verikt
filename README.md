@@ -40,9 +40,11 @@ verikt new my-api --arch hexagonal \
 
 ## Language Support
 
-**Go** — 4 architecture patterns, 63 capabilities across 10 categories. Fully supported.
+**Go** — 4 architecture patterns, 65 capabilities across 10 categories. Fully supported.
 
-**TypeScript/Node.js** — 2 architecture patterns (hexagonal, flat), 39 capabilities. HTTP framework choice: Express, Fastify, or Hono.
+**TypeScript/Node.js** — 2 architecture patterns (hexagonal, flat), 39 capabilities. HTTP framework choice: Express, Fastify, or Hono. Scaffolding and agent context are on par with Go; `check` covers dependency rules and structure only.
+
+Depth differs per language — see [docs/reference/language-support.md](docs/reference/language-support.md).
 
 ## License
 

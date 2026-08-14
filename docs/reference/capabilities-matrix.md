@@ -1,6 +1,9 @@
 # Capabilities Matrix
 
-> Everything verikt can compose into your Go service — **63 capabilities**.
+> Everything verikt can compose into your Go service — **65 capabilities**.
+>
+> Depth differs per language. See the [language support matrix](language-support.md) for what
+> each language gets per command.
 
 verikt scaffolds projects by combining an **architecture** with **capabilities**. Pick what you need — verikt wires it all together.
 
