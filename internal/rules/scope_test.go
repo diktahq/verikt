@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -131,6 +132,63 @@ func TestMatchGlob(t *testing.T) {
 			assert.Equal(t, tt.want, got, "matchGlob(%q, %q)", tt.pattern, tt.path)
 		})
 	}
+}
+
+// A relative projectRoot of "." is the default `verikt check` invocation. The
+// hidden-directory guard used to match the walk root itself (d.Name() == ".")
+// and SkipDir on the root ended the walk, so every rule matched 0 files and
+// reported as stale no matter what its scope was.
+func TestExpandScope_RelativeDotProjectRoot(t *testing.T) {
+	dir := setupTestProject(t, map[string]string{
+		"main.go":                 "package main\n",
+		"internal/core/engine.go": "package core\n",
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	require.NoError(t, os.Chdir(dir))
+
+	files, err := ExpandScope([]string{"**/*.go"}, nil, ".", nil)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"main.go", "internal/core/engine.go"}, files)
+}
+
+// A literal file path as scope must resolve against a relative root too.
+func TestExpandScope_RelativeDotProjectRootLiteralPath(t *testing.T) {
+	dir := setupTestProject(t, map[string]string{
+		"internal/core/engine.go": "package core\n",
+		"internal/core/other.go":  "package core\n",
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	require.NoError(t, os.Chdir(dir))
+
+	files, err := ExpandScope([]string{"internal/core/engine.go"}, nil, ".", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"internal/core/engine.go"}, files)
+}
+
+// Hidden directories below the root must still be skipped — the root exemption
+// must not disable the guard itself.
+func TestExpandScope_RelativeDotRootStillSkipsHiddenDirs(t *testing.T) {
+	dir := setupTestProject(t, map[string]string{
+		"main.go":                "package main\n",
+		".git/hooks/pre-commit":  "#!/bin/sh\n",
+		".hidden/secret.go":      "package hidden\n",
+		"vendor/dep/vendored.go": "package dep\n",
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	require.NoError(t, os.Chdir(dir))
+
+	files, err := ExpandScope([]string{"**/*.go"}, nil, ".", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"main.go"}, files)
 }
 
 func TestExpandScope_EmptyProjectRoot(t *testing.T) {

@@ -37,6 +37,12 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 
 		// Skip hidden directories (starting with ".") and known non-source dirs.
 		if d.IsDir() {
+			// The walk root itself is exempt: a projectRoot of "." has
+			// d.Name() == "." and would otherwise skip the entire tree,
+			// silently matching 0 files for every rule.
+			if path == projectRoot {
+				return nil
+			}
 			name := d.Name()
 			if strings.HasPrefix(name, ".") || skipDirs[name] {
 				return filepath.SkipDir
