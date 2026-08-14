@@ -1,9 +1,14 @@
 package checker
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/diktahq/verikt/internal/config"
 )
 
 // check.exclude is documented as globs the checker ignores "entirely", but it was
@@ -32,7 +37,7 @@ func TestApplyExcludes(t *testing.T) {
 		},
 	}
 
-	applyExcludes(result, []string{"testdata/**", "generated/**"})
+	applyExcludes(result, []string{"**/testdata/**", "generated/**"})
 
 	assert.Equal(t, []Violation{{File: "internal/cli/check.go", Message: "kept"}}, result.DependencyViolations)
 	assert.Empty(t, result.FunctionViolations)
@@ -40,6 +45,40 @@ func TestApplyExcludes(t *testing.T) {
 	assert.Len(t, result.StructureViolations, 1, "paths outside the globs are untouched")
 	assert.Len(t, result.AntiPatternViolations, 1)
 	assert.Equal(t, "internal/repo/db.go", result.AntiPatternViolations[0].File)
+}
+
+// The tests above call applyExcludes directly, which proves the function works
+// and nothing about whether anything calls it. Commenting out both call sites
+// left the package green. This one goes through CheckWithEngine, so it fails if
+// the wiring is removed.
+func TestCheckWithEngineAppliesExcludesToEngineFindings(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/app\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "gen"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gen", "api.go"),
+		[]byte("package gen\n"), 0o644))
+
+	cfg := &config.VeriktConfig{
+		Language:     "go",
+		Architecture: "hexagonal",
+		Components:   []config.Component{{Name: "gen", In: []string{"gen"}}},
+		Check:        config.CheckConfig{Exclude: []string{"gen/**"}},
+	}
+
+	result, err := CheckWithEngine(cfg, dir,
+		antiPatternClientReturning([]AntiPattern{
+			{File: "gen/api.go", Name: "sql_concatenation", Severity: "error"},
+			{File: "internal/repo/db.go", Name: "sql_concatenation", Severity: "error"},
+		}),
+		dependencyClientReturning(nil),
+		metricClientReturning([]Violation{{File: "gen/api.go", Message: "too long"}}),
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.AntiPatternViolations, 1, "the excluded anti-pattern was not dropped")
+	assert.Equal(t, "internal/repo/db.go", result.AntiPatternViolations[0].File)
+	assert.Empty(t, result.FunctionViolations, "excludes apply to function metrics too")
 }
 
 // With no globs configured nothing is dropped.
@@ -61,7 +100,7 @@ func TestApplyExcludes_RecalculatesMetrics(t *testing.T) {
 		DependencyViolations: []Violation{{File: "internal/a.go"}},
 	}
 
-	applyExcludes(result, []string{"testdata/**"})
+	applyExcludes(result, []string{"**/testdata/**"})
 
 	assert.Equal(t, 1, result.TotalViolations())
 	assert.Equal(t, 9, result.RulesPassing)

@@ -450,7 +450,7 @@ fn strip_module_prefix(pkg: &str, project_path: &str) -> String {
 }
 
 /// Extract the Go module name from go.mod in the project root.
-fn extract_module_root(project_path: &str) -> String {
+pub(crate) fn extract_module_root(project_path: &str) -> String {
     let go_mod = PathBuf::from(project_path).join("go.mod");
     if let Ok(content) = fs::read_to_string(&go_mod) {
         for line in content.lines() {
