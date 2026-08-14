@@ -99,6 +99,31 @@ jobs:
           cp engine-artifacts/verikt-engine-darwin-arm64/verikt-engine internal/engineclient/bin/verikt-engine-darwin-arm64
           chmod +x internal/engineclient/bin/*
 
+      # A release that ships without a real engine degrades silently to Go-native
+      # analysis: findings change, severities change, and nothing reports why. Once
+      # the embed tolerates a missing binary, an empty or truncated file would build
+      # cleanly and reach users. Fail the release instead.
+      - name: Verify every engine binary is real
+        run: |
+          set -euo pipefail
+          missing=0
+          for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            path="internal/engineclient/bin/verikt-engine-$target"
+            if [ ! -f "$path" ]; then
+              echo "::error::$path is missing — the engine was not placed for embed"
+              missing=1
+              continue
+            fi
+            size=$(wc -c < "$path")
+            if [ "$size" -lt 1000000 ]; then
+              echo "::error::$path is $size bytes — too small to be an engine build (placeholder or truncated artefact)"
+              missing=1
+              continue
+            fi
+            echo "  ok  $target  ${size} bytes"
+          done
+          [ "$missing" -eq 0 ]
+
       - uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
         with:
           version: ~> v2
