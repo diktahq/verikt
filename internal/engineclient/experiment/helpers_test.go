@@ -36,6 +36,22 @@ func checkerTestdataDir(t *testing.T) string {
 	return filepath.Join(filepath.Dir(filename), "..", "..", "checker", "testdata")
 }
 
+// engineHexagonalPath returns the self-contained hexagonal fixture under this
+// package's own testdata.
+//
+// It is passed as the project root rather than the repository root: the engine
+// skips testdata directories, mirroring the Go toolchain, so a fixture nested
+// under testdata is only visible when it is itself the project being analysed.
+// The fixture carries its own go.mod so the engine can resolve its import paths.
+func engineHexagonalPath(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot determine test file path")
+	}
+	return filepath.Join(filepath.Dir(filename), "testdata", "hexagonal")
+}
+
 // checkFunctionMetrics calls the engine for function metric violations.
 func checkFunctionMetrics(t *testing.T, client *engineclient.Client, projectPath string, rules config.FunctionRules) []checker.Violation {
 	t.Helper()

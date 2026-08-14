@@ -71,11 +71,6 @@ check:
     # Scaffolded output captured as experiment evidence, not verikt source. CI
     # already excludes these from build, vet and test.
     - experiments/**
-    # Fixtures deliberately contain the anti-patterns the detectors look for —
-    # SQL concatenation, swallowed errors, naked goroutines. The Go toolchain
-    # excludes testdata from builds, so the Go analysis path never sees these;
-    # the Rust engine walks them, and would report every fixture as a finding.
-    - testdata/**
 
 rules:
   functions:

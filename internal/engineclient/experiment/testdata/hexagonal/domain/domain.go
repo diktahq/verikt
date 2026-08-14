@@ -2,7 +2,7 @@
 // This file intentionally imports service to trigger a dependency violation.
 package domain
 
-import _ "github.com/diktahq/verikt/internal/engineclient/experiment/testdata/hexagonal/service"
+import _ "example.com/hexagonal/service"
 
 // Entity is a domain entity.
 type Entity struct{ ID string }

@@ -163,7 +163,7 @@ fn collect_ts_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
             }
             if matches!(
                 name_str.as_ref(),
-                "node_modules" | "dist" | "build" | "target" | ".git"
+                "node_modules" | "dist" | "build" | "target" | ".git" | "testdata"
             ) || name_str.starts_with('.')
             {
                 continue;
