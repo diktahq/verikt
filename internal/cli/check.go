@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/diktahq/verikt/internal/checker"
@@ -144,7 +145,10 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 
 		// Filter to single rule if --rule is set.
 		if flags.rule != "" && ruleResult != nil {
-			ruleResult = filterRuleResult(ruleResult, flags.rule)
+			ruleResult, err = filterRuleResult(ruleResult, flags.rule)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -427,20 +431,38 @@ func filterAntiPatternsBySeverity(findings []checker.AntiPattern, overrides conf
 	return filtered
 }
 
-// filterRuleResult keeps only violations and statuses matching a specific rule ID.
-func filterRuleResult(r *rules.RunResult, ruleID string) *rules.RunResult {
+// filterRuleResult keeps only violations and statuses matching a specific rule
+// ID, and reports an error when no rule has that ID.
+//
+// `--rule` with a typo filtered everything away and the run then printed "All
+// proxy rules pass" and exited 0. A pipeline pinned to a renamed or deleted rule
+// would keep passing indefinitely while enforcing nothing — a rule ID that
+// matches nothing is the strongest form of "did not run".
+func filterRuleResult(r *rules.RunResult, ruleID string) (*rules.RunResult, error) {
 	filtered := &rules.RunResult{Duration: r.Duration}
 	for _, v := range r.Violations {
 		if v.RuleID == ruleID {
 			filtered.Violations = append(filtered.Violations, v)
 		}
 	}
+
+	known := make([]string, 0, len(r.Statuses))
 	for _, s := range r.Statuses {
+		known = append(known, s.Rule.ID)
 		if s.Rule.ID == ruleID {
 			filtered.Statuses = append(filtered.Statuses, s)
 		}
 	}
-	return filtered
+
+	if len(filtered.Statuses) == 0 {
+		sort.Strings(known)
+		if len(known) == 0 {
+			return nil, fmt.Errorf("no rule %q: this project defines no proxy rules", ruleID)
+		}
+		return nil, fmt.Errorf("no rule %q: available rules are %s", ruleID, strings.Join(known, ", "))
+	}
+
+	return filtered, nil
 }
 
 func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, cfg *config.VeriktConfig, flags *checkFlags) {

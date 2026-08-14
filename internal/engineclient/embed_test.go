@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -207,4 +208,60 @@ func TestReleaseBuildSelectsASingleEngine(t *testing.T) {
 	if !strings.Contains(string(def), "//go:embed bin\n") {
 		t.Error("the default embed must match the directory so a missing engine still compiles")
 	}
+}
+
+// Concurrent extraction must never expose a partially written binary.
+//
+// Extraction wrote straight to the final path while the existence check above it
+// treated any file as ready, so a second process starting mid-write execed a
+// truncated binary. The content-addressed cache makes this the common case rather
+// than a rare one: every engine change forces a fresh extraction, and `go test
+// ./...` runs the packages that need the engine at the same time.
+func TestEnginePathIsSafeUnderConcurrentExtraction(t *testing.T) {
+	if len(engineBinary) == 0 {
+		t.Skip("no engine embedded for this platform")
+	}
+
+	// A private cache directory, so this exercises a genuine cold extraction
+	// rather than finding whatever a previous run left behind.
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if runtime.GOOS == "darwin" {
+		t.Setenv("HOME", t.TempDir())
+	}
+
+	const racers = 8
+	paths := make(chan string, racers)
+	errs := make(chan error, racers)
+
+	var wg sync.WaitGroup
+	for range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			path, err := EnginePath()
+			if err != nil {
+				errs <- err
+				return
+			}
+			paths <- path
+		}()
+	}
+	wg.Wait()
+	close(paths)
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent EnginePath failed: %v", err)
+	}
+
+	seen := 0
+	for path := range paths {
+		seen++
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, int64(len(engineBinary)), info.Size(),
+			"a racing extraction exposed a partially written binary")
+		assert.NotZero(t, info.Mode()&0o111, "the extracted engine is not executable")
+	}
+	assert.Equal(t, racers, seen)
 }
