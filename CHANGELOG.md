@@ -13,6 +13,8 @@ All notable changes to verikt are documented here. Format follows [Keep a Change
 - **The docs site builds with [Bun](https://bun.sh).** `package-lock.json` is replaced by `bun.lock`; run `bun install` in `website/`.
 
 ### Fixed
+- **`verikt guide` no longer destroys existing Claude Code hooks.** Each hook event was assigned outright, so a project with its own `PostToolUse` or `SessionStart` hook lost it on every run. Entries are merged and deduplicated, `settings.json` is only rewritten when it actually changes, and `--target all` now writes only the agents a project uses instead of leaving `.cursorrules`, `.windsurfrules` and a copilot file behind.
+- **The engine skips `testdata` directories**, matching the Go toolchain. Fixtures contain anti-patterns deliberately, so the engine reported them as real findings while the Go path — which never sees testdata — did not.
 - **`check.exclude` applies to every finding**, not only orphan-package detection. Anti-patterns, function metrics, structure and naming findings were reported for excluded paths regardless — including test fixtures, which contain the anti-patterns the detectors look for on purpose and which the Go toolchain excludes from builds.
 - **Warnings are no longer printed with the failure marker.** A run that exits 0 could display dozens of apparent failures, because every finding used `✗` regardless of severity.
 - **Proxy rules ran against nothing under the default `--path .`** — scope expansion matched the walk root against its own hidden-directory guard and skipped the whole tree, so every rule reported "scope matches 0 files". They only worked with an absolute `--path`.
@@ -30,7 +32,8 @@ All notable changes to verikt are documented here. Format follows [Keep a Change
 - **`verikt setup` honours `CLAUDE_CONFIG_DIR`**, so Claude Code profile aliases no longer detect and write to the wrong profile.
 
 ### Added
-- **verikt governs itself** — a root `verikt.yaml` describing the real component structure, and a CI job that runs `verikt check` on this repository. It gates on error severity; the warning-level debt it reports is logged rather than suppressed.
+- **`nil_map_write` and `type_assertion_without_ok` detectors** — the two ways idiomatic-looking Go panics in production. Implemented in both Go and the Rust engine; `nil_map_write` is an error, `type_assertion_without_ok` a warning.
+- **verikt governs itself** — a root `verikt.yaml` describing the real component structure, and a CI job that runs `verikt check` on this repository. It gates on error severity, and ratchets the warning-level count against `.github/verikt-debt-baseline` so debt cannot grow unnoticed.
 - **`domain_imports_adapter` and `mvc_in_hexagonal` in the Rust engine.** Both were Go-only, and engine results replace the Go ones wholesale, so neither architecture detector ran for anyone whose engine resolved. Tests now fail when detector sets or severities diverge between the two implementations.
 - **CI for the Rust engine** — `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`. It is the default analysis path and had none.
 - **`.mise.toml`** pinning Go, Rust and Bun to the versions CI uses, with `build-engine` and `check-engine` tasks. The embedded binary is gitignored, so a fresh clone has nothing to embed until built.
