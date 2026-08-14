@@ -8,9 +8,7 @@ mod metrics;
 mod typescript_imports;
 
 use pb::{
-    EngineRequest, EngineResponse, PingResult,
-    engine_request::Command,
-    engine_response::Payload,
+    EngineRequest, EngineResponse, PingResult, engine_request::Command, engine_response::Payload,
 };
 use prost::Message;
 use std::io::{self, Read, Write};
@@ -38,11 +36,19 @@ fn handle_request(request: EngineRequest) -> Vec<EngineResponse> {
         Some(Command::Ping(_)) => vec![EngineResponse {
             payload: Some(Payload::PingResult(PingResult {
                 version: VERSION.to_string(),
-                capabilities: vec!["ping".to_string(), "grep".to_string(), "import_graph".to_string(), "anti_pattern".to_string(), "metric".to_string()],
+                capabilities: vec![
+                    "ping".to_string(),
+                    "grep".to_string(),
+                    "import_graph".to_string(),
+                    "anti_pattern".to_string(),
+                    "metric".to_string(),
+                ],
             })),
         }],
         Some(Command::Check(req)) => handle_check(req),
-        None => vec![error_response("empty request: no command specified".to_string())],
+        None => vec![error_response(
+            "empty request: no command specified".to_string(),
+        )],
     }
 }
 
@@ -89,8 +95,7 @@ fn read_message() -> io::Result<EngineRequest> {
     let mut msg_buf = vec![0u8; len];
     stdin.read_exact(&mut msg_buf)?;
 
-    EngineRequest::decode(&msg_buf[..])
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    EngineRequest::decode(&msg_buf[..]).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Write a length-prefixed protobuf message to stdout.
