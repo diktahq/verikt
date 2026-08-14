@@ -162,6 +162,7 @@ func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient Anti
 		result.AntiPatternViolations = checkAntiPatterns(a.Packages(), projectPath)
 	}
 
+	applyExcludes(result, cfg.Check.Exclude)
 	computeMetrics(cfg, result)
 	return result, nil
 }
@@ -182,6 +183,7 @@ func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *Check
 		}
 	}
 
+	applyExcludes(result, cfg.Check.Exclude)
 	computeMetrics(cfg, result)
 	return result, nil
 }
@@ -224,6 +226,7 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 		return result, errs[0]
 	}
 
+	applyExcludes(result, cfg.Check.Exclude)
 	computeMetrics(cfg, result)
 	return result, nil
 }
