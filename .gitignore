@@ -34,3 +34,6 @@ engine/target/
 
 # Release artifacts (downloaded by CI, not committed)
 engine-artifacts/
+
+# edikt hook runtime state (machine-local, not project config)
+.edikt/state/
