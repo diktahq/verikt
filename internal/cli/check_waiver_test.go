@@ -183,3 +183,76 @@ func TestFilterRuleResultRejectsAnUnknownRuleID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, filtered.Statuses, 1)
 }
+
+// A waived proxy-rule finding must be recorded, not dropped.
+//
+// The checker branch of applySeverityOverrides records a WaivedFinding; the proxy
+// branch just skipped the violation, so the run printed "✓ All proxy rules pass"
+// and the waived[] array was empty. That contradicts this file's own contract and
+// the published docs, and it is indistinguishable from a rule that never ran.
+//
+// Every other test here passes nil as the ruleResult, which is why the branch had
+// no coverage at all.
+func TestWaivedProxyRuleFindingsAreRecorded(t *testing.T) {
+	checkerResult := &checker.CheckResult{}
+	ruleResult := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "no-sprintf-sql"}, Filename: "sql.yaml", Status: "valid"},
+		},
+		Violations: []rules.RuleViolation{
+			{RuleID: "no-sprintf-sql", Severity: "error", File: "internal/legacy/q.go", Line: 7, Description: "concatenated SQL"},
+			{RuleID: "no-sprintf-sql", Severity: "error", File: "internal/repo/q.go", Line: 3, Description: "concatenated SQL"},
+		},
+	}
+
+	applySeverityOverrides(checkerResult, ruleResult, config.SeverityOverrides{
+		"no-sprintf-sql": []config.SeverityOverride{{
+			Severity: "ignore",
+			Reason:   "legacy query builder, tracked in #412",
+			Paths:    []string{"internal/legacy/**"},
+		}},
+	})
+
+	require.Len(t, ruleResult.Violations, 1, "only the waived path leaves the blocking set")
+	assert.Equal(t, "internal/repo/q.go", ruleResult.Violations[0].File)
+
+	require.Len(t, checkerResult.WaivedFindings, 1, "the waived proxy finding must be recorded")
+	waived := checkerResult.WaivedFindings[0]
+	assert.Equal(t, "proxy_rule", waived.Category)
+	assert.Equal(t, "no-sprintf-sql", waived.Rule)
+	assert.Equal(t, "internal/legacy/q.go", waived.File)
+	assert.Equal(t, 7, waived.Line)
+	assert.Contains(t, waived.Reason, "tracked in #412")
+}
+
+// And the waived finding must reach the report, whichever format is asked for.
+func TestWaivedProxyRuleFindingIsReported(t *testing.T) {
+	checkerResult := &checker.CheckResult{}
+	ruleResult := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "no-panic"}, Filename: "panic.yaml", Status: "valid"},
+		},
+		Violations: []rules.RuleViolation{
+			{RuleID: "no-panic", Severity: "error", File: "internal/tool/main.go", Line: 12, Description: "panic in library code"},
+		},
+	}
+
+	applySeverityOverrides(checkerResult, ruleResult, config.SeverityOverrides{
+		"no-panic": []config.SeverityOverride{{
+			Severity: "ignore",
+			Reason:   "a CLI entrypoint, panics are fatal by design",
+			Paths:    []string{"internal/tool/**"},
+		}},
+	})
+
+	var err error
+	out := captureStdout(t, func() {
+		err = reportCheck(checkOutcome{Checker: checkerResult, Rules: ruleResult},
+			&config.VeriktConfig{Architecture: "hexagonal"}, &checkFlags{}, "terminal")
+	})
+
+	require.NoError(t, err, "a waived finding does not fail the build")
+	assert.Contains(t, out, "WAIVED")
+	assert.Contains(t, out, "no-panic")
+	assert.Contains(t, out, "panics are fatal by design")
+}

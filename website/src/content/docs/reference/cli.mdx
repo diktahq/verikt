@@ -179,15 +179,29 @@ arrays, so they are safe to iterate on a passing project.
 }
 ```
 
-Gate on severity rather than on the presence of findings:
+To gate a pipeline, read `result`:
 
 ```bash
 verikt check --output json > verikt.json
-jq -e '[(.violations // [])[], (.anti_patterns // [])[]] | map(select(.severity == "error")) | length == 0' verikt.json
+jq -e '.result == "pass"' verikt.json
 ```
 
-The `// []` defaults are not needed against this version, but they make the
-snippet safe to copy against any of them.
+`result` is the same verdict the exit code carries, so gating on either is
+equivalent — and it accounts for every category. Selecting on severity across
+`violations[]` and `anti_patterns[]` does **not**: those two arrays hold the
+built-in detector findings only. An error-severity proxy-rule violation lives in
+`proxy_rules.violations[]`, a rule that could not run appears only in
+`proxy_rules.statuses[]`, and decision-gate failures are in
+`decision_violations[]`. A gate built from the two top-level arrays passes on all
+three.
+
+To count findings by severity — for a debt report rather than a gate — include
+every source:
+
+```bash
+jq '[(.violations // [])[], (.anti_patterns // [])[], (.proxy_rules.violations // [])[]]
+    | group_by(.severity) | map({severity: .[0].severity, count: length})' verikt.json
+```
 
 ### Example Output
 
