@@ -1,3 +1,12 @@
+# Non-secret configuration for {{.ServiceName}}.
+#
+# Everything here is safe to commit. Credentials are not: they have no key in
+# this file, and writing one in anyway is rejected rather than accepted quietly
+# (see config.Config — the fields are tagged `yaml:"-"` and the decoder runs with
+# KnownFields). Supply them through the environment instead; the variables are
+# listed at the end of this file.
+#
+# Precedence: defaults in config.Default() < this file < the environment.
 app:
   name: {{.ServiceName}}
   environment: development
@@ -33,14 +42,14 @@ kafka:
 {{- if .HasMySQL}}
 
 mysql:
-  dsn: "root:password@tcp(localhost:3306)/{{.ServiceName}}?parseTime=true"
+  # dsn is a credential: set MYSQL_DSN in the environment.
   max_open_conns: 25
   max_idle_conns: 5
 {{- end}}
 {{- if .HasPostgreSQL}}
 
 postgres:
-  url: "postgres://postgres:password@localhost:5432/{{.ServiceName}}?sslmode=disable"
+  # url is a credential: set POSTGRES_URL in the environment.
   max_conns: 25
   min_conns: 5
 {{- end}}
@@ -48,7 +57,7 @@ postgres:
 
 redis:
   addr: localhost:6379
-  password: ""
+  # password is a credential: set REDIS_PASSWORD in the environment.
   db: 0
 {{- end}}
 {{- if .HasMailpit}}
@@ -58,3 +67,21 @@ mailpit:
   port: 1025
   from: "noreply@{{.ServiceName}}.local"
 {{- end}}
+
+# Environment variables
+#
+# Any value above can also be set from the environment, which wins over this
+# file. These three have no other source:
+#
+{{- if .HasMySQL}}
+#   MYSQL_DSN        root:...@tcp(localhost:3306)/{{.ServiceName}}?parseTime=true
+{{- end}}
+{{- if .HasPostgreSQL}}
+#   POSTGRES_URL     postgres://postgres:...@localhost:5432/{{.ServiceName}}?sslmode=disable
+{{- end}}
+{{- if .HasRedis}}
+#   REDIS_PASSWORD   the Redis password, empty for a local instance without auth
+{{- end}}
+#
+# The rest: APP_NAME, APP_ENVIRONMENT, LOG_LEVEL, LOG_FORMAT{{if .HasHTTP}}, HTTP_PORT{{end}}{{if .HasGRPC}}, GRPC_PORT{{end}}{{if .HasKafka}},
+#   KAFKA_BROKERS (comma-separated), KAFKA_CONSUMER_GROUP{{end}}{{if .HasRedis}}, REDIS_ADDR{{end}}{{if .HasMailpit}}, MAILPIT_HOST, MAILPIT_PORT{{end}}.
