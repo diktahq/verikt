@@ -37,6 +37,32 @@ func TestMatch(t *testing.T) {
 		{"exact path", "Makefile", "Makefile", true},
 
 		{"everything", "**", "any/path/at/all.go", true},
+
+		// A `**` in the middle of a pattern is the form people reach for first,
+		// and it silently matched nothing: CutSuffix("/**") stripped the trailing
+		// segment and the remaining "internal/**/testdata" was then compared as
+		// though "**" were a literal directory name. For check.exclude that meant
+		// nothing was excluded, which is safe; for severity_overrides.paths it
+		// meant a reviewed waiver, with a reason, quietly did nothing.
+		{"doublestar in the middle, trailing dir", "internal/**/testdata/**", "internal/checker/testdata/bad.go", true},
+		{"doublestar in the middle, deep", "internal/**/mocks/**", "internal/a/b/mocks/x.go", true},
+		{"doublestar in the middle, one level", "internal/**/mocks/**", "internal/a/mocks/x.go", true},
+		{"doublestar in the middle, zero levels", "internal/**/mocks/**", "internal/mocks/x.go", true},
+		{"doublestar in the middle, wrong prefix", "internal/**/mocks/**", "cmd/a/mocks/x.go", false},
+		{"doublestar in the middle, missing segment", "internal/**/mocks/**", "internal/a/b/x.go", false},
+
+		{"doublestar in the middle, file tail", "src/**/*_test.go", "src/a/b/c_test.go", true},
+		{"doublestar in the middle, file tail at depth 1", "src/**/*_test.go", "src/a_test.go", true},
+		{"doublestar in the middle, file tail mismatch", "src/**/*_test.go", "src/a/b/c.go", false},
+		{"prefix then doublestar then extension", "internal/gen/**/*.go", "internal/gen/a/b/c.go", true},
+		{"prefix then doublestar then extension, shallow", "internal/gen/**/*.go", "internal/gen/c.go", true},
+
+		// Directory names written the way people write them in .gitignore.
+		{"trailing slash", "vendor/", "vendor/x/y.go", true},
+		{"bare directory name", "vendor", "vendor/x/y.go", true},
+		{"bare directory name, exact", "vendor", "vendor", true},
+		{"bare directory name does not match a prefix", "vend", "vendor/x/y.go", false},
+		{"bare file name still matches only itself", "Makefile", "cmd/Makefile", false},
 	}
 
 	for _, tt := range tests {

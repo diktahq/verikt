@@ -5,13 +5,25 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/diktahq/verikt/internal/pathglob"
 )
 
 // skipDirs are non-hidden directories always excluded from scope expansion.
-// Hidden directories (starting with ".") are skipped unconditionally.
+// Hidden directories (starting with ".") and `_`-prefixed directories are skipped
+// unconditionally.
+//
+// This list must match the engine's grep walker (engine/crates/engine-bin/src/grep.rs).
+// It held only vendor and node_modules while the engine also skipped testdata,
+// target and `_`-prefixed directories, so the two implementations reported
+// different findings for identical input — and which one ran depended on whether
+// the embedded engine resolved, which is invisible to the user.
+// TestGrepFindingParityBetweenGoAndEngine fails if they drift apart again.
 var skipDirs = map[string]bool{
 	"vendor":       true,
 	"node_modules": true,
+	"target":       true,
+	"testdata":     true,
 }
 
 // ExpandScope returns all files matching scope globs minus exclude globs,
@@ -52,7 +64,9 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 				return nil
 			}
 			name := d.Name()
-			if strings.HasPrefix(name, ".") || skipDirs[name] {
+			// `_`-prefixed directories are ignored by the Go toolchain, so code
+			// there is not part of the build and should not be part of the check.
+			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || skipDirs[name] {
 				return filepath.SkipDir
 			}
 			return nil
@@ -68,7 +82,7 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 		// Check scope globs.
 		matched := false
 		for _, pattern := range scope {
-			if matchGlob(pattern, rel) {
+			if pathglob.Match(pattern, rel) {
 				matched = true
 				break
 			}
@@ -79,7 +93,7 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 
 		// Check exclude globs.
 		for _, pattern := range exclude {
-			if matchGlob(pattern, rel) {
+			if pathglob.Match(pattern, rel) {
 				return nil
 			}
 		}
@@ -102,62 +116,4 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 	}
 	sort.Strings(files)
 	return files, nil
-}
-
-// matchGlob matches a file path against a glob pattern, supporting ** for
-// recursive directory matching.
-func matchGlob(pattern, path string) bool {
-	// Handle ** patterns by splitting on /** or **/ segments.
-	if strings.Contains(pattern, "**") {
-		return matchDoublestar(pattern, path)
-	}
-	matched, _ := filepath.Match(pattern, path)
-	return matched
-}
-
-// matchDoublestar handles glob patterns containing **.
-func matchDoublestar(pattern, path string) bool {
-	// Simple cases.
-	if pattern == "**" || pattern == "**/*" {
-		return true
-	}
-
-	parts := strings.SplitN(pattern, "**", 2)
-	prefix := strings.TrimSuffix(parts[0], "/")
-	suffix := strings.TrimPrefix(parts[1], "/")
-
-	// Check prefix match.
-	if prefix != "" && !strings.HasPrefix(path, prefix+"/") && path != prefix {
-		return false
-	}
-
-	// Strip the prefix from path for suffix matching.
-	remaining := path
-	if prefix != "" {
-		remaining = strings.TrimPrefix(path, prefix+"/")
-	}
-
-	// If no suffix, any remaining path matches.
-	if suffix == "" {
-		return true
-	}
-
-	// The suffix might itself contain further path segments.
-	// Try matching the suffix against every possible tail of remaining.
-	segments := strings.Split(remaining, "/")
-	for i := range segments {
-		tail := strings.Join(segments[i:], "/")
-		if matched, _ := filepath.Match(suffix, tail); matched {
-			return true
-		}
-		// Also try matching just the filename part for patterns like "*.go".
-		if !strings.Contains(suffix, "/") {
-			if matched, _ := filepath.Match(suffix, segments[len(segments)-1]); matched {
-				return true
-			}
-			return false
-		}
-	}
-
-	return false
 }

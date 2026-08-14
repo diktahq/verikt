@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/diktahq/verikt/internal/pathglob"
 )
 
 func TestExpandScope_SimpleGlob(t *testing.T) {
@@ -109,7 +111,15 @@ func TestExpandScope_MultipleScopes(t *testing.T) {
 	assert.Contains(t, files, "adapter/handler.go")
 }
 
-func TestMatchGlob(t *testing.T) {
+// Rule scopes are matched by internal/pathglob, the same matcher verikt.yaml's
+// check.exclude and severity_overrides use.
+//
+// This package had its own implementation, so the same glob string meant
+// different things in a rule file and in verikt.yaml: `internal/**/*.go` matched
+// here and matched nothing there, and any scope with two `**` segments was
+// reported stale even though the engine could reach the files. These cases are
+// kept to pin the rule-scope behaviour through the shared matcher.
+func TestRuleScopeGlobs(t *testing.T) {
 	tests := []struct {
 		pattern string
 		path    string
@@ -121,15 +131,20 @@ func TestMatchGlob(t *testing.T) {
 		{"**/*.go", "internal/foo.go", true},
 		{"**/*.go", "a/b/c.go", true},
 		{"domain/**/*.go", "domain/order.go", true},
+		{"domain/**/*.go", "domain/a/b/order.go", true},
 		{"domain/**/*.go", "adapter/foo.go", false},
 		{"*_test.go", "main_test.go", true},
 		{"*_test.go", "main.go", false},
+		// Two `**` segments: the old implementation split on the first and
+		// reported these as matching nothing, so the rule was marked stale.
+		{"**/internal/**/*.go", "svc/internal/a/b/c.go", true},
+		{"internal/**/pkg/**/*.go", "internal/a/pkg/b/c.go", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.pattern+"_"+tt.path, func(t *testing.T) {
-			got := matchGlob(tt.pattern, tt.path)
-			assert.Equal(t, tt.want, got, "matchGlob(%q, %q)", tt.pattern, tt.path)
+			got := pathglob.Match(tt.pattern, tt.path)
+			assert.Equal(t, tt.want, got, "pathglob.Match(%q, %q)", tt.pattern, tt.path)
 		})
 	}
 }
