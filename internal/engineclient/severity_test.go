@@ -4,73 +4,46 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// goDetector matches a detector literal in checker.checkAntiPatterns, capturing
-// the name and the severity that follows it.
+// rustDetector matches a detector literal in the engine's antipatterns.rs.
+var rustDetector = regexp.MustCompile(`detector:\s+"([a-z0-9_]+)"`)
+
+// TestDetectorSeverityCoversEveryEngineDetector asserts the severity table and the
+// engine's detector set agree.
 //
-// Detector names contain digits (uuid_v4_as_key), so the character class must
-// allow them — omitting them silently skips that detector instead of failing.
-var goDetector = regexp.MustCompile(`(?s)Name:\s+"([a-z0-9_]+)",.{0,200}?Severity:\s+"([a-z]+)"`)
-
-// TestDetectorSeverityMatchesGoDetectors asserts the engine-side severity table
-// agrees with the severities the Go detectors assign.
+// The table is the single source of truth for severity: the engine stamps every
+// anti-pattern with the requesting rule's severity (warning), so a detector missing
+// from the table is silently downgraded — which is how sql_concatenation stopped
+// failing builds.
 //
-// The two implementations must classify a finding identically. They did not:
-// the engine stamped every anti-pattern with the requesting rule's severity
-// (warning), so sql_concatenation and swallowed_error were reported as warnings
-// on the engine path and errors on the Go path. Because `verikt check` gates its
-// exit code on error severity, whether a SQL-injection finding failed the build
-// depended on whether the embedded engine binary resolved.
-func TestDetectorSeverityMatchesGoDetectors(t *testing.T) {
-	// The whole package is scanned, not one file: detectors added in a new file
-	// would otherwise be invisible to this guard, which is exactly what happened
-	// when nil_map_write and type_assertion_without_ok landed in panic_detectors.go.
-	checkerDir := filepath.Join("..", "checker")
-	source := readGoSources(t, checkerDir)
-
-	matches := goDetector.FindAllStringSubmatch(source, -1)
-	require.NotEmpty(t, matches, "no detectors parsed from %s — did the literal shape change?", checkerDir)
-
-	seen := map[string]bool{}
-	for _, m := range matches {
-		name, severity := m[1], m[2]
-		seen[name] = true
-
-		got, ok := detectorSeverities[name]
-		if !assert.True(t, ok, "detector %q has no entry in detectorSeverities", name) {
-			continue
-		}
-		assert.Equal(t, severity, got, "severity for %q disagrees with the Go detector", name)
+// It used to be validated against the Go detectors. Those were deleted with the Go
+// analysis path (ADR-006, ADR-011), so the engine source is now the reference.
+func TestDetectorSeverityCoversEveryEngineDetector(t *testing.T) {
+	enginePath := filepath.Join("..", "..", "engine", "crates", "engine-bin", "src", "antipatterns.rs")
+	source, err := os.ReadFile(enginePath)
+	if err != nil {
+		t.Skipf("engine source not available: %v", err)
 	}
 
+	engineDetectors := map[string]bool{}
+	for _, m := range rustDetector.FindAllStringSubmatch(string(source), -1) {
+		engineDetectors[m[1]] = true
+	}
+	require.NotEmpty(t, engineDetectors, "no detectors parsed from %s — did the literal shape change?", enginePath)
+
+	for name := range engineDetectors {
+		assert.Contains(t, detectorSeverities, name,
+			"engine detector %q has no severity entry — it would be reported as a warning regardless of its real severity", name)
+	}
 	for name := range detectorSeverities {
-		assert.True(t, seen[name], "detectorSeverities lists %q, which no Go detector produces", name)
+		assert.True(t, engineDetectors[name],
+			"detectorSeverities lists %q, which the engine never emits", name)
 	}
-}
-
-// readGoSources concatenates every non-test Go file in dir.
-func readGoSources(t *testing.T, dir string) string {
-	t.Helper()
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	var b strings.Builder
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		require.NoError(t, err)
-		b.Write(data)
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 // The severities that gate CI must be preserved exactly: these are the findings

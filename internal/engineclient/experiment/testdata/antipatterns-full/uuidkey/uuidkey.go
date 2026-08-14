@@ -7,7 +7,7 @@ var uuid uuidPkg
 
 type uuidPkg struct{}
 
-func (uuidPkg) New() [16]byte    { return [16]byte{} }
+func (uuidPkg) New() [16]byte     { return [16]byte{} }
 func (uuidPkg) NewString() string { return "" }
 
 // CreateEntity creates a new entity with a UUIDv4 key — should use UUIDv7.
