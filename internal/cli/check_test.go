@@ -149,6 +149,9 @@ func TestCheckPrintProxyRuleSection_ViolationWithMatch(t *testing.T) {
 	assert.Contains(t, out, "> fmt.Println(secret)")
 }
 
+// A rule that matched no files has not passed — it did not run. Reporting
+// "All proxy rules pass" alongside a stale count is the same "couldn't run
+// rendered as passed" failure that verikt exists to catch.
 func TestCheckPrintProxyRuleSection_InvalidAndStaleRules(t *testing.T) {
 	result := &rules.RunResult{
 		Statuses: []rules.RuleStatus{
@@ -161,11 +164,125 @@ func TestCheckPrintProxyRuleSection_InvalidAndStaleRules(t *testing.T) {
 	out := captureStdout(t, func() { printProxyRuleSection(result) })
 
 	assert.Contains(t, out, "1 valid, 1 invalid, 1 stale")
+	assert.NotContains(t, out, "All proxy rules pass")
+	// Invalid and stale rules are always reported, violations or not.
+	assert.Contains(t, out, "r2.yaml")
+	assert.Contains(t, out, "missing id field")
+	assert.Contains(t, out, "r3.yaml")
+	assert.Contains(t, out, "scope glob matches no files")
+}
+
+// With every rule valid and no violations, the pass message is still correct.
+func TestCheckPrintProxyRuleSection_PassMessageOnlyWhenNothingStaleOrInvalid(t *testing.T) {
+	result := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "valid"},
+		},
+	}
+
+	out := captureStdout(t, func() { printProxyRuleSection(result) })
+
 	assert.Contains(t, out, "All proxy rules pass")
-	// Note: invalid/stale status details are only printed when there are violations,
-	// because the function returns early after "All proxy rules pass".
-	assert.NotContains(t, out, "r2.yaml")
-	assert.NotContains(t, out, "r3.yaml")
+}
+
+// --- exit code severity gating ---
+
+// check --help and ErrCheckFailed both promise "error-severity violations", but
+// the gate counted every violation, including warnings. An unsuppressable
+// warning-level anti-pattern (god_package) made exit 0 unreachable.
+func TestCheckHasBlockingFindings_OnlyErrorSeverity(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *checker.CheckResult
+		want    bool
+		comment string
+	}{
+		{
+			name:   "no findings",
+			result: &checker.CheckResult{},
+			want:   false,
+		},
+		{
+			name: "warning anti-pattern does not block",
+			result: &checker.CheckResult{
+				AntiPatternViolations: []checker.AntiPattern{
+					{Name: "god_package", Severity: "warning", File: "internal/core", Message: "50 exported symbols"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "error anti-pattern blocks",
+			result: &checker.CheckResult{
+				AntiPatternViolations: []checker.AntiPattern{
+					{Name: "sql_concatenation", Severity: "error", File: "db.go", Message: "raw SQL"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "warning dependency violation does not block",
+			result: &checker.CheckResult{
+				DependencyViolations: []checker.Violation{{Severity: "warning", Message: "soft"}},
+			},
+			want: false,
+		},
+		{
+			name: "error dependency violation blocks",
+			result: &checker.CheckResult{
+				DependencyViolations: []checker.Violation{{Severity: "error", Message: "domain imports adapters"}},
+			},
+			want: true,
+		},
+		{
+			name: "error in any category blocks",
+			result: &checker.CheckResult{
+				NamingViolations: []checker.Violation{{Severity: "error", Message: "bad name"}},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, hasBlockingFindings(tt.result))
+		})
+	}
+}
+
+func TestCheckHasBlockingFindings_NilResult(t *testing.T) {
+	assert.False(t, hasBlockingFindings(nil))
+}
+
+// A stale rule could not run, so it must not leave the exit code at 0.
+func TestCheckRuleResultBlocks_StaleCountsAsBlocking(t *testing.T) {
+	stale := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "stale", Error: "scope matches 0 files"},
+		},
+	}
+	assert.True(t, ruleResultBlocks(stale))
+
+	invalid := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "invalid", Error: "missing id"},
+		},
+	}
+	assert.True(t, ruleResultBlocks(invalid))
+
+	warningOnly := &rules.RunResult{
+		Violations: []rules.RuleViolation{{RuleID: "r1", Severity: "warning", File: "x.go", Description: "soft"}},
+		Statuses:   []rules.RuleStatus{{Rule: rules.Rule{ID: "r1"}, Status: "valid"}},
+	}
+	assert.False(t, ruleResultBlocks(warningOnly))
+
+	errorViolation := &rules.RunResult{
+		Violations: []rules.RuleViolation{{RuleID: "r1", Severity: "error", File: "x.go", Description: "hard"}},
+		Statuses:   []rules.RuleStatus{{Rule: rules.Rule{ID: "r1"}, Status: "valid"}},
+	}
+	assert.True(t, ruleResultBlocks(errorViolation))
+
+	assert.False(t, ruleResultBlocks(nil))
 }
 
 func TestCheckPrintProxyRuleSection_InvalidStaleWithViolations(t *testing.T) {
