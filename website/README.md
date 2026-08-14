@@ -6,9 +6,9 @@ Built with [Astro](https://astro.build) + [Starlight](https://starlight.astro.bu
 
 ```bash
 cd website
-npm install
-npm run dev       # localhost:4321
-npm run build     # production build to ./dist/
+bun install
+bun run dev       # localhost:4321
+bun run build     # production build to ./dist/
 ```
 
 Docs live in `src/content/docs/`. Each `.md` file becomes a route.
