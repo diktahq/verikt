@@ -128,7 +128,13 @@ func buildContent(opts GenerateOptions) string {
 	writeRuleSummaries(&b, opts.ProjectDir)
 	writeVerificationChecklist(&b, opts.Capabilities)
 
-	writeInterviewProtocol(&b)
+	// The scaffold interview only helps a project that has nothing scaffolded yet.
+	// Emitting it unconditionally spent 664 tokens — 23% of the file, its largest
+	// section — on onboarding instructions in a guide generated from an existing
+	// verikt.yaml. `verikt init --ai` and the /verikt:init skill still carry it.
+	if opts.CatalogOnly {
+		writeInterviewProtocol(&b)
+	}
 
 	if opts.GuideMode == "prompted" {
 		writeSuggestedPrompts(&b)
@@ -779,6 +785,8 @@ func writeAntiPatterns(b *strings.Builder, arch string) {
 	b.WriteString("- NEVER use `context.Background()` in handlers — propagate `r.Context()` through the call chain\n")
 	b.WriteString("- NEVER concatenate SQL strings (injection risk) — use parameterized queries: `db.QueryContext(ctx, \"SELECT ... WHERE id = $1\", id)`\n")
 	b.WriteString("- NEVER use package-level mutable `var` (data races) — inject state through struct constructors\n")
+	b.WriteString("- NEVER write to a map you only declared — `var m map[K]V` allocates nothing and the write panics: use `m := make(map[K]V)`\n")
+	b.WriteString("- NEVER assert a type without the comma-ok form — `v.(T)` panics on a mismatch: use `v, ok := x.(T)` or a type switch\n")
 
 	if arch == "hexagonal" {
 		b.WriteString("- NEVER import infrastructure from `domain/` — define interfaces in `port/`, implement in `adapter/`\n")

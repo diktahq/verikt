@@ -641,9 +641,9 @@ func TestGuideTokenCompliance(t *testing.T) {
 	words := len(strings.Fields(content))
 	approxTokens := int(float64(words) * 1.3)
 
-	// Guide should stay under 3100 tokens (INV-001 upper bound for rules files is 1500,
-	// but guide is a generated composite with mode instructions, AI interview protocol,
-	// codebase mapping table, and governance checkpoint — so we allow up to 3100).
+	// 3,100 tokens is the composite bound recorded in INV-001: the sentinel targets
+	// (cursor, copilot, windsurf) accept one file, so it carries what the Claude path
+	// splits across several. Per-file rules stay within 500-1,500.
 	if approxTokens > 3100 {
 		t.Errorf("guide output too large: ~%d tokens (%d words); consider trimming", approxTokens, words)
 	}

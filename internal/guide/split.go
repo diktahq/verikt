@@ -119,7 +119,8 @@ func buildIndexContent(opts GenerateOptions) string {
 	// Rule count.
 	writeRuleSummaries(&b, opts.ProjectDir)
 
-	writeInterviewProtocol(&b)
+	// No scaffold interview here: split rules files steer work in an existing
+	// codebase, and this content is onboarding for a project without one.
 
 	if opts.GuideMode == "prompted" {
 		writeSuggestedPrompts(&b)
