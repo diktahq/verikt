@@ -14,10 +14,9 @@ import (
 // Uses the verikt-module testdata so the engine's module-path stripping works.
 // domain/domain.go imports service — a clear hexagonal violation.
 func engineHexagonalComponents() []config.Component {
-	p := "internal/engineclient/experiment/testdata/hexagonal"
 	return []config.Component{
-		{Name: "domain", In: []string{p + "/domain/**"}},
-		{Name: "service", In: []string{p + "/service/**"}},
+		{Name: "domain", In: []string{"domain/**"}},
+		{Name: "service", In: []string{"service/**"}},
 	}
 }
 
@@ -52,7 +51,7 @@ func TestDeps_GoPath(t *testing.T) {
 // Uses repo root as project path with verikt-module testdata so import paths can be resolved.
 func TestDeps_EnginePath(t *testing.T) {
 	client := newEngineClient(t)
-	projectPath := findRepoRoot(t)
+	projectPath := engineHexagonalPath(t)
 	components := engineHexagonalComponents()
 
 	start := time.Now()
@@ -87,7 +86,7 @@ func TestDeps_Parity(t *testing.T) {
 	require.NoError(t, err)
 
 	engineStart := time.Now()
-	engineViolations := checkDependencies(t, client, findRepoRoot(t), engineHexagonalComponents())
+	engineViolations := checkDependencies(t, client, engineHexagonalPath(t), engineHexagonalComponents())
 	engineDuration := time.Since(engineStart)
 
 	t.Logf("=== Dep Parity ===")

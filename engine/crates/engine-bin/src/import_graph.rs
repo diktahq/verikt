@@ -350,7 +350,15 @@ fn collect_go_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
             if crate::grep::is_symlink(&entry) {
                 continue;
             }
-            if name_str.starts_with('.') || name_str == "vendor" || name_str == "target" {
+            // testdata is excluded by the Go toolchain, so go/packages never
+            // reports it and neither should the engine: fixtures deliberately
+            // contain the anti-patterns and violations the detectors look for.
+            // A fixture is still analysable by passing it as the project root.
+            if name_str.starts_with('.')
+                || name_str == "vendor"
+                || name_str == "target"
+                || name_str == "testdata"
+            {
                 continue;
             }
             collect_go_files_recursive(&path, files);
@@ -494,6 +502,48 @@ fn build_digraph(imports: &[Import]) -> DiGraph<String, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Go toolchain ignores testdata, so go/packages never reports it and the
+    /// Go implementation finds nothing there. The engine walked it, so fixtures
+    /// that exist to trigger detectors were reported as real findings — `verikt
+    /// check` on this repository failed on its own test fixtures.
+    ///
+    /// A fixture remains analysable by passing it as the project root, which is how
+    /// the engine deps tests use theirs.
+    #[test]
+    fn collect_go_files_skips_testdata() {
+        let base = std::env::temp_dir().join("verikt-testdata-skip");
+        let project = base.join("project");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(project.join("internal")).unwrap();
+        let fixture = project.join("internal").join("testdata").join("fixture");
+        fs::create_dir_all(&fixture).unwrap();
+        fs::write(
+            project.join("internal").join("real.go"),
+            "package internal\n",
+        )
+        .unwrap();
+        fs::write(fixture.join("bad.go"), "package fixture\n").unwrap();
+
+        let names: Vec<String> = collect_go_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.contains(&"real.go".to_string()), "got {names:?}");
+        assert!(
+            !names.contains(&"bad.go".to_string()),
+            "testdata fixture was analysed: {names:?}"
+        );
+
+        // Passing the fixture itself as the project root still analyses it.
+        let direct: Vec<String> = collect_go_files(&fixture, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(direct, vec!["bad.go".to_string()]);
+
+        let _ = fs::remove_dir_all(&base);
+    }
 
     /// A symlinked directory is not project-local code (INV-002). `is_dir()`
     /// follows symlinks, so the walker used to descend into the link target —
