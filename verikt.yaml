@@ -1,0 +1,79 @@
+# verikt governing itself.
+#
+# Every architecture bug found in this repo so far was found by hand, because
+# verikt had no verikt.yaml and therefore could not run `verikt check` on its own
+# source. The components below describe the structure that already exists — they
+# are derived from the real import graph, not aspirational.
+#
+# Dependencies point inward: contracts are the shared vocabulary and depend on
+# nothing; cli composes everything; cmd only wires up cli (ADR-005).
+language: go
+architecture: layered
+
+components:
+  # The shared vocabulary: provider interfaces, config types, path validation.
+  # Depends on nothing, so it can be imported from anywhere.
+  - name: contracts
+    in:
+      - internal/provider/**
+      - internal/config/**
+      - internal/security/**
+
+  # Reads existing code: package graphs, architecture detection, rule evaluation.
+  # Reaches the engine because proxy rules execute there (internal/rules).
+  - name: analysis
+    in:
+      - internal/analyzer/**
+      - internal/checker/**
+      - internal/rules/**
+    may_depend_on: [contracts, engine]
+
+  # Writes code and guides from templates.
+  - name: generation
+    in:
+      - internal/scaffold/**
+      - internal/guide/**
+      - internal/diff/**
+    may_depend_on: [contracts, analysis]
+
+  # Formats results for humans and machines.
+  - name: presentation
+    in:
+      - internal/output/**
+    may_depend_on: [contracts]
+
+  # The embedded Rust engine boundary: protobuf over stdin/stdout (ADR-006).
+  - name: engine
+    in:
+      - internal/engineclient/**
+    may_depend_on: [contracts]
+
+  # Language providers are embedded Go packages, never external plugins (ADR-001).
+  - name: providers
+    in:
+      - providers/**
+    may_depend_on: [contracts, analysis, generation]
+
+  # Command wiring and terminal interaction.
+  - name: cli
+    in:
+      - internal/cli/**
+    may_depend_on: [contracts, analysis, generation, presentation, engine, providers]
+
+  # Thin main(): no business logic here (ADR-005).
+  - name: entrypoint
+    in:
+      - cmd/**
+    may_depend_on: [cli]
+
+check:
+  exclude:
+    # Scaffolded output captured as experiment evidence, not verikt source. CI
+    # already excludes these from build, vet and test.
+    - experiments/**
+
+rules:
+  functions:
+    max_lines: 50
+    max_params: 5
+    max_return_values: 3
