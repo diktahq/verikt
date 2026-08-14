@@ -1,8 +1,13 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -84,7 +89,11 @@ type KafkaConfig struct {
 
 // MySQLConfig holds MySQL connection configuration.
 type MySQLConfig struct {
-	DSN             string `yaml:"dsn"`
+	// A DSN carries the password, so it has no yaml key: `yaml:"-"` plus the
+	// decoder's KnownFields makes `dsn:` in the config file an unknown field and
+	// the whole file is refused. Documenting that a secret does not belong in a
+	// committed file is advice; this makes it a rule. Set MYSQL_DSN instead.
+	DSN             string `yaml:"-"`
 	MaxOpenConns    int    `yaml:"max_open_conns"`
 	MaxIdleConns    int    `yaml:"max_idle_conns"`
 	ConnMaxLifetime int    `yaml:"conn_max_lifetime"`
@@ -95,7 +104,8 @@ type MySQLConfig struct {
 
 // PostgresConfig holds PostgreSQL connection configuration.
 type PostgresConfig struct {
-	URL      string `yaml:"url"`
+	// Carries the password — see MySQLConfig.DSN. Set POSTGRES_URL instead.
+	URL      string `yaml:"-"`
 	MaxConns int32  `yaml:"max_conns"`
 	MinConns int32  `yaml:"min_conns"`
 }
@@ -106,7 +116,8 @@ type PostgresConfig struct {
 // RedisConfig holds Redis connection configuration.
 type RedisConfig struct {
 	Addr     string `yaml:"addr"`
-	Password string `yaml:"password"`
+	// A credential — see MySQLConfig.DSN. Set REDIS_PASSWORD instead.
+	Password string `yaml:"-"`
 	DB       int    `yaml:"db"`
 }
 {{- end}}
@@ -120,17 +131,195 @@ type MailpitConfig struct {
 }
 {{- end}}
 
-// Load reads configuration from a YAML file.
+// Default returns the configuration a fresh checkout runs with.
+//
+// Defaults live here rather than in struct tags because they have to be applied
+// *before* the file is read. A tag that supplies a default during parsing runs on
+// every parse, so it overwrites the value the file set — which silently ignores
+// the config file for every field that has a default.
+func Default() Config {
+	return Config{
+		App: AppConfig{
+			Name:        "{{.ServiceName}}",
+			Environment: "development",
+			{{- if .HasI18n}}
+			DefaultLocale: "en",
+			{{- end}}
+		},
+		Logger: LoggerConfig{
+			Level:  "info",
+			Format: "json",
+		},
+		{{- if .HasHTTP}}
+		HTTP: HTTPConfig{
+			Port:         8080,
+			ReadTimeout:  30,
+			WriteTimeout: 30,
+		},
+		{{- end}}
+		{{- if .HasGRPC}}
+		GRPC: GRPCConfig{
+			Port: 9090,
+			// Reflection exposes the service schema: development only (INV-003).
+			Reflection: false,
+		},
+		{{- end}}
+		{{- if .HasKafka}}
+		Kafka: KafkaConfig{
+			Brokers:       []string{"localhost:9092"},
+			ConsumerGroup: "{{.ServiceName}}-group",
+		},
+		{{- end}}
+		{{- if .HasMySQL}}
+		MySQL: MySQLConfig{
+			MaxOpenConns: 25,
+			MaxIdleConns: 5,
+		},
+		{{- end}}
+		{{- if .HasPostgreSQL}}
+		Postgres: PostgresConfig{
+			MaxConns: 25,
+			MinConns: 5,
+		},
+		{{- end}}
+		{{- if .HasRedis}}
+		Redis: RedisConfig{
+			Addr: "localhost:6379",
+		},
+		{{- end}}
+		{{- if .HasMailpit}}
+		Mailpit: MailpitConfig{
+			Host: "localhost",
+			Port: 1025,
+			From: "noreply@{{.ServiceName}}.local",
+		},
+		{{- end}}
+	}
+}
+
+// Load builds the configuration from three sources, each overriding the last:
+// defaults in code, then the YAML file, then the environment.
+//
+// The order matters and is deliberate. Defaults are established before the file
+// is read, so a value the file sets is never overwritten by a default it did not
+// ask for. The environment is applied last, because that is where deployment
+// differences and every credential come from.
+//
+// configPath may be empty, in which case defaults and the environment are the
+// only sources — which is how this runs in a container with no config file
+// mounted.
 func Load(configPath string) (*Config, error) {
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("read config file: %w", err)
+	cfg := Default()
+
+	if configPath != "" {
+		if err := loadFile(configPath, &cfg); err != nil {
+			return nil, err
+		}
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
-	}
+	applyEnv(&cfg)
 
 	return &cfg, nil
+}
+
+// loadFile reads configPath over cfg, rejecting keys the Config does not define.
+//
+// KnownFields is what makes the `yaml:"-"` tags on credentials load-bearing: a
+// secret written into the committed config file is an unknown key, so the file
+// is refused with the offending line rather than quietly accepted.
+func loadFile(configPath string, cfg *Config) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("read config file: %w", err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("parse %s: %w", configPath, err)
+	}
+
+	return nil
+}
+
+// applyEnv overrides configuration from the environment.
+//
+// Only variables that are actually set are applied, so an unset variable leaves
+// the file's value alone. That is why each field is read explicitly rather than
+// through default-carrying struct tags: a tag that supplies a default on every
+// parse overwrites whatever the file legitimately set, which silently ignores
+// the config file for any field that has one.
+func applyEnv(cfg *Config) {
+	setString(&cfg.App.Name, "APP_NAME")
+	setString(&cfg.App.Environment, "APP_ENVIRONMENT")
+	{{- if .HasI18n}}
+	setString(&cfg.App.DefaultLocale, "APP_DEFAULT_LOCALE")
+	{{- end}}
+	setString(&cfg.Logger.Level, "LOG_LEVEL")
+	setString(&cfg.Logger.Format, "LOG_FORMAT")
+	{{- if .HasHTTP}}
+	setInt(&cfg.HTTP.Port, "HTTP_PORT")
+	{{- end}}
+	{{- if .HasGRPC}}
+	setInt(&cfg.GRPC.Port, "GRPC_PORT")
+	{{- end}}
+	{{- if .HasKafka}}
+	setStrings(&cfg.Kafka.Brokers, "KAFKA_BROKERS")
+	setString(&cfg.Kafka.ConsumerGroup, "KAFKA_CONSUMER_GROUP")
+	{{- end}}
+	{{- if .HasMySQL}}
+	// Credential: has no yaml key, so this is the only way to supply it.
+	setString(&cfg.MySQL.DSN, "MYSQL_DSN")
+	{{- end}}
+	{{- if .HasPostgreSQL}}
+	// Credential: has no yaml key, so this is the only way to supply it.
+	setString(&cfg.Postgres.URL, "POSTGRES_URL")
+	{{- end}}
+	{{- if .HasRedis}}
+	setString(&cfg.Redis.Addr, "REDIS_ADDR")
+	// Credential: has no yaml key, so this is the only way to supply it.
+	setString(&cfg.Redis.Password, "REDIS_PASSWORD")
+	{{- end}}
+	{{- if .HasMailpit}}
+	setString(&cfg.Mailpit.Host, "MAILPIT_HOST")
+	setInt(&cfg.Mailpit.Port, "MAILPIT_PORT")
+	{{- end}}
+}
+
+// setString assigns the environment variable to target when it is set.
+// An unset variable leaves target untouched; an empty one is a real value.
+func setString(target *string, key string) {
+	if v, ok := os.LookupEnv(key); ok {
+		*target = v
+	}
+}
+
+// setInt assigns the environment variable to target when it is set and numeric.
+// A malformed value leaves target untouched rather than zeroing it.
+func setInt[T ~int | ~int32](target *T, key string) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+	parsed, err := strconv.Atoi(v)
+	if err != nil {
+		return
+	}
+	*target = T(parsed)
+}
+
+// setStrings assigns a comma-separated environment variable to target.
+func setStrings(target *[]string, key string) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	*target = out
 }
