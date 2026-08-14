@@ -585,6 +585,14 @@ func printProxyRuleSection(result *rules.RunResult) {
 	fmt.Printf("\nPROXY RULES (%d valid, %d invalid, %d stale)\n",
 		result.ValidRuleCount(), result.InvalidRuleCount(), result.StaleRuleCount())
 
+	// Name the implementation when it is not the engine. The Go implementation is
+	// a second one that has disagreed with the engine before, so a reader
+	// comparing two runs — or a bug report — needs to know which produced these
+	// findings. The engine is the default and goes unremarked.
+	if result.GrepEngine == rules.GrepEngineGo {
+		fmt.Println("  ! grep rules evaluated by the Go implementation — no engine available for this platform")
+	}
+
 	// A stale rule matched no files and an invalid rule failed to load: neither
 	// ran, so neither passed. Claiming otherwise hides the failure.
 	unrun := result.StaleRuleCount() + result.InvalidRuleCount()

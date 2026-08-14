@@ -239,6 +239,9 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 
 	var violations []Violation
 	seen := map[string]bool{}
+	// WalkDir reports an unreadable directory twice: once as an entry from its
+	// parent's listing, once when descending into it fails. Report it once.
+	reportedUnreadable := map[string]bool{}
 
 	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
 		// Symlinks are never project-local code (INV-002). Tested before the
@@ -246,8 +249,23 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 		// is false even for a link to a directory, so the check that followed the
 		// `!d.IsDir()` return was unreachable and linked directories were skipped
 		// only because WalkDir does not follow them.
+		// A path the walk cannot read is reported, not skipped and not fatal.
+		//
+		// This returned the error, which aborted the walk, and the caller then
+		// discarded every violation found so far — so one unreadable directory
+		// anywhere under the project root turned orphan detection off entirely
+		// and reported a clean tree. A check that could not run must never read
+		// as a check that passed.
+		//
+		// Error severity, because the tool cannot vouch for what it could not
+		// read. A path that is legitimately unreadable can be waived with a
+		// reason via severity_overrides, like any other finding.
 		if err != nil {
-			return err
+			if !reportedUnreadable[path] {
+				reportedUnreadable[path] = true
+				violations = append(violations, unreadablePathViolation(projectPath, path, err))
+			}
+			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
@@ -281,9 +299,15 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 			importPath = modulePath + "/" + relSlash
 		}
 
-		// Check if this dir contains any .go files.
+		// Check if this dir contains any .go files. An unreadable directory is
+		// reported for the same reason as above: not reading it is not the same
+		// as finding nothing in it.
 		entries, err := os.ReadDir(path)
 		if err != nil {
+			if !reportedUnreadable[path] {
+				reportedUnreadable[path] = true
+				violations = append(violations, unreadablePathViolation(projectPath, path, err))
+			}
 			return nil
 		}
 		hasGo := false
@@ -324,9 +348,31 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 		return nil
 	})
 	if err != nil {
-		return nil
+		// Per-entry errors are handled inside the callback, so reaching here means
+		// the walk itself failed — the root is gone or unreadable. Report it
+		// rather than returning an empty, clean-looking result.
+		violations = append(violations, unreadablePathViolation(projectPath, projectPath, err))
 	}
 	return violations
+}
+
+// unreadablePathViolation reports a path the checker could not read.
+//
+// Its own severity is error: analysis did not happen there, and reporting
+// nothing would be indistinguishable from analysis that found nothing. Where a
+// path is legitimately unreadable, severity_overrides can waive it with a reason.
+func unreadablePathViolation(projectPath, path string, cause error) Violation {
+	rel, relErr := filepath.Rel(projectPath, path)
+	if relErr != nil {
+		rel = path
+	}
+	return Violation{
+		Category: "architecture",
+		File:     filepath.ToSlash(rel),
+		Message:  fmt.Sprintf("%s could not be read, so it was not analysed: %v", filepath.ToSlash(rel), cause),
+		Rule:     "unreadable_path",
+		Severity: "error",
+	}
 }
 
 // readModulePath reads the module path from go.mod in projectPath.
