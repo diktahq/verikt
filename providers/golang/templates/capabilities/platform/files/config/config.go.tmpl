@@ -217,7 +217,9 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	applyEnv(&cfg)
+	if err := applyEnv(&cfg); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
 }
@@ -247,10 +249,24 @@ func loadFile(configPath string, cfg *Config) error {
 // Only variables that are actually set are applied, so an unset variable leaves
 // the file's value alone. That is why each field is read explicitly rather than
 // through default-carrying struct tags: a tag that supplies a default on every
-// parse overwrites whatever the file legitimately set, which silently ignores
-// the config file for any field that has one.
-func applyEnv(cfg *Config) {
+// parse overwrites whatever the file legitimately set, which silently ignores the
+// config file for any field that has one.
+//
+// A malformed value is an error, not a shrug. Ignoring one meant
+// `HTTP_PORT=eighty-eighty` left the service on whatever port the file happened
+// to name, with nothing said — an operator typo that silently fails to take
+// effect is the same class of failure as a check that silently passes. All bad
+// values are reported together, so one run tells you about every typo.
+func applyEnv(cfg *Config) error {
+	var errs []error
+	fail := func(err error) {
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	setString(&cfg.App.Name, "APP_NAME")
+	setString(&cfg.App.Version, "APP_VERSION")
 	setString(&cfg.App.Environment, "APP_ENVIRONMENT")
 	{{- if .HasI18n}}
 	setString(&cfg.App.DefaultLocale, "APP_DEFAULT_LOCALE")
@@ -258,32 +274,46 @@ func applyEnv(cfg *Config) {
 	setString(&cfg.Logger.Level, "LOG_LEVEL")
 	setString(&cfg.Logger.Format, "LOG_FORMAT")
 	{{- if .HasHTTP}}
-	setInt(&cfg.HTTP.Port, "HTTP_PORT")
+	fail(setInt(&cfg.HTTP.Port, "HTTP_PORT"))
+	fail(setInt(&cfg.HTTP.ReadTimeout, "HTTP_READ_TIMEOUT"))
+	fail(setInt(&cfg.HTTP.WriteTimeout, "HTTP_WRITE_TIMEOUT"))
 	{{- end}}
 	{{- if .HasGRPC}}
-	setInt(&cfg.GRPC.Port, "GRPC_PORT")
+	fail(setInt(&cfg.GRPC.Port, "GRPC_PORT"))
+	// Reflection exposes the service schema, so enabling it is deliberate (INV-003).
+	fail(setBool(&cfg.GRPC.Reflection, "GRPC_REFLECTION"))
 	{{- end}}
 	{{- if .HasKafka}}
 	setStrings(&cfg.Kafka.Brokers, "KAFKA_BROKERS")
 	setString(&cfg.Kafka.ConsumerGroup, "KAFKA_CONSUMER_GROUP")
+	setStrings(&cfg.Kafka.Topics, "KAFKA_TOPICS")
 	{{- end}}
 	{{- if .HasMySQL}}
 	// Credential: has no yaml key, so this is the only way to supply it.
 	setString(&cfg.MySQL.DSN, "MYSQL_DSN")
+	fail(setInt(&cfg.MySQL.MaxOpenConns, "MYSQL_MAX_OPEN_CONNS"))
+	fail(setInt(&cfg.MySQL.MaxIdleConns, "MYSQL_MAX_IDLE_CONNS"))
+	fail(setInt(&cfg.MySQL.ConnMaxLifetime, "MYSQL_CONN_MAX_LIFETIME"))
 	{{- end}}
 	{{- if .HasPostgreSQL}}
 	// Credential: has no yaml key, so this is the only way to supply it.
 	setString(&cfg.Postgres.URL, "POSTGRES_URL")
+	fail(setInt32(&cfg.Postgres.MaxConns, "POSTGRES_MAX_CONNS"))
+	fail(setInt32(&cfg.Postgres.MinConns, "POSTGRES_MIN_CONNS"))
 	{{- end}}
 	{{- if .HasRedis}}
 	setString(&cfg.Redis.Addr, "REDIS_ADDR")
 	// Credential: has no yaml key, so this is the only way to supply it.
 	setString(&cfg.Redis.Password, "REDIS_PASSWORD")
+	fail(setInt(&cfg.Redis.DB, "REDIS_DB"))
 	{{- end}}
 	{{- if .HasMailpit}}
 	setString(&cfg.Mailpit.Host, "MAILPIT_HOST")
-	setInt(&cfg.Mailpit.Port, "MAILPIT_PORT")
+	fail(setInt(&cfg.Mailpit.Port, "MAILPIT_PORT"))
+	setString(&cfg.Mailpit.From, "MAILPIT_FROM")
 	{{- end}}
+
+	return errors.Join(errs...)
 }
 
 // setString assigns the environment variable to target when it is set.
@@ -294,18 +324,49 @@ func setString(target *string, key string) {
 	}
 }
 
-// setInt assigns the environment variable to target when it is set and numeric.
-// A malformed value leaves target untouched rather than zeroing it.
-func setInt[T ~int | ~int32](target *T, key string) {
+// setInt assigns the environment variable to target when it is set, and reports
+// a value that is not an integer.
+func setInt(target *int, key string) error {
 	v, ok := os.LookupEnv(key)
 	if !ok {
-		return
+		return nil
 	}
 	parsed, err := strconv.Atoi(v)
 	if err != nil {
-		return
+		return fmt.Errorf("%s=%q is not an integer", key, v)
 	}
-	*target = T(parsed)
+	*target = parsed
+	return nil
+}
+
+// setInt32 is setInt for the int32 fields pgx uses for pool sizes.
+func setInt32(target *int32, key string) error {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(v, 10, 32)
+	if err != nil {
+		return fmt.Errorf("%s=%q is not a 32-bit integer", key, v)
+	}
+	*target = int32(parsed)
+	return nil
+}
+
+// setBool assigns the environment variable to target when it is set, and reports
+// a value that is not a boolean. Accepts what strconv.ParseBool accepts:
+// 1, t, T, TRUE, true, True and their false counterparts.
+func setBool(target *bool, key string) error {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return nil
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return fmt.Errorf("%s=%q is not a boolean (use true or false)", key, v)
+	}
+	*target = parsed
+	return nil
 }
 
 // setStrings assigns a comma-separated environment variable to target.

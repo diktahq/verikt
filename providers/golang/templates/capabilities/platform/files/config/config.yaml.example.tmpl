@@ -70,18 +70,61 @@ mailpit:
 
 # Environment variables
 #
-# Any value above can also be set from the environment, which wins over this
-# file. These three have no other source:
+# Every value above can also be set from the environment, which wins over this
+# file. A value that is set but malformed — HTTP_PORT=eighty-eighty — is an error
+# at startup, not a silently ignored setting.
+#
+# These have no other source, because they are credentials:
 #
 {{- if .HasMySQL}}
-#   MYSQL_DSN        root:...@tcp(localhost:3306)/{{.ServiceName}}?parseTime=true
+#   MYSQL_DSN                 root:...@tcp(localhost:3306)/{{.ServiceName}}?parseTime=true
 {{- end}}
 {{- if .HasPostgreSQL}}
-#   POSTGRES_URL     postgres://postgres:...@localhost:5432/{{.ServiceName}}?sslmode=disable
+#   POSTGRES_URL              postgres://postgres:...@localhost:5432/{{.ServiceName}}?sslmode=disable
 {{- end}}
 {{- if .HasRedis}}
-#   REDIS_PASSWORD   the Redis password, empty for a local instance without auth
+#   REDIS_PASSWORD            the Redis password, empty for a local instance without auth
 {{- end}}
 #
-# The rest: APP_NAME, APP_ENVIRONMENT, LOG_LEVEL, LOG_FORMAT{{if .HasHTTP}}, HTTP_PORT{{end}}{{if .HasGRPC}}, GRPC_PORT{{end}}{{if .HasKafka}},
-#   KAFKA_BROKERS (comma-separated), KAFKA_CONSUMER_GROUP{{end}}{{if .HasRedis}}, REDIS_ADDR{{end}}{{if .HasMailpit}}, MAILPIT_HOST, MAILPIT_PORT{{end}}.
+# And the rest, each overriding the value above:
+#
+#   APP_NAME                  service name
+#   APP_VERSION               build version
+#   APP_ENVIRONMENT           development | staging | production
+{{- if .HasI18n}}
+#   APP_DEFAULT_LOCALE        default locale, e.g. en
+{{- end}}
+#   LOG_LEVEL                 debug | info | warn | error
+#   LOG_FORMAT                json | text
+{{- if .HasHTTP}}
+#   HTTP_PORT                 listen port
+#   HTTP_READ_TIMEOUT         seconds
+#   HTTP_WRITE_TIMEOUT        seconds
+{{- end}}
+{{- if .HasGRPC}}
+#   GRPC_PORT                 listen port
+#   GRPC_REFLECTION           true | false — exposes the service schema, development only
+{{- end}}
+{{- if .HasKafka}}
+#   KAFKA_BROKERS             comma-separated host:port list
+#   KAFKA_CONSUMER_GROUP      consumer group id
+#   KAFKA_TOPICS              comma-separated topic list
+{{- end}}
+{{- if .HasMySQL}}
+#   MYSQL_MAX_OPEN_CONNS      pool size
+#   MYSQL_MAX_IDLE_CONNS      idle pool size
+#   MYSQL_CONN_MAX_LIFETIME   seconds
+{{- end}}
+{{- if .HasPostgreSQL}}
+#   POSTGRES_MAX_CONNS        pool size
+#   POSTGRES_MIN_CONNS        minimum idle connections
+{{- end}}
+{{- if .HasRedis}}
+#   REDIS_ADDR                host:port
+#   REDIS_DB                  database number
+{{- end}}
+{{- if .HasMailpit}}
+#   MAILPIT_HOST              SMTP host
+#   MAILPIT_PORT              SMTP port
+#   MAILPIT_FROM              default From address
+{{- end}}
