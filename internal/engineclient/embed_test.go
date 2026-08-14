@@ -10,7 +10,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// requireEmbeddedEngine skips when no engine was embedded for this platform.
+//
+// That is a supported configuration since the embed became a directory lookup: a
+// checkout that has not run `mise run build-engine` has no binary, and extraction
+// has nothing to test.
+func requireEmbeddedEngine(t *testing.T) {
+	t.Helper()
+	if len(engineBinary) == 0 {
+		t.Skip("no engine embedded for this platform — run `mise run build-engine`")
+	}
+}
+
+// A missing engine must be reported as an error, not crash or return a path to
+// nothing: callers fall back to Go-native analysis on this signal.
+func TestEnginePath_ReportsAbsentEngine(t *testing.T) {
+	if len(engineBinary) > 0 {
+		t.Skip("an engine is embedded; this covers the absent case")
+	}
+	if _, err := EnginePath(); err == nil {
+		t.Fatal("expected an error when no engine is embedded")
+	}
+}
+
+// An unknown platform has no embedded binary and must resolve to nil rather than
+// failing to build, which is the whole point of the directory embed.
+func TestEmbeddedEngineFor_UnknownPlatformIsNil(t *testing.T) {
+	if got := embeddedEngineFor("plan9", "riscv64"); got != nil {
+		t.Errorf("expected nil for an unbuilt platform, got %d bytes", len(got))
+	}
+}
+
+// The embed pattern must always match at least one file, or the package does not
+// compile. bin/README.md is committed for exactly that reason.
+func TestEngineFS_ContainsCommittedReadme(t *testing.T) {
+	if _, err := engineFS.ReadFile("bin/README.md"); err != nil {
+		t.Fatalf("bin/README.md must stay committed to satisfy //go:embed bin: %v", err)
+	}
+}
+
 func TestEnginePath_ExtractsAndReturnsExecutable(t *testing.T) {
+	requireEmbeddedEngine(t)
 	path, err := EnginePath()
 	require.NoError(t, err)
 	assert.NotEmpty(t, path)
@@ -38,6 +78,7 @@ func TestEngineCacheKeyIsContentAddressed(t *testing.T) {
 // A cached extraction from an older engine build must not be returned for a
 // different embedded binary.
 func TestEnginePath_UsesDistinctDirPerBuild(t *testing.T) {
+	requireEmbeddedEngine(t)
 	cacheDir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
 	if runtime.GOOS == "darwin" {
@@ -54,6 +95,7 @@ func TestEnginePath_UsesDistinctDirPerBuild(t *testing.T) {
 // Content-addressed caching creates a directory per engine build, so stale ones
 // must be removed or every upgrade leaks another copy of the binary.
 func TestEnginePath_PrunesStaleCacheDirs(t *testing.T) {
+	requireEmbeddedEngine(t)
 	cacheDir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
 	if runtime.GOOS == "darwin" {
@@ -81,6 +123,7 @@ func TestEnginePath_PrunesStaleCacheDirs(t *testing.T) {
 }
 
 func TestEnginePath_IdempotentOnSecondCall(t *testing.T) {
+	requireEmbeddedEngine(t)
 	path1, err := EnginePath()
 	require.NoError(t, err)
 

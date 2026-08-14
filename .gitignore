@@ -3,8 +3,13 @@
 bin/
 *.exe
 
-# Engine binary (built locally, not committed — see internal/engineclient/embed.go)
-internal/engineclient/bin/
+# Engine binaries (build artefacts, not committed — see internal/engineclient/embed.go).
+# The README is committed so the //go:embed pattern always matches a file. The
+# directory has to be re-included first: git cannot re-include a file whose parent
+# directory is excluded, and `bin/` above excludes this one.
+!internal/engineclient/bin/
+internal/engineclient/bin/*
+!internal/engineclient/bin/README.md
 
 # IDE
 .idea/
