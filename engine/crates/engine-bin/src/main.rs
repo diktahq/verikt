@@ -52,9 +52,12 @@ fn handle_request(request: EngineRequest) -> Vec<EngineResponse> {
     }
 }
 
-/// Route a CheckRequest to the appropriate engine handlers and merge responses.
-/// Grep rules and import_graph rules run independently; each returns its own
-/// CheckComplete. The Go client merges them.
+/// Route a CheckRequest to every engine handler.
+///
+/// Each module runs independently and emits its own CheckComplete, so a single
+/// request produces several. The Go client combines them in
+/// `engineclient.mergeCheckComplete` — which for a long time it did not, despite
+/// this comment saying so, and every summary but the last was discarded.
 fn handle_check(req: pb::CheckRequest) -> Vec<EngineResponse> {
     let mut responses = Vec::new();
     responses.extend(grep::handle_check(req.clone()));

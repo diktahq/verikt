@@ -70,7 +70,7 @@ func (c *Client) Check(ctx context.Context, projectPath string, rules []*pb.Rule
 		case *pb.EngineResponse_Finding:
 			result.Findings = append(result.Findings, p.Finding)
 		case *pb.EngineResponse_CheckComplete:
-			result.Summary = p.CheckComplete
+			result.Summary = mergeCheckComplete(result.Summary, p.CheckComplete)
 		case *pb.EngineResponse_Error:
 			return nil, fmt.Errorf("engine error: %s (%s)", p.Error.Message, p.Error.Code)
 		}
@@ -80,6 +80,54 @@ func (c *Client) Check(ctx context.Context, projectPath string, rules []*pb.Rule
 		return nil, fmt.Errorf("engine did not send CheckComplete")
 	}
 	return result, nil
+}
+
+// mergeCheckComplete combines one module's summary into the running total.
+//
+// The engine runs grep, import_graph, antipatterns and metrics for every request
+// and each emits its own CheckComplete — main.rs says so, and its comment claims
+// "The Go client merges them". It did not: this was a plain assignment, so every
+// summary but the last was thrown away.
+//
+// It went unnoticed because each call site sends rules of a single engine type,
+// and grep is emitted first and never early-returns, so the overwrite happened to
+// land on the specialised module's summary. A request carrying grep rules *and*
+// another type lost one module's rule_statuses entirely — and the proxy-rule path
+// reads exactly that field, so those rules would have been reported as absent.
+func mergeCheckComplete(into, next *pb.CheckComplete) *pb.CheckComplete {
+	if next == nil {
+		return into
+	}
+	if into == nil {
+		return next
+	}
+
+	// Findings and time are per-module and additive.
+	into.FindingsTotal += next.FindingsTotal
+	into.FindingsError += next.FindingsError
+	into.FindingsWarning += next.FindingsWarning
+	into.FindingsInfo += next.FindingsInfo
+	into.DurationMs += next.DurationMs
+
+	// Files and rules are the same population seen by several modules, so the
+	// widest view is the honest one — summing would count one file many times.
+	into.FilesChecked = max(into.FilesChecked, next.FilesChecked)
+	into.RulesEvaluated = max(into.RulesEvaluated, next.RulesEvaluated)
+
+	// Each module reports statuses only for the rules it owns, so these do not
+	// overlap; guard against duplicates anyway rather than assume that holds.
+	seen := make(map[string]bool, len(into.RuleStatuses))
+	for _, s := range into.RuleStatuses {
+		seen[s.RuleId] = true
+	}
+	for _, s := range next.RuleStatuses {
+		if !seen[s.RuleId] {
+			seen[s.RuleId] = true
+			into.RuleStatuses = append(into.RuleStatuses, s)
+		}
+	}
+
+	return into
 }
 
 // execute spawns the engine, sends a request, reads all responses, and waits for exit.
