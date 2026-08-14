@@ -1,9 +1,7 @@
 use crate::import_graph::collect_go_files;
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
-    engine_response::Payload,
-    rule::Spec,
-    rule_status::Status,
+    engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -90,48 +88,55 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
                 let line = (fn_node.start_position().row + 1) as u32;
 
                 // Check max_lines.
-                if spec.max_lines > 0 {
-                    if let Some(body) = fn_node.child_by_field_name("body") {
-                        let start_row = body.start_position().row;
-                        let end_row = body.end_position().row;
-                        let lines = (end_row - start_row) as i32;
-                        if lines > spec.max_lines {
-                            rule_matched = true;
-                            findings_total += 1;
-                            tally_severity(rule.severity, &mut findings_error, &mut findings_warning, &mut findings_info);
-                            responses.push(finding_response(
-                                rule,
-                                &rel_file,
-                                line,
-                                &format!(
-                                    "{} — {} lines (max: {})",
-                                    name, lines, spec.max_lines
-                                ),
-                                "function_lines",
-                            ));
-                        }
+                if spec.max_lines > 0
+                    && let Some(body) = fn_node.child_by_field_name("body")
+                {
+                    let start_row = body.start_position().row;
+                    let end_row = body.end_position().row;
+                    let lines = (end_row - start_row) as i32;
+                    if lines > spec.max_lines {
+                        rule_matched = true;
+                        findings_total += 1;
+                        tally_severity(
+                            rule.severity,
+                            &mut findings_error,
+                            &mut findings_warning,
+                            &mut findings_info,
+                        );
+                        responses.push(finding_response(
+                            rule,
+                            &rel_file,
+                            line,
+                            &format!("{} — {} lines (max: {})", name, lines, spec.max_lines),
+                            "function_lines",
+                        ));
                     }
                 }
 
                 // Check max_params.
-                if spec.max_params > 0 {
-                    if let Some(params) = fn_node.child_by_field_name("parameters") {
-                        let param_count = count_parameter_decls(params) as i32;
-                        if param_count > spec.max_params {
-                            rule_matched = true;
-                            findings_total += 1;
-                            tally_severity(rule.severity, &mut findings_error, &mut findings_warning, &mut findings_info);
-                            responses.push(finding_response(
-                                rule,
-                                &rel_file,
-                                line,
-                                &format!(
-                                    "{} — {} params (max: {})",
-                                    name, param_count, spec.max_params
-                                ),
-                                "function_params",
-                            ));
-                        }
+                if spec.max_params > 0
+                    && let Some(params) = fn_node.child_by_field_name("parameters")
+                {
+                    let param_count = count_parameter_decls(params) as i32;
+                    if param_count > spec.max_params {
+                        rule_matched = true;
+                        findings_total += 1;
+                        tally_severity(
+                            rule.severity,
+                            &mut findings_error,
+                            &mut findings_warning,
+                            &mut findings_info,
+                        );
+                        responses.push(finding_response(
+                            rule,
+                            &rel_file,
+                            line,
+                            &format!(
+                                "{} — {} params (max: {})",
+                                name, param_count, spec.max_params
+                            ),
+                            "function_params",
+                        ));
                     }
                 }
 
@@ -141,7 +146,12 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
                     if return_count > spec.max_returns {
                         rule_matched = true;
                         findings_total += 1;
-                        tally_severity(rule.severity, &mut findings_error, &mut findings_warning, &mut findings_info);
+                        tally_severity(
+                            rule.severity,
+                            &mut findings_error,
+                            &mut findings_warning,
+                            &mut findings_info,
+                        );
                         responses.push(finding_response(
                             rule,
                             &rel_file,
@@ -211,7 +221,9 @@ fn count_parameter_decls(params: Node) -> usize {
             Some(n) => n,
             None => continue,
         };
-        if child.kind() == "parameter_declaration" || child.kind() == "variadic_parameter_declaration" {
+        if child.kind() == "parameter_declaration"
+            || child.kind() == "variadic_parameter_declaration"
+        {
             // Count identifiers in this parameter_declaration.
             let names = child
                 .named_children(&mut child.walk())
@@ -232,21 +244,27 @@ fn count_return_values(fn_node: Node, source: &[u8]) -> usize {
 
     match result.kind() {
         // Single unnamed return type: func() int
-        "type_identifier" | "pointer_type_expression" | "qualified_type"
-        | "array_type" | "map_type" | "slice_type" | "channel_type"
-        | "interface_type" | "struct_type" => 1,
+        "type_identifier"
+        | "pointer_type_expression"
+        | "qualified_type"
+        | "array_type"
+        | "map_type"
+        | "slice_type"
+        | "channel_type"
+        | "interface_type"
+        | "struct_type" => 1,
         // Multiple return values wrapped in parameter_list: func() (int, error)
         "parameter_list" => {
             let mut count = 0usize;
             for i in 0..result.named_child_count() {
-                if let Some(child) = result.named_child(i) {
-                    if child.kind() == "parameter_declaration" {
-                        let names = child
-                            .named_children(&mut child.walk())
-                            .filter(|n| n.kind() == "identifier")
-                            .count();
-                        count += names.max(1);
-                    }
+                if let Some(child) = result.named_child(i)
+                    && child.kind() == "parameter_declaration"
+                {
+                    let names = child
+                        .named_children(&mut child.walk())
+                        .filter(|n| n.kind() == "identifier")
+                        .count();
+                    count += names.max(1);
                 }
             }
             count
@@ -268,7 +286,13 @@ fn tally_severity(severity: i32, errors: &mut u32, warnings: &mut u32, infos: &m
     }
 }
 
-fn finding_response(rule: &pb::Rule, file: &str, line: u32, message: &str, match_str: &str) -> EngineResponse {
+fn finding_response(
+    rule: &pb::Rule,
+    file: &str,
+    line: u32,
+    message: &str,
+    match_str: &str,
+) -> EngineResponse {
     EngineResponse {
         payload: Some(Payload::Finding(Finding {
             rule_id: rule.id.clone(),
