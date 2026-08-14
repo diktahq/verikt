@@ -2,7 +2,41 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.2.0] — 2026-08-14
+
+Fixes an external audit of 0.1.0 (8 findings, all reproduced) and the parity gaps that
+surfaced while fixing them — cases where the Go and Rust implementations disagreed and
+nothing detected it. Six breaking changes; read *Upgrading* first.
+
+### Upgrading from 0.1.0
+
+Two changes move the exit code in **opposite** directions, so a pipeline can newly pass
+or newly fail without any change to your code:
+
+- **Warnings no longer fail `verikt check`.** Only error severity does. If you relied on
+  exit 1 for warning-level findings, gate on the JSON instead: `jq -e '[.violations[], .anti_patterns[]] | map(select(.severity=="error")) | length == 0'`.
+- **Error-severity anti-patterns now fail again on the default path.** `sql_concatenation`,
+  `swallowed_error` and `domain_imports_adapter` were reported as warnings whenever the
+  embedded engine resolved. A repository containing them will start failing. These are
+  real findings — SQL injection, discarded errors, inverted dependencies — so fix them or
+  scope them with `severity_overrides` in `verikt.yaml`.
+- **Stale proxy rules now fail.** A rule whose `scope` matched no files was reported as
+  passing. Together with the scope fix, rules that silently matched nothing will start
+  matching — and failing if they find something.
+
+Three need a config or tooling change:
+
+- **JSON consumers:** `anti_patterns[]` keys are lowercase (`severity`, not `Severity`).
+  The document carries `schema_version: 2`; check it before parsing.
+- **Test fixtures and generated code:** the engine no longer analyses `testdata/`,
+  matching the Go toolchain. If you keep analysable code there, pass that directory as the
+  project root. For generated code, use `check.exclude` — it now filters every finding
+  category, not just orphan packages.
+- **Monorepos:** `verikt.yaml` is no longer inherited across a directory with its own
+  `go.mod` or `package.json`. Nested modules need their own config.
+
+Contributors: the website builds with Bun (`bun install` in `website/`), and toolchains
+are pinned in `.mise.toml` — run `mise install`. See `CONTRIBUTING.md`.
 
 ### Changed — breaking
 - **`anti_patterns[]` in `verikt check --output json` uses lowercase keys** (`name`, `category`, `severity`, `file`, `line`, `message`) instead of Go field names. `violations[]` already used lowercase, so consumers had to handle both spellings. The document now carries `schema_version: 2` — check it before parsing.
