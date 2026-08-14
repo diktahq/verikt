@@ -1,9 +1,7 @@
 use crate::import_graph::{collect_go_files, file_to_package};
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
-    engine_response::Payload,
-    rule::Spec,
-    rule_status::Status,
+    engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -48,6 +46,9 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
     let mut all_findings: Vec<DetFinding> = Vec::new();
     // god_packages: aggregate exported symbol counts per directory (dir_rel → count)
     let mut pkg_exports: HashMap<String, u32> = HashMap::new();
+    // Cross-package state for the layering detectors, which cannot be decided
+    // from a single file: package → its direct imports, and every package seen.
+    let mut pkg_imports: HashMap<String, Vec<String>> = HashMap::new();
 
     for file_path in &go_files {
         let content = match fs::read_to_string(file_path) {
@@ -82,7 +83,9 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
         all_findings.extend(detect_init_abuse(root, source, &rel_file));
         all_findings.extend(detect_naked_goroutines(root, source, &rel_file));
         all_findings.extend(detect_swallowed_errors(root, source, &rel_file));
-        all_findings.extend(detect_context_background(root, source, &rel_file, &pkg_path));
+        all_findings.extend(detect_context_background(
+            root, source, &rel_file, &pkg_path,
+        ));
         all_findings.extend(detect_sql_concatenation(root, source, &rel_file));
         all_findings.extend(detect_uuid_v4_as_key(root, source, &rel_file));
         all_findings.extend(detect_fat_handlers(root, source, &rel_file, &pkg_path));
@@ -95,7 +98,17 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
             .unwrap_or_default();
         let count = count_exported_symbols(root, source);
         *pkg_exports.entry(dir_rel).or_default() += count;
+
+        pkg_imports.entry(pkg_path.clone()).or_default().extend(
+            crate::import_graph::extract_imports_from_file(file_path, &content),
+        );
     }
+
+    // Cross-package layering detectors (post-pass: they need every package).
+    all_findings.extend(detect_domain_imports_adapter(&pkg_imports));
+    let mut packages: Vec<String> = pkg_imports.keys().cloned().collect();
+    packages.sort();
+    all_findings.extend(detect_mvc_in_hexagonal(&packages));
 
     // god_package findings (cross-file, per directory).
     for (dir, count) in &pkg_exports {
@@ -195,11 +208,7 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
 
 /// Detect package-level mutable variables (maps, slices, channels, pointers,
 /// composite literals, make() calls). Skips error sentinels and blank identifiers.
-fn detect_global_mutable_state<'a>(
-    root: Node<'a>,
-    source: &[u8],
-    file: &str,
-) -> Vec<DetFinding> {
+fn detect_global_mutable_state<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
     let mut findings = Vec::new();
 
     for i in 0..root.named_child_count() {
@@ -242,10 +251,10 @@ fn detect_global_mutable_state<'a>(
                             is_mutable = true;
                         }
                     }
-                    "composite_literal" | "call_expression" => {
-                        if contains_mutable_value(child, source) {
-                            is_mutable = true;
-                        }
+                    "composite_literal" | "call_expression"
+                        if contains_mutable_value(child, source) =>
+                    {
+                        is_mutable = true;
                     }
                     _ => {}
                 }
@@ -253,10 +262,7 @@ fn detect_global_mutable_state<'a>(
 
             if is_mutable {
                 for (name, line) in names {
-                    if name == "_"
-                        || name.starts_with("Err")
-                        || name.starts_with("err")
-                    {
+                    if name == "_" || name.starts_with("Err") || name.starts_with("err") {
                         continue;
                     }
                     findings.push(DetFinding {
@@ -329,6 +335,109 @@ fn detect_init_abuse<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFi
     findings
 }
 
+/// True if the package is part of the domain (inner) layer.
+///
+/// Mirrors `checker.isDomainPackage`. Package paths here are project-relative
+/// directories ("internal/domain"), while the Go side matches full import paths,
+/// so a leading separator is added before testing: without it a top-level
+/// `domain/` package would not match "/domain".
+fn is_domain_package(pkg_path: &str) -> bool {
+    let normalized = format!("/{pkg_path}");
+    normalized.contains("/domain") || normalized.contains("/core") || normalized.contains("/port")
+}
+
+/// True if the import refers to an adapter (outer) layer package.
+///
+/// Mirrors `checker.isAdapterPackage`. Imports are full import paths, so they are
+/// tested as-is.
+fn is_adapter_package(import_path: &str) -> bool {
+    [
+        "/adapter",
+        "/infrastructure",
+        "/infra",
+        "/handler",
+        "/repository",
+        "/controller",
+    ]
+    .iter()
+    .any(|marker| import_path.contains(marker))
+}
+
+/// Domain packages that import adapter packages — the dependency rule inverted.
+///
+/// Cross-package, so it runs as a post-pass over every file's imports rather than
+/// per file. Mirrors `checker.detectDomainImportingAdapters`; without it the
+/// engine path silently skipped this check entirely.
+fn detect_domain_imports_adapter(pkg_imports: &HashMap<String, Vec<String>>) -> Vec<DetFinding> {
+    let mut pkgs: Vec<&String> = pkg_imports.keys().collect();
+    pkgs.sort();
+
+    let mut findings = Vec::new();
+    for pkg in pkgs {
+        if !is_domain_package(pkg) {
+            continue;
+        }
+        let mut imports = pkg_imports[pkg].clone();
+        imports.sort();
+        imports.dedup();
+        for import in imports {
+            if is_adapter_package(&import) {
+                findings.push(DetFinding {
+                    detector: "domain_imports_adapter",
+                    file: pkg.clone(),
+                    line: 0,
+                    message: format!(
+                        "domain package imports adapter {import:?} — dependencies must point inward"
+                    ),
+                });
+            }
+        }
+    }
+    findings
+}
+
+/// MVC-shaped packages (models/, controllers/, views/) inside a project that also
+/// shows hexagonal markers. Mirrors `checker.detectMVCInHexagonal`.
+fn detect_mvc_in_hexagonal(packages: &[String]) -> Vec<DetFinding> {
+    let has_hexagonal = packages.iter().any(|p| {
+        let normalized = format!("/{p}");
+        normalized.contains("/domain") || normalized.contains("/port")
+    });
+    if !has_hexagonal {
+        return Vec::new();
+    }
+
+    let mut mvc: Vec<&String> = packages
+        .iter()
+        .filter(|p| {
+            let last = p.rsplit('/').next().unwrap_or(p);
+            matches!(last, "models" | "controllers" | "views")
+        })
+        .collect();
+    mvc.sort();
+
+    mvc.into_iter()
+        .map(|pkg| DetFinding {
+            detector: "mvc_in_hexagonal",
+            file: pkg.clone(),
+            line: 0,
+            message: format!(
+                "MVC package {pkg:?} in hexagonal project — use domain/port/adapter layers instead"
+            ),
+        })
+        .collect()
+}
+
+/// Remedy reported for a bare `go` statement.
+///
+/// Duplicated as `checker.nakedGoroutineMessage` in the Go fallback
+/// implementation (internal/checker/antipatterns.go); the Go test
+/// `TestNakedGoroutineMessageMatchesEngine` reads this file and fails if the two
+/// drift apart.
+const NAKED_GOROUTINE_MESSAGE: &str = "bare 'go' statement — an unrecovered panic in the goroutine body crashes the whole process \
+(errgroup propagates panics, it does not contain them): add a recover boundary inside the goroutine \
+and tie its lifetime to a context";
+
 /// Detect bare `go` statements outside of server lifecycle methods
 /// (Run, Start, ListenAndServe, Serve). Naked goroutines lack error propagation
 /// and lifecycle management.
@@ -351,13 +460,10 @@ fn detect_naked_goroutines<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec
             None => continue,
         };
         let name = node_text(name_node, source);
-        if server_methods.contains(&name) {
-            if let Some(body) = node.child_by_field_name("body") {
-                excluded_ranges.push((
-                    body.start_position().row,
-                    body.end_position().row,
-                ));
-            }
+        if server_methods.contains(&name)
+            && let Some(body) = node.child_by_field_name("body")
+        {
+            excluded_ranges.push((body.start_position().row, body.end_position().row));
         }
     }
 
@@ -375,9 +481,11 @@ fn detect_naked_goroutines<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec
                 detector: "naked_goroutine",
                 file: file.to_string(),
                 line: line_of(go_node),
-                message:
-                    "bare 'go' statement — use errgroup.Go() or structured concurrency for error propagation and lifecycle"
-                        .to_string(),
+                // Must name the panic consequence: recommending errgroup alone
+                // pointed at no working fix, because errgroup propagates panics
+                // rather than recovering them. Kept in sync with
+                // checker.nakedGoroutineMessage on the Go side.
+                message: NAKED_GOROUTINE_MESSAGE.to_string(),
             });
         }
     }
@@ -421,22 +529,22 @@ fn detect_swallowed_errors<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec
             });
         } else if stmt_count == 1 {
             // Check for `return nil`
-            if let Some(stmt) = body.named_child(0) {
-                if stmt.kind() == "return_statement" {
-                    let mut exprs: Vec<Node> = Vec::new();
-                    collect_nodes(stmt, "nil", &mut exprs);
-                    // count named children of return_statement (the expressions)
-                    let ret_exprs: Vec<_> = stmt.named_children(&mut stmt.walk()).collect();
-                    if ret_exprs.len() == 1 && ret_exprs[0].kind() == "nil" {
-                        findings.push(DetFinding {
-                            detector: "swallowed_error",
-                            file: file.to_string(),
-                            line: line_of(if_node),
-                            message:
-                                "error checked but return nil discards it — propagate or wrap the error"
-                                    .to_string(),
-                        });
-                    }
+            if let Some(stmt) = body.named_child(0)
+                && stmt.kind() == "return_statement"
+            {
+                let mut exprs: Vec<Node> = Vec::new();
+                collect_nodes(stmt, "nil", &mut exprs);
+                // count named children of return_statement (the expressions)
+                let ret_exprs: Vec<_> = stmt.named_children(&mut stmt.walk()).collect();
+                if ret_exprs.len() == 1 && ret_exprs[0].kind() == "nil" {
+                    findings.push(DetFinding {
+                        detector: "swallowed_error",
+                        file: file.to_string(),
+                        line: line_of(if_node),
+                        message:
+                            "error checked but return nil discards it — propagate or wrap the error"
+                                .to_string(),
+                    });
                 }
             }
         }
@@ -480,14 +588,14 @@ fn detect_context_background<'a>(
                 }
             }
         }
-        if is_init_call(fn_text) {
-            if let Some(args) = call.child_by_field_name("arguments") {
-                let mut inner_calls: Vec<Node> = Vec::new();
-                collect_nodes(args, "call_expression", &mut inner_calls);
-                for inner in inner_calls {
-                    if is_context_background_call(inner, source) {
-                        skip_lines.insert(inner.start_position().row);
-                    }
+        if is_init_call(fn_text)
+            && let Some(args) = call.child_by_field_name("arguments")
+        {
+            let mut inner_calls: Vec<Node> = Vec::new();
+            collect_nodes(args, "call_expression", &mut inner_calls);
+            for inner in inner_calls {
+                if is_context_background_call(inner, source) {
+                    skip_lines.insert(inner.start_position().row);
                 }
             }
         }
@@ -518,7 +626,9 @@ fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Ve
     let mut bin_nodes: Vec<Node> = Vec::new();
     collect_nodes(root, "binary_expression", &mut bin_nodes);
 
-    let sql_keywords = ["SELECT ", "INSERT ", "UPDATE ", "DELETE ", "FROM ", "WHERE ", "JOIN "];
+    let sql_keywords = [
+        "SELECT ", "INSERT ", "UPDATE ", "DELETE ", "FROM ", "WHERE ", "JOIN ",
+    ];
     let mut findings = Vec::new();
 
     for bin_node in bin_nodes {
@@ -532,14 +642,12 @@ fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Ve
         }
 
         // Skip if parent is also a binary + expression (we'll catch the root).
-        if let Some(parent) = bin_node.parent() {
-            if parent.kind() == "binary_expression" {
-                if let Some(pop) = parent.child_by_field_name("operator") {
-                    if node_text(pop, source) == "+" {
-                        continue;
-                    }
-                }
-            }
+        if let Some(parent) = bin_node.parent()
+            && parent.kind() == "binary_expression"
+            && let Some(pop) = parent.child_by_field_name("operator")
+            && node_text(pop, source) == "+"
+        {
+            continue;
         }
 
         if binary_contains_sql_keyword(bin_node, source, &sql_keywords) {
@@ -660,14 +768,12 @@ fn count_exported_symbols(root: Node, source: &[u8]) -> u32 {
             }
             "type_declaration" => {
                 for j in 0..node.named_child_count() {
-                    if let Some(spec) = node.named_child(j) {
-                        if spec.kind() == "type_spec" {
-                            if let Some(name) = spec.child_by_field_name("name") {
-                                if is_exported(node_text(name, source)) {
-                                    count += 1;
-                                }
-                            }
-                        }
+                    if let Some(spec) = node.named_child(j)
+                        && spec.kind() == "type_spec"
+                        && let Some(name) = spec.child_by_field_name("name")
+                        && is_exported(node_text(name, source))
+                    {
+                        count += 1;
                     }
                 }
             }
@@ -696,10 +802,11 @@ fn count_exported_in_decl(decl: Node, source: &[u8], count: &mut u32) {
             continue;
         }
         for j in 0..spec.named_child_count() {
-            if let Some(child) = spec.named_child(j) {
-                if child.kind() == "identifier" && is_exported(node_text(child, source)) {
-                    *count += 1;
-                }
+            if let Some(child) = spec.named_child(j)
+                && child.kind() == "identifier"
+                && is_exported(node_text(child, source))
+            {
+                *count += 1;
             }
         }
     }
@@ -746,10 +853,10 @@ fn contains_mutable_value(node: Node, source: &[u8]) -> bool {
         }
         "expression_list" => {
             for i in 0..node.named_child_count() {
-                if let Some(child) = node.named_child(i) {
-                    if contains_mutable_value(child, source) {
-                        return true;
-                    }
+                if let Some(child) = node.named_child(i)
+                    && contains_mutable_value(child, source)
+                {
+                    return true;
                 }
             }
             false
@@ -870,7 +977,14 @@ fn is_handler_package(pkg_path: &str) -> bool {
 
 fn is_init_call(fn_name: &str) -> bool {
     const INIT_SUFFIXES: &[&str] = &[
-        "Fetch", "Connect", "Open", "Dial", "Init", "Listen", "Setup", "Configure",
+        "Fetch",
+        "Connect",
+        "Open",
+        "Dial",
+        "Init",
+        "Listen",
+        "Setup",
+        "Configure",
     ];
     INIT_SUFFIXES
         .iter()
@@ -886,8 +1000,8 @@ fn binary_contains_sql_keyword(node: Node, source: &[u8], keywords: &[&str]) -> 
         "binary_expression" => {
             let left = node.child_by_field_name("left");
             let right = node.child_by_field_name("right");
-            left.map_or(false, |n| binary_contains_sql_keyword(n, source, keywords))
-                || right.map_or(false, |n| binary_contains_sql_keyword(n, source, keywords))
+            left.is_some_and(|n| binary_contains_sql_keyword(n, source, keywords))
+                || right.is_some_and(|n| binary_contains_sql_keyword(n, source, keywords))
         }
         _ => false,
     }
@@ -909,4 +1023,73 @@ fn is_http_handler_func(node: Node, source: &[u8]) -> bool {
 
     let params_text = node_text(params, source);
     params_text.contains("ResponseWriter") && params_text.contains("Request")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// These two detectors existed only in the Go implementation, so the engine
+    /// path — the default — silently skipped both. Package paths are
+    /// project-relative here, unlike the Go side's full import paths.
+    #[test]
+    fn domain_importing_adapter_is_reported() {
+        let mut pkg_imports = HashMap::new();
+        pkg_imports.insert(
+            "internal/domain".to_string(),
+            vec![
+                "fmt".to_string(),
+                "example.com/app/adapter/postgres".to_string(),
+            ],
+        );
+        pkg_imports.insert(
+            "internal/adapter/postgres".to_string(),
+            vec!["example.com/app/internal/domain".to_string()],
+        );
+
+        let findings = detect_domain_imports_adapter(&pkg_imports);
+
+        assert_eq!(findings.len(), 1, "only the inward violation is a finding");
+        assert_eq!(findings[0].detector, "domain_imports_adapter");
+        assert_eq!(findings[0].file, "internal/domain");
+        assert!(findings[0].message.contains("adapter/postgres"));
+    }
+
+    /// A top-level `domain/` package has no leading slash in its relative path;
+    /// testing it without normalising would miss the violation entirely.
+    #[test]
+    fn top_level_domain_package_is_recognised() {
+        assert!(is_domain_package("domain"));
+        assert!(is_domain_package("internal/core"));
+        assert!(is_domain_package("internal/port/http"));
+        assert!(!is_domain_package("internal/adapter"));
+    }
+
+    #[test]
+    fn adapter_imports_are_recognised() {
+        assert!(is_adapter_package("example.com/app/adapter/db"));
+        assert!(is_adapter_package("example.com/app/internal/repository"));
+        assert!(is_adapter_package("example.com/app/infra/queue"));
+        assert!(!is_adapter_package("fmt"));
+        assert!(!is_adapter_package("example.com/app/internal/domain"));
+    }
+
+    #[test]
+    fn mvc_packages_flagged_only_in_hexagonal_projects() {
+        let hexagonal = vec![
+            "internal/domain".to_string(),
+            "internal/controllers".to_string(),
+            "internal/models".to_string(),
+        ];
+        let findings = detect_mvc_in_hexagonal(&hexagonal);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].detector, "mvc_in_hexagonal");
+
+        // No hexagonal markers: an MVC project is not a violation of itself.
+        let mvc_only = vec![
+            "internal/controllers".to_string(),
+            "internal/models".to_string(),
+        ];
+        assert!(detect_mvc_in_hexagonal(&mvc_only).is_empty());
+    }
 }
