@@ -197,6 +197,44 @@ func TestLayerViolations_DeclaredComponentNameWinsOverGuessedLayer(t *testing.T)
 	}
 }
 
+// An unclaimed package must not inherit a declared component's rules just because
+// the guessed layer name happens to match that component's name.
+//
+// This is the mirror of the precedence bug above: there, a declared component lost
+// its rules because the guess differed from its name; here, a package in no component
+// gains rules because the guess equals one. Both come from mixing an inferred name
+// with declared names in the same lookup.
+func TestLayerViolations_InferredLayerDoesNotBorrowComponentRules(t *testing.T) {
+	// A component is *named* "domain" but claims a differently-named directory, so
+	// nothing it declares covers internal/domain/legacy. guessLayer still infers
+	// "domain" for that package, which is the collision under test. (Component
+	// patterns match by substring, so the claimed directory must not contain
+	// "domain".)
+	components := []config.Component{
+		{Name: "domain", In: []string{"core-model/**"}},
+		{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"domain"}},
+	}
+	unclaimed := "example.com/app/internal/domain/legacy"
+	if guessLayer(unclaimed) != "domain" {
+		t.Fatalf("precondition: guessLayer(%q) = %q, want domain", unclaimed, guessLayer(unclaimed))
+	}
+
+	// The unclaimed package imports an adapter. If it had borrowed the domain
+	// component's rules this would be reported as "domain must not depend on
+	// adapters" — a rule that was never declared for it.
+	violations := LayerViolations(layerGraph(unclaimed, "example.com/app/adapter/db"), components)
+
+	assert.Empty(t, violations, "an unclaimed package must not be enforced as a component")
+}
+
+// With no components declared at all, guessLayer remains the only signal — that is
+// the analyze path, and it must keep working.
+func TestLayerViolations_InferredLayersStillUsedWithoutComponents(t *testing.T) {
+	layers := mapLayers(layerGraph("example.com/app/adapter/db", "example.com/app/domain/order"), nil)
+	assert.Equal(t, "adapters", layers["example.com/app/adapter/db"])
+	assert.Equal(t, "domain", layers["example.com/app/domain/order"])
+}
+
 // A package no component claims has no rules to enforce. It is not reported
 // here — checker.detectOrphanPackages already reports it as an error-severity
 // orphan_package, so emitting a second finding would double-report one cause.

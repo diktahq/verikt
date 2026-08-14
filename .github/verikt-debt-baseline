@@ -9,4 +9,8 @@
 # The self-check CI job fails if the count rises above this number. Lower it when
 # you pay debt down; raising it should be a deliberate, reviewed decision with a
 # reason in the commit message.
-78
+#
+# Measure with a freshly embedded engine — `mise run build-engine`, then rebuild the CLI
+# — or the number reflects whatever engine your binary happens to carry rather than the
+# one CI builds.
+73

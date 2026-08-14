@@ -220,14 +220,15 @@ fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
+        // A symlink of any kind points outside the project boundary and is never
+        // project-local code (INV-002). Tested before the directory check because
+        // `is_dir()` follows symlinks.
+        if is_symlink(&entry) {
+            continue;
+        }
+
         // Skip hidden dirs, vendor, node_modules, target, .git
         if path.is_dir() {
-            // Symlinked directories point outside the project boundary and must
-            // never be treated as project-local code (INV-002). `is_dir()`
-            // follows symlinks, so the link itself has to be tested separately.
-            if is_symlink(&entry) {
-                continue;
-            }
             if name_str.starts_with('.')
                 || name_str == "vendor"
                 || name_str == "node_modules"

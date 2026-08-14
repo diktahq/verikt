@@ -155,12 +155,13 @@ fn collect_ts_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
+        // Any symlink is outside the project boundary (INV-002); tested before the
+        // directory check because `is_dir()` follows symlinks.
+        if crate::grep::is_symlink(&entry) {
+            continue;
+        }
+
         if path.is_dir() {
-            // Symlinked directories are outside the project boundary (INV-002);
-            // `is_dir()` follows symlinks, so test the entry itself.
-            if crate::grep::is_symlink(&entry) {
-                continue;
-            }
             if matches!(
                 name_str.as_ref(),
                 "node_modules" | "dist" | "build" | "target" | ".git" | "testdata"

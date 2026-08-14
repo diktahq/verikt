@@ -41,6 +41,23 @@ func TestDetectTestingIgnoresRunCallsOutsideTests(t *testing.T) {
 	assert.Empty(t, result.Testing.Evidence)
 }
 
+// A BDD library imported by production code is not evidence of a BDD test suite.
+// The signal was taken from pkg.Imports and merged with the test-file signal, so any
+// project with a test file plus a ginkgo import in a helper was labelled bdd.
+func TestDetectTestingIgnoresBDDImportsOutsideTests(t *testing.T) {
+	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedImports | packages.NeedSyntax | packages.NeedFiles, Dir: filepath.Join("..", "testdata", "hexagonal")}
+	pkgs, err := packages.Load(cfg, "./...")
+	require.NoError(t, err)
+
+	// The hexagonal fixture has a test file using t.Run and no BDD libraries, so the
+	// pattern must be table-driven. It would flip to bdd if a production import could
+	// contribute to the signal.
+	result := DetectConventions(pkgs)
+
+	assert.Equal(t, "table-driven", result.Testing.Pattern)
+	assert.NotContains(t, result.Testing.Evidence, "found BDD test libraries")
+}
+
 func TestDetectConventions(t *testing.T) {
 	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedImports | packages.NeedSyntax | packages.NeedFiles, Dir: filepath.Join("..", "testdata", "hexagonal")}
 	pkgs, err := packages.Load(cfg, "./...")

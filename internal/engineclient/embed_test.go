@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,20 +107,31 @@ func TestEnginePath_PrunesStaleCacheDirs(t *testing.T) {
 	require.NoError(t, err)
 	veriktCache := filepath.Dir(filepath.Dir(path))
 
-	// Simulate directories left by earlier engine builds, plus an unrelated one.
+	// Simulate a directory left by an earlier engine build, aged past the threshold,
+	// plus a recent one and an unrelated one.
 	stale := filepath.Join(veriktCache, "engine-0000000000000000")
+	recent := filepath.Join(veriktCache, "engine-1111111111111111")
 	unrelated := filepath.Join(veriktCache, "templates")
 	require.NoError(t, os.MkdirAll(stale, 0o755))
+	require.NoError(t, os.MkdirAll(recent, 0o755))
 	require.NoError(t, os.MkdirAll(unrelated, 0o755))
+
+	old := time.Now().Add(-48 * time.Hour)
+	require.NoError(t, os.Chtimes(stale, old, old))
 
 	// Force a re-extraction so pruning runs.
 	require.NoError(t, os.Remove(path))
 	_, err = EnginePath()
 	require.NoError(t, err)
 
-	assert.NoDirExists(t, stale, "stale engine cache should be removed")
+	assert.NoDirExists(t, stale, "an aged engine cache should be removed")
 	assert.FileExists(t, path, "current engine must survive pruning")
 	assert.DirExists(t, unrelated, "non-engine cache entries must be left alone")
+
+	// A concurrent process running an older verikt may have just resolved this path
+	// and not yet executed it. Deleting it would break that process, so recent
+	// directories are left alone.
+	assert.DirExists(t, recent, "a recently used engine cache must not be pruned")
 }
 
 func TestEnginePath_IdempotentOnSecondCall(t *testing.T) {
