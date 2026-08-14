@@ -22,6 +22,17 @@ func NewRouter(logger *slog.Logger) chi.Router {
 	r := chi.NewRouter()
 
 	// Standard middleware stack.
+	//
+	// Recoverer is registered first, making it the outermost handler: a panic in
+	// any middleware below it — tracing, logging, security headers — is turned
+	// into a 500 instead of taking the whole process down. Middleware registered
+	// before Recoverer is outside its recover boundary, so ordering here is a
+	// resilience property, not a style preference.
+	//
+	// Trade-off: because Recoverer writes the 500 above the request logger, the
+	// access log records status 0 for a panicking request. Recoverer logs the
+	// panic and its stack trace, so the failure is still observable.
+	r.Use(middleware.Recoverer)
 	{{- if .HasRequestID}}
 	r.Use(RequestID)
 	{{- else}}
@@ -31,7 +42,6 @@ func NewRouter(logger *slog.Logger) chi.Router {
 	r.Use(otelhttp.NewMiddleware("{{.ServiceName}}"))
 	r.Use(NewRequestLogger(logger))
 	r.Use(SecurityHeaders)
-	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(defaultWriteTimeout))
 	{{- if .HasCORS}}
 	r.Use(CORS(DefaultCORSConfig()))
