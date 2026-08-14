@@ -19,20 +19,24 @@ Two further changes move the exit code in **opposite** directions, so a pipeline
 pass or newly fail without any change to your code:
 
 - **Warnings no longer fail `verikt check`.** Only error severity does. If you relied on
-  exit 1 for warning-level findings, gate on the JSON instead: `jq -e '[.violations[], .anti_patterns[]] | map(select(.severity=="error")) | length == 0'`.
+  exit 1 for warning-level findings, gate on the JSON instead:
+  `jq -e '[(.violations // [])[], (.anti_patterns // [])[]] | map(select(.severity=="error")) | length == 0'`.
 - **Error-severity anti-patterns now fail again on the default path.** `sql_concatenation`,
   `swallowed_error` and `domain_imports_adapter` were reported as warnings whenever the
   embedded engine resolved. A repository containing them will start failing. These are
-  real findings — SQL injection, discarded errors, inverted dependencies — so fix them or
-  scope them with `severity_overrides` in `verikt.yaml`.
-- **Stale proxy rules now fail.** A rule whose `scope` matched no files was reported as
-  passing. Together with the scope fix, rules that silently matched nothing will start
-  matching — and failing if they find something.
+  real findings — SQL injection, discarded errors, inverted dependencies — so fix them, or
+  waive them with `severity_overrides` in `verikt.yaml`, which now covers anti-patterns
+  and requires a reason.
+- **Stale proxy rules now fail.** A rule whose `scope` matched no files never ran, so
+  reporting it as a pass hid broken rules. A rule that ran across its scope and found
+  nothing is passing — that case was briefly reported as stale during development and is
+  covered by a Go/Rust parity test.
 
 Three need a config or tooling change:
 
 - **JSON consumers:** `anti_patterns[]` keys are lowercase (`severity`, not `Severity`).
-  The document carries `schema_version: 2`; check it before parsing.
+  The document carries `schema_version: 2`; check it before parsing. `violations[]`,
+  `anti_patterns[]` and the new `waived[]` are always present and always arrays.
 - **Test fixtures and generated code:** the engine no longer analyses `testdata/`,
   matching the Go toolchain. If you keep analysable code there, pass that directory as the
   project root. For generated code, use `check.exclude` — it now filters every finding
@@ -59,7 +63,17 @@ are pinned in `.mise.toml` — run `mise install`. See `CONTRIBUTING.md`.
 - **Warnings are no longer printed with the failure marker.** A run that exits 0 could display dozens of apparent failures, because every finding used `✗` regardless of severity.
 - **Proxy rules ran against nothing under the default `--path .`** — scope expansion matched the walk root against its own hidden-directory guard and skipped the whole tree, so every rule reported "scope matches 0 files". They only worked with an absolute `--path`.
 - **Declared components are enforced again.** Dependency checks keyed `may_depend_on` on a guessed layer name rather than the declared component, so a component named `adapter` where the heuristic guesses `adapters` was exempt from all dependency enforcement (ADR-010).
-- **The exit code matches the documentation.** `--help` promised "error-severity violations" while the gate counted warnings, including anti-patterns exempt from `severity_overrides`: one warning-level `god_package` made exit 0 unreachable with no waiver.
+- **The exit code matches the documentation.** `--help` promised "error-severity violations" while the gate counted warnings: one warning-level `god_package` made exit 0 unreachable.
+- **`--output json` returns the exit code it reports.** The JSON branch returned as soon as it had printed, so a document reading `"result": "fail"` still exited 0 — and every CI example writes JSON to a file, so a pipeline gating on the exit code passed on exactly the runs that found something.
+- **`violations[]` and `anti_patterns[]` are always present in the JSON output.** They carried `omitempty`, so a passing project emitted neither key and the gate published in these notes died with `jq: Cannot iterate over null` — on precisely the projects that were clean. verikt's own debt ratchet had the same defect.
+- **`severity_overrides` applies to anti-patterns.** They were the one exempt category, while these notes told users to scope newly-failing findings with exactly that key. A waiver requires a reason, and waived findings are still reported — in a `WAIVED` section and the `waived[]` array — so an accepted decision is visible without blocking, rather than silently absent.
+- **`orphan_package` findings carry a project-relative path.** `file` held the full import path, so no path-scoped feature could ever match one: `check.exclude`, `severity_overrides` paths, `--staged` and `--diff` all silently skipped them.
+- **`check.exclude` matches whole path segments.** `gen/**` compiled to `strings.Contains(path, "gen")`, so excluding generated code also dropped every finding under `internal/agent` — SQL injection included — and still printed "All checks pass". Use `**/testdata/**` for "at any depth"; a bare `testdata/**` is anchored at the project root.
+- **`domain_imports_adapter` matches below the module root.** It searched raw import paths for `/infra`, `/adapter` and similar, so every first-party import in a module named `github.com/acme/infra-tools` was an error-severity finding, and a third-party `handler-kit` counted as the project's handler layer.
+- **`nil_map_write` tracks allocation per function.** One `m := make(map…)` anywhere in a file suppressed every nil-map bug elsewhere in it, and `m`, `result` and `cache` are exactly the names that repeat. Grouped declarations (`var a, b map[string]int`) now register every name.
+- **`type_assertion_without_ok` counts both sides of an assignment.** `s, n = v.(string), g()` has two targets but is not the comma-ok form, and was treated as safe.
+- **TypeScript excludes test files** (INV-004), which only the Go path had received: `src/domain/user.test.ts` importing `../infrastructure/db` failed the check. The `--staged` file list applied no exclusions at all.
+- **A TypeScript engine failure is no longer reported as a pass.** The error was discarded, so on the one language where the engine is optional a crash was indistinguishable from a clean project.
 - **Symlinked directories are skipped in the Rust engine** (INV-002). None of its three walkers checked, and `path.is_dir()` follows symlinks, so it read files outside the project and could recurse forever on a cycle.
 - **Test files no longer produce dependency violations.** The engine's import graph included `_test.go` files while the Go implementation excludes them, so a test crossing a layer boundary to exercise it was reported as a violation.
 - **`verikt add --dry-run` exists.** It was documented in `--help` but never registered, so the documented example failed with `unknown flag`.

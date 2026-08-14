@@ -102,27 +102,14 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 	var checkerResult *checker.CheckResult
 	var ruleResult *rules.RunResult
 	var decisionViolations []checker.DecisionViolation
-	hasErrors := false
 
-	// If --decisions is set, only check decisions.
+	// If --decisions is set, only check decisions. It reports through the same
+	// path as every other mode: this branch carried its own copy of the render
+	// and exit logic, including the JSON branch that returned before the exit
+	// code was applied.
 	if flags.decisions {
 		decisionViolations = checker.CheckDecisions(cfg.Decisions)
-		for _, v := range decisionViolations {
-			if v.Severity == "error" {
-				hasErrors = true
-				break
-			}
-		}
-
-		if opts.Output == "json" {
-			return printCombinedJSON(checkerResult, ruleResult, decisionViolations, hasErrors)
-		}
-		printCombinedTerminal(checkerResult, ruleResult, decisionViolations, cfg, flags)
-
-		if hasErrors {
-			return ErrCheckFailed
-		}
-		return nil
+		return reportCheck(checkOutcome{Decisions: decisionViolations}, cfg, flags, opts.Output)
 	}
 
 	// Build engine client once — used for both anti-pattern detection and proxy rules.
@@ -180,24 +167,57 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 		}
 	}
 
-	// Apply path-scoped severity overrides after all file filtering.
-	// Anti-patterns are excluded from overrides (hardcoded safety rules).
+	// Apply path-scoped severity overrides after all file filtering, so the
+	// verdict is computed from the final results.
 	applySeverityOverrides(checkerResult, ruleResult, cfg.SeverityOverrides)
 
-	// Compute hasErrors from final (possibly filtered, overridden) results.
-	// Every category gates on error severity — see hasBlockingFindings.
-	hasErrors = hasBlockingFindings(checkerResult) || ruleResultBlocks(ruleResult)
-	for _, v := range decisionViolations {
+	return reportCheck(checkOutcome{
+		Checker:   checkerResult,
+		Rules:     ruleResult,
+		Decisions: decisionViolations,
+	}, cfg, flags, opts.Output)
+}
+
+// checkOutcome bundles the three result sets a single check produces. They are
+// always carried together, and passing them separately pushed every function
+// that handles them past the project's own parameter limit.
+type checkOutcome struct {
+	Checker   *checker.CheckResult
+	Rules     *rules.RunResult
+	Decisions []checker.DecisionViolation
+}
+
+// blocks reports whether anything in the outcome should fail the build: an
+// error-severity finding in any category, or a proxy rule that could not run.
+func (o checkOutcome) blocks() bool {
+	if hasBlockingFindings(o.Checker) || ruleResultBlocks(o.Rules) {
+		return true
+	}
+	for _, v := range o.Decisions {
 		if v.Severity == "error" {
-			hasErrors = true
-			break
+			return true
 		}
 	}
+	return false
+}
 
-	if opts.Output == "json" {
-		return printCombinedJSON(checkerResult, ruleResult, decisionViolations, hasErrors)
+// reportCheck renders the outcome in the requested format and returns
+// ErrCheckFailed if anything blocking was found.
+//
+// The verdict is independent of the format. The JSON branch used to return as
+// soon as it had printed, so a document saying "result": "fail" still exited 0 —
+// and every CI example writes JSON to a file, so a pipeline gating on the exit
+// code passed on precisely the runs that found something.
+func reportCheck(outcome checkOutcome, cfg *config.VeriktConfig, flags *checkFlags, output string) error {
+	hasErrors := outcome.blocks()
+
+	if output == "json" {
+		if err := printCombinedJSON(outcome.Checker, outcome.Rules, outcome.Decisions, hasErrors); err != nil {
+			return err
+		}
+	} else {
+		printCombinedTerminal(outcome.Checker, outcome.Rules, outcome.Decisions, cfg, flags)
 	}
-	printCombinedTerminal(checkerResult, ruleResult, decisionViolations, cfg, flags)
 
 	if hasErrors {
 		return ErrCheckFailed
@@ -309,23 +329,38 @@ func filterRuleResultByFiles(r *rules.RunResult, files []string) *rules.RunResul
 	return filtered
 }
 
-// applySeverityOverrides applies path-scoped severity overrides to checker and proxy rule violations.
-// Anti-pattern violations are intentionally excluded — they are hardcoded safety rules.
+// applySeverityOverrides applies path-scoped severity overrides to checker and
+// proxy rule violations, including anti-patterns.
+//
+// Anti-patterns used to be exempt, on the reasoning that a safety rule you can
+// switch off is not a safety rule. The cost was higher than the benefit: a
+// reviewed and accepted finding — a domain package that is deliberately the
+// project's vocabulary, a legacy path scheduled for removal — stayed on the
+// report forever, and a section that always contains something nobody will act
+// on stops being read. The docs had already promised this worked.
+//
+// Two things keep the safety property. A waiver requires a reason (enforced in
+// config validation), so the justification lands in the diff where a reviewer
+// sees it; and a waived finding is still reported, in its own section, rather
+// than disappearing.
 func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, overrides config.SeverityOverrides) {
 	if len(overrides) == 0 {
 		return
 	}
 
 	if checkerResult != nil {
+		var waived []checker.WaivedFinding
 		checkerResult.DependencyViolations = filterViolationsBySeverity(
-			checkerResult.DependencyViolations, overrides, func(v checker.Violation) string { return v.Rule })
+			checkerResult.DependencyViolations, overrides, "dependency", &waived)
 		checkerResult.StructureViolations = filterViolationsBySeverity(
-			checkerResult.StructureViolations, overrides, func(v checker.Violation) string { return v.Rule })
+			checkerResult.StructureViolations, overrides, "structure", &waived)
 		checkerResult.FunctionViolations = filterViolationsBySeverity(
-			checkerResult.FunctionViolations, overrides, func(v checker.Violation) string { return v.Rule })
+			checkerResult.FunctionViolations, overrides, "function", &waived)
 		checkerResult.NamingViolations = filterViolationsBySeverity(
-			checkerResult.NamingViolations, overrides, func(v checker.Violation) string { return v.Rule })
-		// AntiPatternViolations are NOT filtered — hardcoded safety rules.
+			checkerResult.NamingViolations, overrides, "naming", &waived)
+		checkerResult.AntiPatternViolations = filterAntiPatternsBySeverity(
+			checkerResult.AntiPatternViolations, overrides, &waived)
+		checkerResult.WaivedFindings = append(checkerResult.WaivedFindings, waived...)
 		checkerResult.RecalculateMetrics()
 	}
 
@@ -344,18 +379,50 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 	}
 }
 
-// filterViolationsBySeverity removes violations whose resolved severity is "ignore"
-// and updates the severity of remaining violations based on configured overrides.
-func filterViolationsBySeverity(violations []checker.Violation, overrides config.SeverityOverrides, keyFn func(checker.Violation) string) []checker.Violation {
+// filterViolationsBySeverity moves violations whose resolved severity is "ignore"
+// into waived and updates the severity of the rest from the configured overrides.
+func filterViolationsBySeverity(violations []checker.Violation, overrides config.SeverityOverrides, category string, waived *[]checker.WaivedFinding) []checker.Violation {
 	filtered := make([]checker.Violation, 0, len(violations))
 	for _, v := range violations {
-		resolved := config.ResolveSeverity(overrides, keyFn(v), v.File, v.Severity)
+		resolved := config.ResolveSeverity(overrides, v.Rule, v.File, v.Severity)
 		mapped := config.MapSeverity(resolved)
 		if mapped == "ignore" {
+			*waived = append(*waived, checker.WaivedFinding{
+				Category: category,
+				Rule:     v.Rule,
+				File:     v.File,
+				Line:     v.Line,
+				Message:  v.Message,
+				Reason:   config.ResolveReason(overrides, v.Rule, v.File),
+			})
 			continue
 		}
 		v.Severity = mapped
 		filtered = append(filtered, v)
+	}
+	return filtered
+}
+
+// filterAntiPatternsBySeverity is the anti-pattern counterpart: the override key
+// is the detector name.
+func filterAntiPatternsBySeverity(findings []checker.AntiPattern, overrides config.SeverityOverrides, waived *[]checker.WaivedFinding) []checker.AntiPattern {
+	filtered := make([]checker.AntiPattern, 0, len(findings))
+	for _, ap := range findings {
+		resolved := config.ResolveSeverity(overrides, ap.Name, ap.File, ap.Severity)
+		mapped := config.MapSeverity(resolved)
+		if mapped == "ignore" {
+			*waived = append(*waived, checker.WaivedFinding{
+				Category: "anti_pattern",
+				Rule:     ap.Name,
+				File:     ap.File,
+				Line:     ap.Line,
+				Message:  ap.Message,
+				Reason:   config.ResolveReason(overrides, ap.Name, ap.File),
+			})
+			continue
+		}
+		ap.Severity = mapped
+		filtered = append(filtered, ap)
 	}
 	return filtered
 }
@@ -401,6 +468,7 @@ func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules
 		printViolationSection("FUNCTION VIOLATIONS", checkerResult.FunctionViolations)
 		printViolationSection("NAMING VIOLATIONS", checkerResult.NamingViolations)
 		printAntiPatternSection("ANTI-PATTERN VIOLATIONS", checkerResult.AntiPatternViolations)
+		printWaivedSection(checkerResult.WaivedFindings)
 	}
 
 	// Proxy rule results.
@@ -552,6 +620,28 @@ func printViolationSection(title string, violations []checker.Violation) {
 	}
 }
 
+// printWaivedSection lists findings a severity_overrides entry set to "ignore",
+// with the reason its author gave.
+//
+// Waived findings are shown rather than dropped: a decision someone made and
+// justified is worth seeing, and a report that hides it looks identical to one
+// where the detector never ran. They do not affect the exit code.
+func printWaivedSection(waived []checker.WaivedFinding) {
+	if len(waived) == 0 {
+		return
+	}
+
+	fmt.Printf("\nWAIVED (%d)\n", len(waived))
+	for _, w := range waived {
+		location := w.File
+		if w.Line > 0 {
+			location = fmt.Sprintf("%s:%d", w.File, w.Line)
+		}
+		fmt.Printf("  ○ [%s] %s %s\n", w.Rule, location, w.Message)
+		fmt.Printf("    reason: %s\n", w.Reason)
+	}
+}
+
 func printAntiPatternSection(title string, violations []checker.AntiPattern) {
 	fmt.Printf("\n%s (%d)\n", title, len(violations))
 	if len(violations) == 0 {
@@ -620,20 +710,42 @@ func printDecisionGateSection(decisions []config.Decision, violations []checker.
 	}
 }
 
-func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, hasErrors bool) error {
-	// SchemaVersion 2 gave anti_patterns[] the same lowercase json keys as
-	// violations[]. Version 1 (unversioned) emitted Go field names there
-	// (Severity, File, Message, Name, Line), so consumers of the old output need
-	// updating — check schema_version before parsing.
-	type jsonOutput struct {
-		SchemaVersion      int                         `json:"schema_version"`
-		Result             string                      `json:"result"`
-		Violations         []checker.Violation         `json:"violations,omitempty"`
-		AntiPatterns       []checker.AntiPattern       `json:"anti_patterns,omitempty"`
-		ProxyRules         *rules.RunResult            `json:"proxy_rules,omitempty"`
-		DecisionViolations []checker.DecisionViolation `json:"decision_violations,omitempty"`
-	}
+// allViolationsOf flattens the four violation categories into the single
+// violations[] array the JSON document exposes.
+func allViolationsOf(result *checker.CheckResult) []checker.Violation {
+	all := make([]checker.Violation, 0,
+		len(result.DependencyViolations)+len(result.StructureViolations)+
+			len(result.FunctionViolations)+len(result.NamingViolations))
+	all = append(all, result.DependencyViolations...)
+	all = append(all, result.StructureViolations...)
+	all = append(all, result.FunctionViolations...)
+	all = append(all, result.NamingViolations...)
+	return all
+}
 
+// jsonOutput is the shape of `verikt check --output json`.
+//
+// SchemaVersion 2 gave anti_patterns[] the same lowercase json keys as
+// violations[]. Version 1 (unversioned) emitted Go field names there (Severity,
+// File, Message, Name, Line), so consumers of the old output need updating —
+// check schema_version before parsing.
+//
+// violations[], anti_patterns[] and waived[] are always present, and always
+// arrays. The first two carried omitempty, so a passing project emitted neither
+// key and the gate published in the docs — jq '[.violations[], .anti_patterns[]]
+// | …' — failed with "Cannot iterate over null" on exactly the projects that had
+// nothing wrong with them.
+type jsonOutput struct {
+	SchemaVersion      int                         `json:"schema_version"`
+	Result             string                      `json:"result"`
+	Violations         []checker.Violation         `json:"violations"`
+	AntiPatterns       []checker.AntiPattern       `json:"anti_patterns"`
+	Waived             []checker.WaivedFinding     `json:"waived"`
+	ProxyRules         *rules.RunResult            `json:"proxy_rules,omitempty"`
+	DecisionViolations []checker.DecisionViolation `json:"decision_violations,omitempty"`
+}
+
+func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, hasErrors bool) error {
 	status := "pass"
 	if hasErrors {
 		status = "fail"
@@ -642,18 +754,21 @@ func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.Run
 	out := jsonOutput{
 		SchemaVersion:      checkJSONSchemaVersion,
 		Result:             status,
+		Violations:         []checker.Violation{},
+		AntiPatterns:       []checker.AntiPattern{},
+		Waived:             []checker.WaivedFinding{},
 		ProxyRules:         ruleResult,
 		DecisionViolations: decisionViolations,
 	}
 
 	if checkerResult != nil {
-		allViolations := make([]checker.Violation, 0, len(checkerResult.DependencyViolations)+len(checkerResult.StructureViolations)+len(checkerResult.FunctionViolations)+len(checkerResult.NamingViolations))
-		allViolations = append(allViolations, checkerResult.DependencyViolations...)
-		allViolations = append(allViolations, checkerResult.StructureViolations...)
-		allViolations = append(allViolations, checkerResult.FunctionViolations...)
-		allViolations = append(allViolations, checkerResult.NamingViolations...)
-		out.Violations = allViolations
-		out.AntiPatterns = checkerResult.AntiPatternViolations
+		out.Violations = allViolationsOf(checkerResult)
+		if checkerResult.AntiPatternViolations != nil {
+			out.AntiPatterns = checkerResult.AntiPatternViolations
+		}
+		if checkerResult.WaivedFindings != nil {
+			out.Waived = checkerResult.WaivedFindings
+		}
 	}
 
 	data, err := json.MarshalIndent(out, "", "  ")

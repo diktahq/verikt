@@ -136,12 +136,20 @@ jobs:
       # freely, and rising above the baseline fails the job.
       - name: Ratchet warning-level debt
         run: |
-          /tmp/verikt check --output json > verikt-check.json
+          # `check` exits non-zero on error-severity findings, which the previous
+          # step already gates on; this step only measures, so the exit code is
+          # deliberately ignored under `set -e`.
+          /tmp/verikt check --output json > verikt-check.json || true
           baseline=$(grep -vE '^\s*#|^\s*$' .github/verikt-debt-baseline | head -1)
-          current=$(jq '[.violations[], .anti_patterns[]] | map(select(.severity != "error")) | length' verikt-check.json)
+          # `// []` guards the arrays: they were omitempty, so this job crashed
+          # with "Cannot iterate over null" the moment the repo reached zero
+          # findings — the state the ratchet exists to drive toward. The arrays
+          # are always present now; the guard stays so the snippet is safe to
+          # copy against any verikt version.
+          current=$(jq '[(.violations // [])[], (.anti_patterns // [])[]] | map(select(.severity != "error")) | length' verikt-check.json)
 
           jq -r '
-            [.violations[], .anti_patterns[]]
+            [(.violations // [])[], (.anti_patterns // [])[]]
             | group_by(.severity)
             | map("  \(length)\t\(.[0].severity)")
             | .[]

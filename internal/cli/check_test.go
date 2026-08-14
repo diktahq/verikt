@@ -329,13 +329,26 @@ func TestCheckPrintCombinedJSON_PassNoChecker(t *testing.T) {
 	require.NoError(t, json.Unmarshal(parsed["result"], &result))
 	assert.Equal(t, "pass", result)
 
-	// No violations key when checker is nil.
-	_, hasViolations := parsed["violations"]
-	assert.False(t, hasViolations)
+	// violations[] is present and empty even with no checker result. It carried
+	// omitempty, so the key vanished on a passing project and the gate published
+	// in the docs — jq '[.violations[], .anti_patterns[]] | ...' — died with
+	// "Cannot iterate over null" on exactly the projects that were clean.
+	assertEmptyJSONArray(t, parsed, "violations")
+	assertEmptyJSONArray(t, parsed, "anti_patterns")
 
 	// proxy_rules should be present.
 	_, hasProxy := parsed["proxy_rules"]
 	assert.True(t, hasProxy)
+}
+
+// assertEmptyJSONArray fails unless key holds [] — not null, and not absent.
+func assertEmptyJSONArray(t *testing.T, parsed map[string]json.RawMessage, key string) {
+	t.Helper()
+	raw, ok := parsed[key]
+	require.True(t, ok, "%s must always be present so consumers can iterate it", key)
+	var items []json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &items), "%s must be an array, got %s", key, raw)
+	assert.Empty(t, items)
 }
 
 func TestCheckPrintCombinedJSON_FailWithCheckerViolations(t *testing.T) {
@@ -556,9 +569,11 @@ func TestCheckPrintCombinedJSON_NilBothResults(t *testing.T) {
 	require.NoError(t, json.Unmarshal(parsed["result"], &result))
 	assert.Equal(t, "pass", result)
 
-	// No violations or proxy_rules keys when both are nil.
-	_, hasViolations := parsed["violations"]
-	assert.False(t, hasViolations)
+	// The finding arrays are always iterable; proxy_rules is genuinely absent
+	// when no rules ran, which is a different statement from "no findings".
+	assertEmptyJSONArray(t, parsed, "violations")
+	assertEmptyJSONArray(t, parsed, "anti_patterns")
+	assertEmptyJSONArray(t, parsed, "waived")
 	_, hasProxy := parsed["proxy_rules"]
 	assert.False(t, hasProxy)
 }

@@ -34,6 +34,24 @@ type CheckResult struct {
 	ComponentsTotal       int           `json:"components_total"`
 	RulesChecked          int           `json:"rules_checked"`
 	RulesPassing          int           `json:"rules_passing"`
+
+	// WaivedFindings are findings a severity_overrides entry set to "ignore".
+	// They are held apart from the violation lists so counts, metrics and the
+	// exit code see only what still blocks, and reported separately so a waiver
+	// remains visible with the reason its author gave. A finding that vanishes
+	// entirely is indistinguishable from one that was never detected.
+	WaivedFindings []WaivedFinding `json:"waived_findings,omitempty"`
+}
+
+// WaivedFinding is a violation or detector finding that a severity_overrides
+// entry set to "ignore", together with the reason that entry gave.
+type WaivedFinding struct {
+	Category string `json:"category"` // "dependency", "structure", "function", "naming", "anti_pattern"
+	Rule     string `json:"rule"`     // violation.Rule or antipattern.Name
+	File     string `json:"file"`
+	Line     int    `json:"line,omitempty"`
+	Message  string `json:"message"`
+	Reason   string `json:"reason"`
 }
 
 // TotalViolations returns the count of all violations.
@@ -282,9 +300,15 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 			}
 		}
 		if !matched {
+			// File is the project-relative directory, not the import path. Every
+			// path-scoped feature — check.exclude, severity_overrides paths, the
+			// --diff and --staged filters — matches File against project-relative
+			// globs, so an import path here could never be matched by any of them:
+			// a waiver for "internal/stray/**" silently did nothing. The import
+			// path is still named in the message.
 			violations = append(violations, Violation{
 				Category: "architecture",
-				File:     importPath,
+				File:     relSlash,
 				Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", importPath, cfg.Architecture),
 				Rule:     "orphan_package",
 				Severity: "error",
