@@ -2,11 +2,6 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
-
-### Changed — breaking
-- **`verikt check` requires the embedded Rust engine for Go projects.** The Go duplicates of the engine's analysis are deleted (~960 lines). ADR-006 specified the Rust engine as a "clean replacement of `go/ast` analysis (no fallback — clean cut)"; the migration never removed the Go side, so both shipped and disagreed silently — most seriously by downgrading a SQL-injection finding to a warning. Where the engine is unavailable, `check` now fails with a clear error instead of producing different findings. `verikt analyze` is unaffected: its architecture and convention detection are Go-side and have no Rust equivalent (ADR-011).
-
 ## [0.2.0] — 2026-08-14
 
 Fixes an external audit of 0.1.0 (8 findings, all reproduced) and the parity gaps that
@@ -15,8 +10,13 @@ nothing detected it. Six breaking changes; read *Upgrading* first.
 
 ### Upgrading from 0.1.0
 
-Two changes move the exit code in **opposite** directions, so a pipeline can newly pass
-or newly fail without any change to your code:
+**`verikt check` now requires the engine.** For Go projects it fails with
+`analysis engine unavailable` where it previously fell back to a second, divergent
+implementation. Released binaries embed the engine, so this affects builds from source
+that skipped the engine build — see `CONTRIBUTING.md`.
+
+Two further changes move the exit code in **opposite** directions, so a pipeline can newly
+pass or newly fail without any change to your code:
 
 - **Warnings no longer fail `verikt check`.** Only error severity does. If you relied on
   exit 1 for warning-level findings, gate on the JSON instead: `jq -e '[.violations[], .anti_patterns[]] | map(select(.severity=="error")) | length == 0'`.
@@ -44,6 +44,7 @@ Contributors: the website builds with Bun (`bun install` in `website/`), and too
 are pinned in `.mise.toml` — run `mise install`. See `CONTRIBUTING.md`.
 
 ### Changed — breaking
+- **`verikt check` requires the embedded Rust engine for Go projects.** The Go duplicates of the engine's analysis are deleted (~960 lines). ADR-006 specified the Rust engine as a "clean replacement of `go/ast` analysis (no fallback — clean cut)"; the migration never removed the Go side, so both shipped and disagreed silently — most seriously by downgrading a SQL-injection finding to a warning. Where the engine is unavailable, `check` now fails with a clear error instead of producing different findings. `verikt analyze` is unaffected: its architecture and convention detection are Go-side and have no Rust equivalent (ADR-011).
 - **`anti_patterns[]` in `verikt check --output json` uses lowercase keys** (`name`, `category`, `severity`, `file`, `line`, `message`) instead of Go field names. `violations[]` already used lowercase, so consumers had to handle both spellings. The document now carries `schema_version: 2` — check it before parsing.
 - **Anti-pattern severities are honoured on the Rust engine path.** The engine stamped every finding with the requesting rule's severity, so `sql_concatenation`, `swallowed_error` and `domain_imports_adapter` were warnings on the default path and errors on the Go fallback. They are errors again: a SQL-injection finding now fails CI where it previously did not.
 - **A stale proxy rule fails `verikt check`.** A rule whose `scope` matched no files never ran, so reporting it as a pass hid broken rules. With the scope fix below, rules that silently matched nothing will start failing.
@@ -71,6 +72,7 @@ are pinned in `.mise.toml` — run `mise install`. See `CONTRIBUTING.md`.
 - **`verikt setup` honours `CLAUDE_CONFIG_DIR`**, so Claude Code profile aliases no longer detect and write to the wrong profile.
 
 ### Added
+- **A `verify` target in the `makefile` capability** — build, test, lint and `verikt check` behind one command a developer and a CI pipeline can both invoke.
 - **`nil_map_write` and `type_assertion_without_ok` detectors** — the two ways idiomatic-looking Go panics in production. Implemented in both Go and the Rust engine; `nil_map_write` is an error, `type_assertion_without_ok` a warning.
 - **verikt governs itself** — a root `verikt.yaml` describing the real component structure, and a CI job that runs `verikt check` on this repository. It gates on error severity, and ratchets the warning-level count against `.github/verikt-debt-baseline` so debt cannot grow unnoticed.
 - **`domain_imports_adapter` and `mvc_in_hexagonal` in the Rust engine.** Both were Go-only, and engine results replace the Go ones wholesale, so neither architecture detector ran for anyone whose engine resolved. Tests now fail when detector sets or severities diverge between the two implementations.
