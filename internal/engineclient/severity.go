@@ -22,8 +22,10 @@ var detectorSeverities = map[string]string{
 	"init_side_effects":             "warning",
 	"mvc_in_hexagonal":              "warning",
 	"naked_goroutine":               "warning",
+	"nil_map_write":                 "error",
 	"sql_concatenation":             "error",
 	"swallowed_error":               "error",
+	"type_assertion_without_ok":     "warning",
 	"uuid_v4_as_key":                "info",
 }
 

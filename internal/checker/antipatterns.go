@@ -65,6 +65,8 @@ func checkAntiPatterns(pkgs []*packages.Package, projectPath string) []AntiPatte
 			results = append(results, detectSQLConcatenation(file, fset, relPath)...)
 			results = append(results, detectUUIDv4AsKey(file, fset, relPath)...)
 			results = append(results, detectFatHandlers(file, fset, relPath, pkg.PkgPath)...)
+			results = append(results, detectNilMapWrite(file, fset, relPath)...)
+			results = append(results, detectTypeAssertionWithoutOK(file, fset, relPath)...)
 		}
 	}
 

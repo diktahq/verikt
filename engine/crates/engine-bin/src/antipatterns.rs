@@ -10,6 +10,7 @@ use std::time::Instant;
 use tree_sitter::{Node, Parser};
 
 /// A pre-rule-assignment finding from a specific detector.
+#[derive(Debug)]
 struct DetFinding {
     detector: &'static str,
     file: String,
@@ -89,6 +90,8 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
         all_findings.extend(detect_sql_concatenation(root, source, &rel_file));
         all_findings.extend(detect_uuid_v4_as_key(root, source, &rel_file));
         all_findings.extend(detect_fat_handlers(root, source, &rel_file, &pkg_path));
+        all_findings.extend(detect_nil_map_write(root, source, &rel_file));
+        all_findings.extend(detect_type_assertion_without_ok(root, source, &rel_file));
 
         // Exported symbol count for god_package detection.
         let dir_rel = file_path
@@ -426,6 +429,131 @@ fn detect_mvc_in_hexagonal(packages: &[String]) -> Vec<DetFinding> {
             ),
         })
         .collect()
+}
+
+/// Writes to a map that was declared but never allocated.
+///
+/// `var m map[K]V` allocates nothing and writing to a nil map panics at runtime,
+/// unlike reading one which returns the zero value. Mirrors
+/// `checker.detectNilMapWrite`: a map assigned to as a whole anywhere in the file
+/// is treated as allocated, so only never-assigned declarations are reported.
+fn detect_nil_map_write<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
+    let mut declared: Vec<String> = Vec::new();
+    let mut assigned: Vec<String> = Vec::new();
+
+    let mut specs: Vec<Node> = Vec::new();
+    collect_nodes(root, "var_spec", &mut specs);
+    for spec in specs {
+        let has_value = spec.child_by_field_name("value").is_some();
+        let is_map = spec
+            .child_by_field_name("type")
+            .map(|t| t.kind() == "map_type")
+            .unwrap_or(false);
+        if is_map
+            && !has_value
+            && let Some(name) = spec.child_by_field_name("name")
+        {
+            declared.push(node_text(name, source).to_string());
+        }
+    }
+
+    let mut assignments: Vec<Node> = Vec::new();
+    collect_nodes(root, "assignment_statement", &mut assignments);
+    let mut short_decls: Vec<Node> = Vec::new();
+    collect_nodes(root, "short_var_declaration", &mut short_decls);
+
+    for node in assignments.iter().chain(short_decls.iter()) {
+        if let Some(left) = node.child_by_field_name("left") {
+            for i in 0..left.named_child_count() {
+                if let Some(target) = left.named_child(i)
+                    && target.kind() == "identifier"
+                {
+                    assigned.push(node_text(target, source).to_string());
+                }
+            }
+        }
+    }
+
+    let mut findings = Vec::new();
+    for node in &assignments {
+        let left = match node.child_by_field_name("left") {
+            Some(l) => l,
+            None => continue,
+        };
+        for i in 0..left.named_child_count() {
+            let target = match left.named_child(i) {
+                Some(t) if t.kind() == "index_expression" => t,
+                _ => continue,
+            };
+            let operand = match target.child_by_field_name("operand") {
+                Some(o) => o,
+                None => continue,
+            };
+            let name = node_text(operand, source).to_string();
+            if !declared.contains(&name) || assigned.contains(&name) {
+                continue;
+            }
+            findings.push(DetFinding {
+                detector: "nil_map_write",
+                file: file.to_string(),
+                line: line_of(target),
+                message: format!(
+                    "write to map {name} which is declared but never allocated — writing to a nil map panics; allocate it with make() first"
+                ),
+            });
+        }
+    }
+    findings
+}
+
+/// Single-value type assertions, which panic when the value holds another type.
+///
+/// The two-value form and a type switch both make the failure explicit. Mirrors
+/// `checker.detectTypeAssertionWithoutOK`, including its warning severity: asserting
+/// without the comma-ok form is legitimate when the type is genuinely known.
+fn detect_type_assertion_without_ok<'a>(
+    root: Node<'a>,
+    _source: &[u8],
+    file: &str,
+) -> Vec<DetFinding> {
+    let mut assertions: Vec<Node> = Vec::new();
+    collect_nodes(root, "type_assertion_expression", &mut assertions);
+
+    let mut findings = Vec::new();
+    for assertion in assertions {
+        if assertion_has_ok_binding(assertion) {
+            continue;
+        }
+        findings.push(DetFinding {
+            detector: "type_assertion_without_ok",
+            file: file.to_string(),
+            line: line_of(assertion),
+            message:
+                "type assertion without the comma-ok form panics if the type differs — use `v, ok := x.(T)` or a type switch"
+                    .to_string(),
+        });
+    }
+    findings
+}
+
+/// True if the assertion is the right-hand side of a two-value assignment, which is
+/// the safe `v, ok := x.(T)` form.
+fn assertion_has_ok_binding(assertion: Node) -> bool {
+    let mut node = assertion;
+    // The assertion sits inside an expression_list on the right of the assignment.
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            "assignment_statement" | "short_var_declaration" => {
+                return parent
+                    .child_by_field_name("left")
+                    .map(|left| left.named_child_count() >= 2)
+                    .unwrap_or(false);
+            }
+            "expression_list" => node = parent,
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Remedy reported for a bare `go` statement.
@@ -1028,6 +1156,97 @@ fn is_http_handler_func(node: Node, source: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse(src: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_go::LANGUAGE.into())
+            .expect("tree-sitter-go language load failed");
+        parser.parse(src, None).expect("parse failed")
+    }
+
+    /// Mirrors checker.TestDetectNilMapWrite: writing to a map that was declared
+    /// but never allocated panics at runtime.
+    #[test]
+    fn nil_map_write_cases() {
+        let cases: Vec<(&str, &str, usize)> = vec![
+            (
+                "declared without make, then written",
+                "package foo\nfunc f() {\n\tvar m map[string]int\n\tm[\"k\"] = 1\n}\n",
+                1,
+            ),
+            (
+                "package-level map written from a function",
+                "package foo\nvar registry map[string]int\nfunc r() { registry[\"a\"] = 1 }\n",
+                1,
+            ),
+            (
+                "make before the write is safe",
+                "package foo\nfunc f() {\n\tvar m map[string]int\n\tm = make(map[string]int)\n\tm[\"k\"] = 1\n}\n",
+                0,
+            ),
+            (
+                "composite literal is safe",
+                "package foo\nfunc f() {\n\tm := map[string]int{}\n\tm[\"k\"] = 1\n}\n",
+                0,
+            ),
+            (
+                "reading a nil map is legal",
+                "package foo\nfunc f() int {\n\tvar m map[string]int\n\treturn m[\"k\"]\n}\n",
+                0,
+            ),
+            (
+                "slice index write is not a map",
+                "package foo\nfunc f() {\n\tvar s []int\n\ts[0] = 1\n}\n",
+                0,
+            ),
+        ];
+
+        for (name, src, want) in cases {
+            let tree = parse(src);
+            let findings = detect_nil_map_write(tree.root_node(), src.as_bytes(), "test.go");
+            assert_eq!(findings.len(), want, "{name}: got {findings:?}");
+        }
+    }
+
+    /// Mirrors checker.TestDetectTypeAssertionWithoutOK.
+    #[test]
+    fn type_assertion_without_ok_cases() {
+        let cases: Vec<(&str, &str, usize)> = vec![
+            (
+                "single-value assertion",
+                "package foo\nfunc f(v any) string { return v.(string) }\n",
+                1,
+            ),
+            (
+                "two-value form is safe",
+                "package foo\nfunc f(v any) string {\n\ts, ok := v.(string)\n\tif !ok { return \"\" }\n\treturn s\n}\n",
+                0,
+            ),
+            (
+                "type switch is safe",
+                "package foo\nfunc f(v any) string {\n\tswitch t := v.(type) {\n\tcase string:\n\t\treturn t\n\t}\n\treturn \"\"\n}\n",
+                0,
+            ),
+            (
+                "assertion as a call argument",
+                "package foo\nfunc g(s string) {}\nfunc f(v any) { g(v.(string)) }\n",
+                1,
+            ),
+            (
+                "two-value assignment to existing variables is safe",
+                "package foo\nfunc f(v any) {\n\tvar s string\n\tvar ok bool\n\ts, ok = v.(string)\n\t_, _ = s, ok\n}\n",
+                0,
+            ),
+        ];
+
+        for (name, src, want) in cases {
+            let tree = parse(src);
+            let findings =
+                detect_type_assertion_without_ok(tree.root_node(), src.as_bytes(), "test.go");
+            assert_eq!(findings.len(), want, "{name}: got {findings:?}");
+        }
+    }
 
     /// These two detectors existed only in the Go implementation, so the engine
     /// path — the default — silently skipped both. Package paths are
