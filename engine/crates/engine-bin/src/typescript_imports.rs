@@ -40,26 +40,25 @@ fn collect_import_specifiers(node: tree_sitter::Node, source: &str, out: &mut Ve
         // import X from '...' | import '...' | export X from '...'
         "import_statement" | "export_statement" => {
             for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    if child.kind() == "string" {
-                        push_string_value(child, source, out);
-                        return;
-                    }
+                if let Some(child) = node.child(i)
+                    && child.kind() == "string"
+                {
+                    push_string_value(child, source, out);
+                    return;
                 }
             }
         }
         // require('...') — CommonJS
         "call_expression" => {
-            if let Some(fn_node) = node.child_by_field_name("function") {
-                if &source[fn_node.byte_range()] == "require" {
-                    if let Some(args) = node.child_by_field_name("arguments") {
-                        for i in 0..args.child_count() {
-                            let Some(arg) = args.child(i) else { continue };
-                            if arg.kind() == "string" {
-                                push_string_value(arg, source, out);
-                                break;
-                            }
-                        }
+            if let Some(fn_node) = node.child_by_field_name("function")
+                && &source[fn_node.byte_range()] == "require"
+                && let Some(args) = node.child_by_field_name("arguments")
+            {
+                for i in 0..args.child_count() {
+                    let Some(arg) = args.child(i) else { continue };
+                    if arg.kind() == "string" {
+                        push_string_value(arg, source, out);
+                        break;
                     }
                 }
             }
@@ -157,6 +156,11 @@ fn collect_ts_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         if path.is_dir() {
+            // Symlinked directories are outside the project boundary (INV-002);
+            // `is_dir()` follows symlinks, so test the entry itself.
+            if crate::grep::is_symlink(&entry) {
+                continue;
+            }
             if matches!(
                 name_str.as_ref(),
                 "node_modules" | "dist" | "build" | "target" | ".git"
@@ -185,6 +189,39 @@ mod tests {
         let mut imports = extract_ts_imports(&path, src, &root);
         imports.sort();
         imports
+    }
+
+    /// A symlinked directory is not project-local code (INV-002), and following
+    /// one can escape the project or loop forever on a cycle.
+    #[test]
+    #[cfg(unix)]
+    fn collect_ts_files_skips_symlinked_dirs() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join("verikt-ts-symlink-test");
+        let project = base.join("project");
+        let outside = base.join("outside");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        std::fs::write(project.join("src").join("real.ts"), "export const a = 1;\n").unwrap();
+        std::fs::write(outside.join("external.ts"), "export const b = 2;\n").unwrap();
+        symlink(&outside, project.join("linked")).unwrap();
+
+        let files = collect_ts_files(&project, &[]);
+
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.contains(&"real.ts".to_string()), "got {names:?}");
+        assert!(
+            !names.contains(&"external.ts".to_string()),
+            "symlinked directory was followed: {names:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -222,10 +259,7 @@ mod tests {
 
     #[test]
     fn reexport_from() {
-        let imports = parse(
-            "src/domain/index.ts",
-            "export { User } from './user';\n",
-        );
+        let imports = parse("src/domain/index.ts", "export { User } from './user';\n");
         assert_eq!(imports, vec!["src/domain/user"]);
     }
 
