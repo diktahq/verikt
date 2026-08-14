@@ -1,0 +1,40 @@
+# Toolchains required to build verikt end to end. Run `mise install`.
+#
+# Versions match .github/workflows/ci.yml — if you change one, change both, or
+# contributors will hit failures CI cannot reproduce.
+#
+#   go    — the CLI, orchestrator and all analysis fallbacks
+#   rust  — the embedded engine under engine/ (needs >= 1.85 for edition 2024)
+#   bun   — the docs site under website/
+[tools]
+go = "1.26"
+rust = "stable"
+bun = "latest"
+
+# The engine binary is embedded via //go:embed from internal/engineclient/bin/.
+# It is gitignored, so a fresh clone has nothing to embed until you run:
+#   mise run build-engine
+[tasks.build-engine]
+description = "Build the Rust engine and place it for //go:embed"
+run = """
+set -euo pipefail
+cd engine
+cargo build --release
+cd ..
+mkdir -p internal/engineclient/bin
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) target=verikt-engine-darwin-arm64 ;;
+  Darwin-x86_64) target=verikt-engine-darwin-amd64 ;;
+  Linux-x86_64) target=verikt-engine-linux-amd64 ;;
+  Linux-aarch64) target=verikt-engine-linux-arm64 ;;
+  *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+cp engine/target/release/verikt-engine "internal/engineclient/bin/$target"
+chmod +x "internal/engineclient/bin/$target"
+echo "placed internal/engineclient/bin/$target"
+"""
+
+[tasks.check-engine]
+description = "Run the engine's own gates (matches the CI engine job)"
+dir = "engine"
+run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
