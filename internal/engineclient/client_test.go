@@ -268,8 +268,9 @@ func findEngineBinary(t *testing.T) string {
 	}
 
 	// Fall back to the extracted cache binary before trying to build from source.
-	if cacheDir, err := os.UserCacheDir(); err == nil {
-		cachePath := filepath.Join(cacheDir, "verikt", "engine-v"+version, "verikt-engine")
+	// The cache directory is content-addressed, so ask EnginePath for it rather
+	// than reconstructing the name.
+	if cachePath, err := EnginePath(); err == nil {
 		if _, err := os.Stat(cachePath); err == nil {
 			return cachePath
 		}
