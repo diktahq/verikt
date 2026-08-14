@@ -76,6 +76,17 @@ check:
     # The type assertions in them are protoc's, not ours, and cannot be fixed here.
     - internal/engineclient/pb/**
 
+severity_overrides:
+  global_mutable_state:
+    # `//go:embed` requires a package-level var — there is no form of the
+    # directive that targets a constant or a function-local. The bytes are never
+    # written after init, so the property the detector protects holds; the shape
+    # it looks for is imposed by the language.
+    - severity: ignore
+      reason: "//go:embed targets must be package-level vars; the engine bytes are never mutated"
+      paths:
+        - internal/engineclient/embed_engine_release*.go
+
 rules:
   functions:
     max_lines: 50

@@ -90,7 +90,7 @@ verikt guide          # generates agent context from verikt.yaml
 verikt check          # run enforcement against current codebase
 ```
 
-`verikt check` uses 11 AST-based detectors — wrong-layer dependencies, missing capabilities, pattern violations. Run it locally before pushing, or in CI on every PR.
+`verikt check` uses 14 AST-based detectors — wrong-layer dependencies, missing capabilities, pattern violations. Run it locally before pushing, or in CI on every PR.
 
 <Aside type="tip">
 The capability suggestion system catches dangerous combinations before they reach production. `retry` without `idempotency` means retrying a payment endpoint will double-charge. verikt flags this at scaffold time.

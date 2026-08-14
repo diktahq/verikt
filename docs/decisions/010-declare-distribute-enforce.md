@@ -33,7 +33,7 @@ Replace the Terraform mental model with the **Declare-Distribute-Enforce** model
 
 **Distribute** — `verikt guide` generates architecture context for every AI agent (Claude Code, Cursor, Copilot, Windsurf). `verikt setup` registers verikt globally with installed agents. The declared architecture reaches every session without the engineer re-explaining it.
 
-**Enforce** — `verikt check` validates that code matches the declared architecture. 11 AST-based detectors catch dependency violations, anti-patterns, and structural drift. Runs locally or in CI. `verikt analyze` detects architecture in existing codebases for brownfield adoption.
+**Enforce** — `verikt check` validates that code matches the declared architecture. 14 AST-based detectors catch dependency violations, anti-patterns, and structural drift. Runs locally or in CI. `verikt analyze` detects architecture in existing codebases for brownfield adoption.
 
 Supporting commands:
 

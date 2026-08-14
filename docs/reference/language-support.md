@@ -20,7 +20,7 @@ Two reasons the depth differs:
 | `verikt guide` — agent context | ✅ | ✅ |
 | `verikt check` — dependency rules | ✅ import graph | ✅ import graph |
 | `verikt check` — structure & coverage | ✅ | ✅ |
-| `verikt check` — anti-pattern detectors | ✅ 12 detectors | ❌ none |
+| `verikt check` — anti-pattern detectors | ✅ 14 detectors | ❌ none |
 | `verikt check` — function metrics | ✅ lines, params, returns | ❌ none |
 | `verikt analyze` — architecture detection | ✅ | ❌ none |
 | `verikt analyze` — convention detection | ✅ | ❌ none |

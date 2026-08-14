@@ -14,6 +14,15 @@ builds:
     binary: verikt
     env:
       - CGO_ENABLED=0
+    # Embed only the engine for the target platform.
+    #
+    # The default build embeds the whole bin/ directory, which is what lets a
+    # fresh clone compile before any engine has been built. Here all four engines
+    # are staged for one parallel run, so without this tag every published
+    # artefact carried every engine — about 17 MB of payload per artefact that
+    # the platform can never execute.
+    tags:
+      - verikt_release
     goos:
       - linux
       - darwin

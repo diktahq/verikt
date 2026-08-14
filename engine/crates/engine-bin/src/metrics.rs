@@ -47,8 +47,6 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
             _ => continue,
         };
 
-        let mut rule_matched = false;
-
         for file_path in &go_files {
             let content = match fs::read_to_string(file_path) {
                 Ok(c) => c,
@@ -95,7 +93,6 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
                     let end_row = body.end_position().row;
                     let lines = (end_row - start_row) as i32;
                     if lines > spec.max_lines {
-                        rule_matched = true;
                         findings_total += 1;
                         tally_severity(
                             rule.severity,
@@ -119,7 +116,6 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
                 {
                     let param_count = count_parameter_decls(params) as i32;
                     if param_count > spec.max_params {
-                        rule_matched = true;
                         findings_total += 1;
                         tally_severity(
                             rule.severity,
@@ -144,7 +140,6 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
                 if spec.max_returns > 0 {
                     let return_count = count_return_values(fn_node, source) as i32;
                     if return_count > spec.max_returns {
-                        rule_matched = true;
                         findings_total += 1;
                         tally_severity(
                             rule.severity,
@@ -169,10 +164,12 @@ pub fn handle_metric_check(req: &CheckRequest) -> Vec<EngineResponse> {
 
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if rule_matched {
-                Status::Valid
-            } else {
+            // Stale means the rule could not run — no files in scope. A run
+            // that analysed files and found no over-long functions has passed.
+            status: if go_files.is_empty() {
                 Status::Stale
+            } else {
+                Status::Valid
             }
             .into(),
             error: String::new(),

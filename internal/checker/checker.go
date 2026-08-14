@@ -241,12 +241,19 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 	seen := map[string]bool{}
 
 	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
+		// Symlinks are never project-local code (INV-002). Tested before the
+		// directory filter, because WalkDir reports a symlink from Lstat: IsDir()
+		// is false even for a link to a directory, so the check that followed the
+		// `!d.IsDir()` return was unreachable and linked directories were skipped
+		// only because WalkDir does not follow them.
+		if err != nil {
 			return err
 		}
-		// Skip symlinked directories — they point outside the project.
 		if d.Type()&fs.ModeSymlink != 0 {
-			return filepath.SkipDir
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
 		}
 		// Skip hidden dirs, vendor, and testdata.
 		base := d.Name()

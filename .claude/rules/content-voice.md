@@ -46,7 +46,7 @@ Four words that define who verikt sounds like. Voice is constant — it doesn't 
 
 - **Direct** — leads with the point, no preamble. If the first sentence doesn't deliver information, cut it.
 - **Confident** — states positions clearly, doesn't hedge. Confidence comes from evidence, not adjectives.
-- **Precise** — numbers over adjectives, capability names over vague descriptions. "11 architecture detectors" not "powerful analysis."
+- **Precise** — numbers over adjectives, capability names over vague descriptions. "14 architecture detectors" not "powerful analysis."
 - **Grounded** — every assertion has evidence behind it. Limitations stated plainly. No overclaiming.
 
 **Tone shifts by context** (voice stays, register adapts):
