@@ -125,8 +125,37 @@ verikt runs **11 AST-based detectors**:
 
 | Code | Meaning |
 |------|---------|
-| 0 | All checks pass |
-| 1 | One or more violations found |
+| 0 | No error-severity violations. Warnings may be present. |
+| 1 | An error-severity violation was found, or a proxy rule could not run |
+
+Warnings never affect the exit code, so a finding you have chosen to live with
+cannot block a pipeline. A proxy rule whose scope matches no files is reported as
+**stale** and fails the check: a rule that did not run has not passed.
+
+### JSON Output
+
+`--output json` emits a `schema_version` field. Check it before parsing — key
+names are stable within a version, not across them.
+
+```json
+{
+  "schema_version": 2,
+  "result": "fail",
+  "violations": [
+    { "severity": "error", "file": "domain/order.go", "rule": "dependency", "message": "..." }
+  ],
+  "anti_patterns": [
+    { "severity": "error", "name": "sql_concatenation", "file": "repo/db.go", "message": "..." }
+  ]
+}
+```
+
+Gate on severity rather than on the presence of findings:
+
+```bash
+verikt check --output json > verikt.json
+jq -e '[.violations[], .anti_patterns[]] | map(select(.severity == "error")) | length == 0' verikt.json
+```
 
 ### Example Output
 
@@ -174,6 +203,15 @@ verikt add <capability> [capability...] [flags]
 ```
 
 Capabilities are validated against the provider's templates, conflicts are checked, and transitive dependencies are auto-resolved. **Existing files are never overwritten** — only new files are created.
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--dry-run` | Show what would be added without writing any files | `false` |
+
+`--dry-run` reports the files it would create and which capabilities it would
+resolve, and leaves `verikt.yaml` and the generated guides untouched.
 
 ### What It Does
 
