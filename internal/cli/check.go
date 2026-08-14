@@ -528,13 +528,20 @@ func printViolationSection(title string, violations []checker.Violation) {
 		return
 	}
 	for _, v := range violations {
+		// Only error severity fails the check, so warnings must not be printed
+		// with the same marker: 51 warning-level findings rendered as ✗ read as 51
+		// failures in a run that exits 0.
+		marker := "⚠"
+		if v.Severity == "error" {
+			marker = "✗"
+		}
 		switch {
 		case v.File != "" && v.Line > 0:
-			fmt.Printf("  ✗ %s:%d %s\n", v.File, v.Line, v.Message)
+			fmt.Printf("  %s %s:%d %s\n", marker, v.File, v.Line, v.Message)
 		case v.File != "":
-			fmt.Printf("  ✗ %s — %s\n", v.File, v.Message)
+			fmt.Printf("  %s %s — %s\n", marker, v.File, v.Message)
 		default:
-			fmt.Printf("  ✗ %s\n", v.Message)
+			fmt.Printf("  %s %s\n", marker, v.Message)
 		}
 	}
 }
