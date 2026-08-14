@@ -13,6 +13,41 @@ Generated rules files (from `verikt guide`) MUST stay within these bounds:
 - Each instruction paired with **motivation** (why, not just what)
 - **3-5 code examples** included (most reliable steering mechanism)
 
+### The two output shapes
+
+`verikt guide` emits two shapes, and the bound above applies per file:
+
+| Output | Target | Bound |
+|---|---|---|
+| `.claude/rules/verikt-index.md` + `verikt-<category>.md` | Claude Code | 500–1,500 tokens each |
+| A single composite file | cursor, copilot, windsurf | **3,100 tokens** |
+
+The sentinel targets accept one file only, so their output necessarily carries what
+the Claude path distributes across several: usage preamble, governance checkpoint,
+codebase mapping, smart suggestions, interaction warnings, design questions and the
+verification checklist. That composite is bounded at 3,100 tokens rather than 1,500
+and enforced by `TestGuideTokenCompliance`.
+
+This exception was previously recorded only in a comment on that test, so a reader
+of this invariant would conclude the guide violated it. The bound is stated here so
+the invariant and its enforcement agree.
+
+### Onboarding content does not belong in a normative guide
+
+The scaffold interview is emitted **only** in catalog-only output — the shape a
+project without a `verikt.yaml` receives. A guide generated *from* a `verikt.yaml`
+describes an architecture that already exists, so instructions for scaffolding a new
+service steer nothing.
+
+Emitting it unconditionally cost 664 tokens, 23% of the composite file and the
+majority of the Claude index. Removing it took the composite from ~2,935 to ~2,229
+tokens and the index from ~1,092 to ~410. `verikt init --ai` and the `/verikt:init`
+skill compose the protocol themselves, so the capability is unaffected.
+
+A small project's index can fall below the 500-token lower bound. That bound
+describes how much context an instruction-bearing file needs, not a requirement to
+pad a file that has less to say.
+
 ## Rationale
 
 Research on LLM instruction following (2025-2026 frontier models) shows:
