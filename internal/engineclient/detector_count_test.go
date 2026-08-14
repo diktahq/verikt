@@ -2,11 +2,14 @@ package engineclient
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // detectorCountClaim matches a documented detector count, e.g. "14 AST-based
@@ -28,10 +31,15 @@ func TestDocumentedDetectorCountMatchesImplementation(t *testing.T) {
 	want := len(detectorSeverities)
 
 	root := repoRoot(t)
+
+	// Only files the repository actually ships are checked. Untracked working-copy
+	// files — review reports, scratch notes — are not documentation, and scanning
+	// them made this guard fail on prose *about* a stale count.
+	tracked := trackedFiles(t, root)
+
 	exempt := map[string]bool{
 		"CHANGELOG.md":                           true,
 		"website/src/content/docs/changelog.mdx": true,
-		"docs/internal/pr-2-review-report.md":    true,
 	}
 
 	var checked int
@@ -52,7 +60,11 @@ func TestDocumentedDetectorCountMatchesImplementation(t *testing.T) {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || exempt[filepath.ToSlash(rel)] {
+		if relErr != nil {
+			return nil
+		}
+		slug := filepath.ToSlash(rel)
+		if exempt[slug] || !tracked[slug] {
 			return nil
 		}
 
@@ -102,4 +114,23 @@ func repoRoot(t *testing.T) string {
 		}
 		dir = parent
 	}
+}
+
+// trackedFiles returns the repository-relative paths git tracks.
+func trackedFiles(t *testing.T, root string) map[string]bool {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "git", "ls-files", "-z")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	require.NoError(t, err, "git ls-files is needed to tell shipped docs from scratch files")
+
+	files := map[string]bool{}
+	for _, name := range strings.Split(string(out), "\x00") {
+		if name != "" {
+			files[name] = true
+		}
+	}
+	require.NotEmpty(t, files, "no tracked files found")
+	return files
 }
