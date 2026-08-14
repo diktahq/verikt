@@ -67,6 +67,13 @@ could not run (stale or invalid). Warnings do not affect the exit code.`,
 	cmd.Flags().BoolVar(&flags.decisions, "decisions", false, "Run only decision gate validation")
 	cmd.Flags().StringVar(&flags.diff, "diff", "", "Only report violations in files changed vs. a git ref (e.g., main, HEAD~1)")
 
+	// Each of these narrows the run to one kind of check, so combining them
+	// narrows it to nothing: `--detectors --rule x` skipped the detectors (because
+	// --rule is set) and skipped the proxy rules (because --detectors is set),
+	// then reported a pass. That is the silent pass --rule's unknown-ID error was
+	// added to close, reachable by adding one more flag.
+	cmd.MarkFlagsMutuallyExclusive("detectors", "proxy-rules", "rule", "decisions")
+
 	return cmd
 }
 
@@ -171,6 +178,15 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 		}
 	}
 
+	// --staged narrows detector findings too. The staged file list was passed only
+	// to the proxy-rule runner, so `--help`'s "only check files in git staging
+	// area" held for rules and not for detectors: the pre-commit hook this command
+	// suggests failed on code the developer had not staged, which trains people to
+	// bypass the hook.
+	if flags.staged && checkerResult != nil {
+		checkerResult = filterCheckerResultByFiles(checkerResult, stagedFiles)
+	}
+
 	// Apply path-scoped severity overrides after all file filtering, so the
 	// verdict is computed from the final results.
 	applySeverityOverrides(checkerResult, ruleResult, cfg.SeverityOverrides)
@@ -245,18 +261,56 @@ func getStagedFiles(projectPath string) ([]string, error) {
 }
 
 // getDiffFiles returns relative file paths changed compared to a git ref.
+//
+// The comparison is against the merge base, so `--diff main` means "what this
+// branch changed" rather than "how this branch differs from main right now" — on
+// a branch that has fallen behind, the latter also reports every file main moved
+// on. Comparing the merge base with the working tree covers committed and
+// uncommitted work alike, which is what a developer running this locally means.
+//
+// The ref used to be passed after `--`, which makes git read it as a *pathspec*.
+// It matched no path, returned nothing, exited 0, and every finding was then
+// filtered away — so `--diff`, the documented way to adopt verikt on an existing
+// codebase without cleaning up the whole repository first, passed
+// unconditionally for every ref.
 func getDiffFiles(projectPath, ref string) ([]string, error) {
-	cmd := exec.CommandContext(context.Background(), "git", "diff", "--name-only", "--", ref)
+	base, err := gitMergeBase(projectPath, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// ACM: deleted files cannot carry findings, matching getStagedFiles.
+	cmd := exec.CommandContext(context.Background(),
+		"git", "diff", "--name-only", "--diff-filter=ACM", base)
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git diff --name-only %s: %w", ref, err)
+		return nil, fmt.Errorf("git diff --name-only %s: %w", base, err)
 	}
+
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		return nil, nil
 	}
 	return lines, nil
+}
+
+// gitMergeBase resolves the merge base of ref and HEAD.
+//
+// An unresolvable ref fails here rather than yielding an empty file list, because
+// an empty list filters every finding away and reports a pass.
+func gitMergeBase(projectPath, ref string) (string, error) {
+	cmd := exec.CommandContext(context.Background(), "git", "merge-base", ref, "HEAD")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git merge-base %s HEAD: %w (is %q a valid ref?)", ref, err, ref)
+	}
+	base := strings.TrimSpace(string(out))
+	if base == "" {
+		return "", fmt.Errorf("no merge base between %q and HEAD", ref)
+	}
+	return base, nil
 }
 
 // fileInSet checks if a file path matches any entry in the set.
@@ -352,8 +406,36 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 		return
 	}
 
+	// Proxy-rule waivers are collected first so they can be recorded alongside the
+	// checker's, on the same result. They used to be dropped outright: the run
+	// printed "✓ All proxy rules pass" and waived[] was empty, which is
+	// indistinguishable from a rule that never ran — the exact thing the waiver
+	// mechanism exists to avoid.
+	var waived []checker.WaivedFinding
+
+	if ruleResult != nil {
+		filtered := make([]rules.RuleViolation, 0, len(ruleResult.Violations))
+		for _, v := range ruleResult.Violations {
+			resolved := config.ResolveSeverity(overrides, v.RuleID, v.File, v.Severity)
+			mapped := config.MapSeverity(resolved)
+			if mapped == "ignore" {
+				waived = append(waived, checker.WaivedFinding{
+					Category: "proxy_rule",
+					Rule:     v.RuleID,
+					File:     v.File,
+					Line:     v.Line,
+					Message:  v.Description,
+					Reason:   config.ResolveReason(overrides, v.RuleID, v.File),
+				})
+				continue
+			}
+			v.Severity = mapped
+			filtered = append(filtered, v)
+		}
+		ruleResult.Violations = filtered
+	}
+
 	if checkerResult != nil {
-		var waived []checker.WaivedFinding
 		checkerResult.DependencyViolations = filterViolationsBySeverity(
 			checkerResult.DependencyViolations, overrides, "dependency", &waived)
 		checkerResult.StructureViolations = filterViolationsBySeverity(
@@ -366,20 +448,6 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 			checkerResult.AntiPatternViolations, overrides, &waived)
 		checkerResult.WaivedFindings = append(checkerResult.WaivedFindings, waived...)
 		checkerResult.RecalculateMetrics()
-	}
-
-	if ruleResult != nil {
-		var filtered []rules.RuleViolation
-		for _, v := range ruleResult.Violations {
-			resolved := config.ResolveSeverity(overrides, v.RuleID, v.File, v.Severity)
-			mapped := config.MapSeverity(resolved)
-			if mapped == "ignore" {
-				continue
-			}
-			v.Severity = mapped
-			filtered = append(filtered, v)
-		}
-		ruleResult.Violations = filtered
 	}
 }
 

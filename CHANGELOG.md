@@ -19,8 +19,11 @@ Two further changes move the exit code in **opposite** directions, so a pipeline
 pass or newly fail without any change to your code:
 
 - **Warnings no longer fail `verikt check`.** Only error severity does. If you relied on
-  exit 1 for warning-level findings, gate on the JSON instead:
-  `jq -e '[(.violations // [])[], (.anti_patterns // [])[]] | map(select(.severity=="error")) | length == 0'`.
+  exit 1 for warning-level findings, count them from the JSON:
+  `jq '[(.violations // [])[], (.anti_patterns // [])[], (.proxy_rules.violations // [])[]] | map(select(.severity!="error")) | length'`.
+  To *gate*, use `jq -e '.result == "pass"'` — selecting on severity across the two
+  top-level arrays misses proxy-rule violations, stale rules and decision gates, all
+  of which fail the check.
 - **Error-severity anti-patterns now fail again on the default path.** `sql_concatenation`,
   `swallowed_error` and `domain_imports_adapter` were reported as warnings whenever the
   embedded engine resolved. A repository containing them will start failing. These are

@@ -127,16 +127,20 @@ check. A rule that could not run has not passed, and treating it as a pass is ho
 a silently-broken rule survives in CI for months. A rule that ran across its scope
 and found nothing has passed.
 
-If you would rather gate in your own script, read the JSON and select on
-severity — the document carries a `schema_version` to check first:
+If you would rather gate in your own script, read `result` — the document carries
+a `schema_version` to check first:
 
 ```bash
 verikt check --output json > verikt.json
-jq -e '[(.violations // [])[], (.anti_patterns // [])[]] | map(select(.severity == "error")) | length == 0' verikt.json
+jq -e '.result == "pass"' verikt.json
 ```
 
-`violations[]` and `anti_patterns[]` are always present, so the `// []` defaults
-are belt and braces — keep them and the snippet works against any verikt version.
+`result` is the verdict the exit code carries, across every category. Do not
+build a gate by selecting on severity across `violations[]` and
+`anti_patterns[]`: those hold built-in detector findings only, so a gate made
+from them passes when an error-severity **proxy rule** fires (those live in
+`proxy_rules.violations[]`), when a rule goes **stale**, and when a **decision
+gate** fails. All three fail `verikt check`.
 
 ## Testing Across Go Versions
 
