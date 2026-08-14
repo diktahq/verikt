@@ -1,6 +1,7 @@
 package engineclient
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -229,39 +230,70 @@ func TestEnginePathIsSafeUnderConcurrentExtraction(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 	}
 
+	// Each goroutine inspects the path it was given the instant EnginePath
+	// returns, inside the goroutine, while the others are still racing.
+	//
+	// Joining first and inspecting afterwards — which is what this test did —
+	// cannot detect a torn write at all: by the time wg.Wait() returns every
+	// write has completed, so the file is whole no matter how it was produced.
+	// The mutation that proves the point is replacing the temp-file-and-rename
+	// with a direct os.WriteFile; that left this test green, including under
+	// -race, until the assertions moved inside the goroutines.
 	const racers = 8
-	paths := make(chan string, racers)
-	errs := make(chan error, racers)
+	type observation struct {
+		size     int64
+		mode     os.FileMode
+		statErr  error
+		pathErr  error
+		contents bool
+	}
+
+	observations := make(chan observation, racers)
+	start := make(chan struct{})
 
 	var wg sync.WaitGroup
 	for range racers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-start // widen the window: all racers enter together
+
 			path, err := EnginePath()
 			if err != nil {
-				errs <- err
+				observations <- observation{pathErr: err}
 				return
 			}
-			paths <- path
+
+			// Observed immediately, before any other goroutine has finished.
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				observations <- observation{statErr: statErr}
+				return
+			}
+			data, readErr := os.ReadFile(path)
+			observations <- observation{
+				size:     info.Size(),
+				mode:     info.Mode(),
+				statErr:  readErr,
+				contents: readErr == nil && bytes.Equal(data, engineBinary),
+			}
 		}()
 	}
-	wg.Wait()
-	close(paths)
-	close(errs)
 
-	for err := range errs {
-		t.Fatalf("concurrent EnginePath failed: %v", err)
-	}
+	close(start)
+	wg.Wait()
+	close(observations)
 
 	seen := 0
-	for path := range paths {
+	for obs := range observations {
 		seen++
-		info, err := os.Stat(path)
-		require.NoError(t, err)
-		assert.Equal(t, int64(len(engineBinary)), info.Size(),
+		require.NoError(t, obs.pathErr, "concurrent EnginePath failed")
+		require.NoError(t, obs.statErr, "the path EnginePath returned was not readable")
+		assert.Equal(t, int64(len(engineBinary)), obs.size,
 			"a racing extraction exposed a partially written binary")
-		assert.NotZero(t, info.Mode()&0o111, "the extracted engine is not executable")
+		assert.NotZero(t, obs.mode&0o111, "the extracted engine is not executable")
+		assert.True(t, obs.contents,
+			"the binary visible at the returned path was not the embedded engine")
 	}
 	assert.Equal(t, racers, seen)
 }

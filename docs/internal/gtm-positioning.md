@@ -97,7 +97,7 @@ What engineers actually do today (the real competition is inertia, not tools):
 | `verikt guide` generates agent-native context files | No other tool outputs to `.claude/rules/`, `.cursorrules`, `.github/copilot-instructions.md`, `.windsurfrules` |
 | Context generated from `verikt.yaml` — always current | Manual files go stale; verikt regenerates from the authoritative source |
 | Composition model (architecture + capabilities) | No scaffolding tool also enforces and guides |
-| 11 AST-based architecture detectors | None connected to a composition model or agent context |
+| 14 AST-based architecture detectors | None connected to a composition model or agent context |
 | Smart capability suggestions (18 rules) | No tool proactively warns about dangerous combinations |
 
 ---

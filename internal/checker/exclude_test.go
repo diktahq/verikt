@@ -105,3 +105,45 @@ func TestApplyExcludes_RecalculatesMetrics(t *testing.T) {
 	assert.Equal(t, 1, result.TotalViolations())
 	assert.Equal(t, 9, result.RulesPassing)
 }
+
+// orphan_package must carry a project-relative path in File.
+//
+// It held the full import path, so no path-scoped feature could ever match one:
+// check.exclude, severity_overrides paths, --staged and --diff all compare File
+// against project-relative globs, and an import path never matches one. A waiver
+// for "internal/stray/**" silently did nothing. Nothing asserted this, so the
+// matching all those features depend on was unguarded.
+func TestOrphanPackageFileIsProjectRelative(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/app\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "stray"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "internal", "stray", "x.go"),
+		[]byte("package stray\n"), 0o644))
+
+	cfg := &config.VeriktConfig{
+		Language:     "go",
+		Architecture: "hexagonal",
+		Components:   []config.Component{{Name: "domain", In: []string{"internal/domain/**"}}},
+	}
+
+	violations := detectOrphanPackagesFS(cfg, dir)
+
+	var orphan *Violation
+	for i := range violations {
+		if violations[i].Rule == "orphan_package" {
+			orphan = &violations[i]
+			break
+		}
+	}
+	require.NotNil(t, orphan, "expected an orphan_package finding for internal/stray")
+
+	assert.Equal(t, "internal/stray", orphan.File,
+		"File must be project-relative so path-scoped globs can match it")
+	assert.Contains(t, orphan.Message, "example.com/app/internal/stray",
+		"the import path stays in the message, where it is useful to a reader")
+
+	// The property that matters: a path-scoped exclude actually reaches it.
+	assert.True(t, isExcluded(orphan.File, []string{"internal/stray/**"}),
+		"a project-relative File is what makes check.exclude and severity_overrides work")
+}
