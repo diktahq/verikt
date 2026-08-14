@@ -2,11 +2,14 @@ SERVICE_NAME := {{.ServiceName}}
 MODULE_PATH  := {{.ModulePath}}
 BIN_DIR      := bin
 
-.PHONY: build test lint run docker-build clean help
+.PHONY: build test lint verify run docker-build clean help
 
 ## build: Compile the service binary
+# -o takes a directory (trailing slash) so this works whether the project has one
+# package or many. `-o <file> ./...` fails with "cannot write multiple packages to
+# non-directory" as soon as a second package exists.
 build:
-	go build -o $(BIN_DIR)/$(SERVICE_NAME) ./...
+	go build -o $(BIN_DIR)/ ./...
 
 ## test: Run all tests with race detection
 test:
@@ -15,6 +18,15 @@ test:
 ## lint: Run golangci-lint
 lint:
 	golangci-lint run ./...
+
+## verify: Run every gate — build, test, lint, architecture. What CI should invoke.
+##          Keeping one definition means a green local run means something.
+verify: build test lint
+	@if command -v verikt >/dev/null 2>&1 && [ -f verikt.yaml ]; then \
+		verikt check; \
+	else \
+		echo "verikt not installed or no verikt.yaml — skipping architecture check"; \
+	fi
 
 ## run: Build and run the service
 run: build
