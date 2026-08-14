@@ -93,6 +93,16 @@ func TestTemplateCompilation(t *testing.T) {
 		{"clean", []string{"platform", "bootstrap", "http-api", "health"}},
 		{"clean", []string{"platform", "bootstrap", "http-api", "postgres", "health"}},
 
+		// Capabilities that contribute bootstrap partials or config sections but
+		// had no combo here. mailpit shipped a partial that declared a provider
+		// nothing consumed, so every project including it failed to compile, and
+		// no test built one.
+		{"hexagonal", []string{"platform", "bootstrap", "mysql", "mailpit"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "mailpit", "email-gateway"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "i18n"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "i18n", "email-gateway", "mailpit"}},
+		{"hexagonal", []string{"platform", "bootstrap", "grpc", "postgres", "redis", "kafka-consumer", "mailpit"}},
+
 		// Flat
 		{"flat", []string{"http-api", "health", "makefile"}},
 	}

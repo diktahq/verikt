@@ -7,10 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const platformConfigDir = "../../providers/golang/templates/capabilities/platform/files/config"
@@ -173,5 +177,62 @@ func TestPlatformConfigExampleShowsNoSecrets(t *testing.T) {
 		if !strings.Contains(example, env) {
 			t.Errorf("config.yaml.example does not mention %s, so the reader cannot know how to set it", env)
 		}
+	}
+}
+
+// envVarRef matches an environment variable name in either template.
+var envVarRef = regexp.MustCompile(`\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b`)
+
+// Every variable the example advertises must actually be read, and every
+// variable the loader reads must be documented.
+//
+// config.yaml.example said "any value above can also be set from the
+// environment" while applyEnv covered a subset — no APP_VERSION, no
+// HTTP_READ_TIMEOUT, no GRPC_REFLECTION, no KAFKA_TOPICS, no REDIS_DB. A
+// documented variable that does nothing is worse than an undocumented one: the
+// operator sets it, sees no effect, and has no reason to suspect the docs.
+func TestPlatformConfigEnvCoverageMatchesTheExample(t *testing.T) {
+	code := renderPlatformConfig(t, "config.go.tmpl")
+	example := renderPlatformConfig(t, "config.yaml.example.tmpl")
+
+	inCode := map[string]bool{}
+	for _, m := range regexp.MustCompile(`set(?:String|Int|Int32|Bool|Strings)\(&[^,]+,\s*"([A-Z0-9_]+)"\)`).FindAllStringSubmatch(code, -1) {
+		inCode[m[1]] = true
+	}
+	require.NotEmpty(t, inCode, "no environment variables parsed from config.go — did the setter shape change?")
+
+	documented := map[string]bool{}
+	for _, m := range envVarRef.FindAllStringSubmatch(example, -1) {
+		documented[m[1]] = true
+	}
+
+	for name := range documented {
+		assert.True(t, inCode[name],
+			"config.yaml.example documents %s but config.go never reads it", name)
+	}
+	for name := range inCode {
+		assert.True(t, documented[name],
+			"config.go reads %s but config.yaml.example does not mention it", name)
+	}
+}
+
+// A malformed value must be an error, not a silently ignored setting.
+func TestPlatformConfigReportsMalformedEnvValues(t *testing.T) {
+	code := renderPlatformConfig(t, "config.go.tmpl")
+
+	require.Contains(t, code, "func applyEnv(cfg *Config) error",
+		"applyEnv must be able to report a bad value")
+	require.Contains(t, code, "if err := applyEnv(&cfg); err != nil",
+		"Load must propagate what applyEnv reports")
+	assert.Contains(t, code, "errors.Join(errs...)",
+		"every malformed value should be reported together, so one run finds every typo")
+
+	// Each numeric or boolean setter must return an error rather than swallow one.
+	for _, setter := range []string{
+		"func setInt(target *int, key string) error",
+		"func setInt32(target *int32, key string) error",
+		"func setBool(target *bool, key string) error",
+	} {
+		assert.Contains(t, code, setter, "%s must report a malformed value", setter)
 	}
 }
