@@ -10,14 +10,31 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// AntiPattern defines a detected anti-pattern with context.
+// nakedGoroutineMessage is the remedy reported for a bare `go` statement.
+//
+// It must name the panic consequence. The previous wording recommended
+// errgroup.Go(), which propagates a panic rather than recovering it — a reader
+// who followed that advice still crashed the process, so the detector pointed at
+// no working fix.
+//
+// This string is duplicated in the Rust engine
+// (engine/crates/engine-bin/src/antipatterns.rs, detect_naked_goroutines) because
+// either implementation can produce the finding. Keep the two in sync;
+// TestNakedGoroutineMessageMatchesEngine enforces it.
+const nakedGoroutineMessage = "bare 'go' statement — an unrecovered panic in the goroutine body crashes the whole process " +
+	"(errgroup propagates panics, it does not contain them): add a recover boundary inside the goroutine " +
+	"and tie its lifetime to a context"
+
+// AntiPattern is a detector finding. The json tags match checker.Violation:
+// without them the JSON output used Go field names for anti_patterns[] and
+// lowercase keys for violations[], so consumers had to handle both spellings.
 type AntiPattern struct {
-	Name     string // Short identifier: "global_state", "init_abuse", etc.
-	Category string // "code", "architecture", "security"
-	Severity string // "error", "warning", "info"
-	File     string
-	Line     int
-	Message  string
+	Name     string `json:"name"`     // Short identifier: "global_state", "init_abuse", etc.
+	Category string `json:"category"` // "code", "architecture", "security"
+	Severity string `json:"severity"` // "error", "warning", "info"
+	File     string `json:"file"`
+	Line     int    `json:"line,omitempty"`
+	Message  string `json:"message"`
 }
 
 // checkAntiPatterns runs all AST-based anti-pattern detectors.
@@ -179,7 +196,7 @@ func detectNakedGoroutines(file *ast.File, fset *token.FileSet, filePath string)
 			Severity: "warning",
 			File:     filePath,
 			Line:     line,
-			Message:  "bare 'go' statement — use errgroup.Go() or structured concurrency for error propagation and lifecycle",
+			Message:  nakedGoroutineMessage,
 		})
 		return true
 	})
