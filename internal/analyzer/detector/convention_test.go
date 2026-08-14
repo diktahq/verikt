@@ -19,9 +19,9 @@ func TestDetectTestingSeesTestFiles(t *testing.T) {
 
 	result := DetectConventions(pkgs)
 
-	// The fixture has 5 .go files, one of which is cmd/service/main_test.go.
+	// The fixture has 6 .go files, one of which is cmd/service/main_test.go.
 	assert.Equal(t, 1, result.Testing.TestFiles)
-	assert.Equal(t, 5, result.Testing.TotalGoFiles)
+	assert.Equal(t, 6, result.Testing.TotalGoFiles)
 	assert.Equal(t, "table-driven", result.Testing.Pattern, "main_test.go uses t.Run")
 }
 
@@ -49,9 +49,12 @@ func TestDetectTestingIgnoresBDDImportsOutsideTests(t *testing.T) {
 	pkgs, err := packages.Load(cfg, "./...")
 	require.NoError(t, err)
 
-	// The hexagonal fixture has a test file using t.Run and no BDD libraries, so the
-	// pattern must be table-driven. It would flip to bdd if a production import could
-	// contribute to the signal.
+	// The fixture deliberately has a production file importing
+	// internal/ginkgorunner — a path the BDD substring match hits — alongside a
+	// test file that uses t.Run and no BDD library. So the pattern must be
+	// table-driven, and would flip to bdd the moment a production import could
+	// contribute to the signal again. Without that import the test passed
+	// whichever implementation was in place.
 	result := DetectConventions(pkgs)
 
 	assert.Equal(t, "table-driven", result.Testing.Pattern)

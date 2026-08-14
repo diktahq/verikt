@@ -15,4 +15,9 @@ components:
     may_depend_on: [domain, ports]
   - name: entrypoint
     in: [cmd/**]
-    may_depend_on: [domain, ports, adapters]
+    may_depend_on: [domain, ports, adapters, support]
+  # Named for the substring the BDD detector matches on, so a production import
+  # of a "ginkgo" path exists in this fixture. See
+  # TestDetectTestingIgnoresBDDImportsOutsideTests.
+  - name: support
+    in: [internal/ginkgorunner/**]
