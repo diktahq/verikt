@@ -2,6 +2,11 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Changed — breaking
+- **`verikt check` requires the embedded Rust engine for Go projects.** The Go duplicates of the engine's analysis are deleted (~960 lines). ADR-006 specified the Rust engine as a "clean replacement of `go/ast` analysis (no fallback — clean cut)"; the migration never removed the Go side, so both shipped and disagreed silently — most seriously by downgrading a SQL-injection finding to a warning. Where the engine is unavailable, `check` now fails with a clear error instead of producing different findings. `verikt analyze` is unaffected: its architecture and convention detection are Go-side and have no Rust equivalent (ADR-011).
+
 ## [0.2.0] — 2026-08-14
 
 Fixes an external audit of 0.1.0 (8 findings, all reproduced) and the parity gaps that

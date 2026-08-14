@@ -9,4 +9,4 @@
 # The self-check CI job fails if the count rises above this number. Lower it when
 # you pay debt down; raising it should be a deliberate, reviewed decision with a
 # reason in the commit message.
-78
+69
