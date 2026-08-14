@@ -48,7 +48,8 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
           rustup target add ${{ matrix.target }}
 
       - name: Install cross
@@ -80,6 +81,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          # goreleaser reads tags; it does not push with the checkout credential.
+          persist-credentials: false
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:

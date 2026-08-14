@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // engineCacheKey derives the cache directory name from the engine binary's
@@ -62,6 +63,11 @@ func EnginePath() (string, error) {
 	return path, nil
 }
 
+// staleEngineCacheAge is how long an unused engine cache directory must have been
+// idle before it is removed. It exists to avoid deleting a directory a concurrent
+// process has resolved but not yet executed.
+const staleEngineCacheAge = 24 * time.Hour
+
 // pruneStaleEngineCaches removes engine cache directories other than current.
 //
 // Because the cache is content-addressed, every engine build extracts to a new
@@ -81,6 +87,17 @@ func pruneStaleEngineCaches(root, current string) {
 		if !entry.IsDir() || entry.Name() == current || !strings.HasPrefix(entry.Name(), "engine-") {
 			continue
 		}
+
+		// Only prune directories that have been untouched for a while. A concurrent
+		// process running an older verikt can resolve its engine path and be deleted
+		// before it execs — removing a file after exec is safe on Unix, but this
+		// window is before it. An age threshold makes that race practically
+		// unreachable while still bounding disk growth.
+		info, err := entry.Info()
+		if err != nil || time.Since(info.ModTime()) < staleEngineCacheAge {
+			continue
+		}
+
 		_ = os.RemoveAll(filepath.Join(root, entry.Name()))
 	}
 }

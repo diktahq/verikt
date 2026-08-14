@@ -273,11 +273,9 @@ func detectTesting(pkgs []*packages.Package) provider.TestingFinding {
 			// Subtests are only counted from test files (see scanTestFiles):
 			// ".Run(" in production code is some other method entirely.
 		}
-		for importPath := range pkg.Imports {
-			if strings.Contains(importPath, "ginkgo") || strings.Contains(importPath, "godog") {
-				bdd++
-			}
-		}
+		// BDD libraries are counted from test files only (see scanTestFiles). Counting
+		// pkg.Imports mixed a production signal into a test statistic: a project with
+		// any test file and ginkgo imported by a non-test helper was reported as bdd.
 	}
 
 	// packages.Load runs with Tests disabled, so no _test.go file appears in

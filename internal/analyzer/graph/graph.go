@@ -149,9 +149,17 @@ func mapLayers(graph provider.DependencyGraph, components []config.Component) ma
 				break
 			}
 		}
-		if layer == "" {
+
+		// When components are declared, only a package a component claims takes part
+		// in dependency enforcement. Falling back to the guessed layer let an
+		// unclaimed package inherit a declared component's may_depend_on whenever the
+		// guess happened to equal that component's name — the mirror of the bug where
+		// a declared component lost its rules because the guess differed. Unclaimed
+		// packages are reported separately, as orphan_package.
+		if layer == "" && len(components) == 0 {
 			layer = node.Layer
 		}
+
 		if layer != "" {
 			layerByPkg[node.Path] = layer
 		}

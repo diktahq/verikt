@@ -9,10 +9,18 @@
 #   golangci-lint  — pinned to the version the lint job installs. Linters gain checks
 #                    between releases, so an older local binary reports a clean run on
 #                    code CI rejects.
+#
+# rust and bun are exact, and every workflow pins the same value. Floating selectors
+# ("stable", "latest") meant a green local run said nothing about CI, and a toolchain
+# release could break a build nobody had touched — which is exactly how a clippy lint
+# and a golangci-lint check both slipped past local runs.
+#
+# go floats on the patch version deliberately: Go patch releases are backward-compatible
+# security fixes, and pinning one would strand the build on a known-vulnerable toolchain.
 [tools]
 go = "1.26"
-rust = "stable"
-bun = "latest"
+rust = "1.97.1"
+bun = "1.3.11"
 golangci-lint = "2.11.3"
 
 # The engine binary is embedded via //go:embed from internal/engineclient/bin/.
