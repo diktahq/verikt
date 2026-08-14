@@ -272,7 +272,7 @@ func TestResolveTargets_AllHonoursEveryMarkerPresent(t *testing.T) {
 	targets, err := resolveTargets("all", dir)
 	require.NoError(t, err)
 
-	names := []string{}
+	names := make([]string, 0, len(targets))
 	for _, target := range targets {
 		names = append(names, target.Name())
 	}
