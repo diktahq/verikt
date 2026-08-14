@@ -383,20 +383,13 @@ func detectUnreadablePaths(projectPath string, excludes []string) []Violation {
 			return nil // INV-002: symlinks are not project-local code
 		}
 		if !d.IsDir() {
+			if openErr := checkReadable(path); openErr != nil {
+				report(path, openErr)
+			}
 			return nil
 		}
-
-		name := d.Name()
-		if path != projectPath && (strings.HasPrefix(name, ".") || name == "vendor" || name == "node_modules") {
+		if skipUnreadableScan(projectPath, path, d.Name(), excludes) {
 			return filepath.SkipDir
-		}
-
-		rel, relErr := filepath.Rel(projectPath, path)
-		if relErr == nil {
-			relSlash := filepath.ToSlash(rel)
-			if relSlash != "." && isExcluded(relSlash, excludes) {
-				return filepath.SkipDir
-			}
 		}
 		return nil
 	})
@@ -405,6 +398,61 @@ func detectUnreadablePaths(projectPath string, excludes []string) []Violation {
 	}
 
 	return violations
+}
+
+// checkReadable opens a source file to confirm the analysis could read it.
+//
+// A file that exists and is listed but cannot be read is the case a directory
+// walk cannot see: WalkDir succeeds on it, because Lstat succeeds, and only the
+// read fails — inside the engine, which discards the error, so the file is
+// silently not analysed.
+//
+// Only files the analysis reads are opened. An unreadable image is not a gap in
+// the analysis, and opening every file in the tree to discover that would be
+// wasteful.
+func checkReadable(path string) error {
+	if !isAnalysedSource(path) {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+// skipUnreadableScan reports whether a directory is outside the scan.
+func skipUnreadableScan(projectPath, path, name string, excludes []string) bool {
+	if path == projectPath {
+		return false
+	}
+	if strings.HasPrefix(name, ".") || name == "vendor" || name == "node_modules" {
+		return true
+	}
+	rel, err := filepath.Rel(projectPath, path)
+	if err != nil {
+		return false
+	}
+	relSlash := filepath.ToSlash(rel)
+	return relSlash != "." && isExcluded(relSlash, excludes)
+}
+
+// isAnalysedSource reports whether a path is a file the analysis reads.
+//
+// Kept in step with the engine's collectors: Go sources (excluding tests, which
+// detectors never see — INV-004) and TypeScript sources.
+func isAnalysedSource(path string) bool {
+	name := filepath.Base(path)
+	switch {
+	case strings.HasSuffix(name, "_test.go"):
+		return false
+	case strings.HasSuffix(name, ".go"):
+		return true
+	case strings.HasSuffix(name, ".ts"), strings.HasSuffix(name, ".tsx"):
+		return !strings.HasSuffix(name, ".d.ts")
+	default:
+		return false
+	}
 }
 
 // unreadablePathViolation reports a path the checker could not read.

@@ -163,3 +163,59 @@ func TestUnreadablePathIsReportedWithoutAModulePath(t *testing.T) {
 	assert.Equal(t, "unreadable_path", violations[0].Rule)
 	assert.Contains(t, violations[0].File, "locked")
 }
+
+// A source file that exists, is listed in its directory, but cannot be read is
+// the residual case the directory walk does not see.
+//
+// WalkDir succeeds on it — Lstat works — so no error surfaces; only the read
+// fails, and the read happens inside the Rust engine, which discards the error.
+// The file is silently not analysed. Checking readability here closes it without
+// a wire-format change: the walk already visits every path.
+func TestUnreadableSourceFileIsReported(t *testing.T) {
+	requireUnprivileged(t)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "domain"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "internal", "domain", "readable.go"),
+		[]byte("package domain\n"), 0o644))
+
+	locked := filepath.Join(dir, "internal", "domain", "locked.go")
+	require.NoError(t, os.WriteFile(locked, []byte("package domain\n"), 0o644))
+	require.NoError(t, os.Chmod(locked, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o644) })
+
+	violations := detectUnreadablePaths(dir, nil)
+
+	require.Len(t, violations, 1, "the unreadable source file must be reported: %+v", violations)
+	assert.Equal(t, "unreadable_path", violations[0].Rule)
+	assert.Equal(t, "error", violations[0].Severity)
+	assert.Contains(t, violations[0].File, "locked.go")
+}
+
+// Only files the analysis would actually read are checked. An unreadable binary
+// asset is not a gap in the analysis, and opening every file in the tree to find
+// out would be wasteful.
+func TestUnreadableNonSourceFileIsIgnored(t *testing.T) {
+	requireUnprivileged(t)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "assets"), 0o755))
+	blob := filepath.Join(dir, "assets", "image.png")
+	require.NoError(t, os.WriteFile(blob, []byte("\x89PNG"), 0o644))
+	require.NoError(t, os.Chmod(blob, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(blob, 0o644) })
+
+	assert.Empty(t, detectUnreadablePaths(dir, nil),
+		"a non-source file the analysis never reads is not a gap")
+}
+
+// A readable tree with source files reports nothing.
+func TestReadableSourceFilesReportNothing(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src"), 0o755))
+	for _, name := range []string{"a.go", "b.ts", "c.tsx", "d.md"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "src", name), []byte("x\n"), 0o644))
+	}
+
+	assert.Empty(t, detectUnreadablePaths(dir, nil))
+}
