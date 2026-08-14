@@ -39,7 +39,7 @@ CI runs these; run them before pushing.
 ```bash
 go test ./...                  # Go suite
 go vet ./...
-golangci-lint run              # must report 0 issues
+golangci-lint run              # must report 0 issues (mise pins the CI version)
 mise run check-engine          # cargo fmt --check, clippy -D warnings, cargo test
 verikt check                   # verikt governs itself — see verikt.yaml
 ```

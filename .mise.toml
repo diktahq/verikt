@@ -3,13 +3,17 @@
 # Versions match .github/workflows/ci.yml — if you change one, change both, or
 # contributors will hit failures CI cannot reproduce.
 #
-#   go    — the CLI, orchestrator and all analysis fallbacks
-#   rust  — the embedded engine under engine/ (needs >= 1.85 for edition 2024)
-#   bun   — the docs site under website/
+#   go             — the CLI, orchestrator and all analysis fallbacks
+#   rust           — the embedded engine under engine/ (needs >= 1.85 for edition 2024)
+#   bun            — the docs site under website/
+#   golangci-lint  — pinned to the version the lint job installs. Linters gain checks
+#                    between releases, so an older local binary reports a clean run on
+#                    code CI rejects.
 [tools]
 go = "1.26"
 rust = "stable"
 bun = "latest"
+golangci-lint = "2.11.3"
 
 # The engine binary is embedded via //go:embed from internal/engineclient/bin/.
 # It is gitignored, so a fresh clone has nothing to embed until you run:
