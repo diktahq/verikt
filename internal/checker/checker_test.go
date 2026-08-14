@@ -208,9 +208,11 @@ func TestIsExcluded(t *testing.T) {
 		excludes []string
 		want     bool
 	}{
-		{"example.com/project/generated/proto", []string{"generated/**"}, true},
-		{"example.com/project/domain/order", []string{"generated/**"}, false},
-		{"example.com/project/tools/gen", []string{"tools/**", "generated/**"}, true},
+		{"generated/proto", []string{"generated/**"}, true},
+		{"domain/order", []string{"generated/**"}, false},
+		{"tools/gen", []string{"tools/**", "generated/**"}, true},
+		// "agent" contains "gen": substring matching silenced unrelated findings.
+		{"internal/agent/db.go", []string{"gen/**"}, false},
 	}
 	for _, tt := range tests {
 		got := isExcluded(tt.pkgPath, tt.excludes)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/diktahq/verikt/internal/analyzer/graph"
 	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/pathglob"
 )
 
 // Violation represents a single rule violation.
@@ -121,15 +122,25 @@ func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *Check
 	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
 
 	// Dependency checks via the Rust engine's TypeScript import graph.
+	//
+	// An engine that could not run has not found zero violations, so its error is
+	// returned rather than dropped. Discarding it made a crashed, missing or
+	// timed-out engine indistinguishable from a clean project — on the one
+	// language where the engine is optional, and therefore the one place
+	// ErrEngineRequired does not already cover.
+	var depErr error
 	if depClient != nil {
-		if violations, err := depClient.CheckDependencies(projectPath, cfg.Components); err == nil {
+		violations, err := depClient.CheckDependencies(projectPath, cfg.Components)
+		if err != nil {
+			depErr = fmt.Errorf("dependency check: %w", err)
+		} else {
 			result.DependencyViolations = append(result.DependencyViolations, violations...)
 		}
 	}
 
 	applyExcludes(result, cfg.Check.Exclude)
 	computeMetrics(cfg, result)
-	return result, nil
+	return result, depErr
 }
 
 // checkWithEngineOnly runs all checks via the Rust engine, skipping go/packages.
@@ -165,13 +176,15 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 		errs = append(errs, fmt.Errorf("anti-pattern check: %w", err))
 	}
 
+	// Excludes and metrics are applied even when a check failed, so partial
+	// results a caller chooses to render still honour the configuration.
+	applyExcludes(result, cfg.Check.Exclude)
+	computeMetrics(cfg, result)
+
 	if len(errs) > 0 {
 		// Return partial results with the first error.
 		return result, errs[0]
 	}
-
-	applyExcludes(result, cfg.Check.Exclude)
-	computeMetrics(cfg, result)
 	return result, nil
 }
 
@@ -228,15 +241,19 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 			return err
 		}
 
-		// Skip dirs in check.exclude.
+		// Skip dirs in check.exclude. The patterns are project-relative, so the
+		// path is matched before the module prefix is added — matching the full
+		// import path meant the module name was searched too.
+		relSlash := filepath.ToSlash(rel)
+		if relSlash != "." && isExcluded(relSlash, cfg.Check.Exclude) {
+			return filepath.SkipDir
+		}
+
 		var importPath string
 		if rel == "." {
 			importPath = modulePath
 		} else {
-			importPath = modulePath + "/" + filepath.ToSlash(rel)
-		}
-		if isExcluded(importPath, cfg.Check.Exclude) {
-			return filepath.SkipDir
+			importPath = modulePath + "/" + relSlash
 		}
 
 		// Check if this dir contains any .go files.
@@ -296,21 +313,16 @@ func readModulePath(projectPath string) string {
 	return ""
 }
 
-// isExcluded returns true if the given path matches any of the exclude globs.
-func isExcluded(pkgPath string, excludes []string) bool {
-	for _, pattern := range excludes {
-		if strings.HasSuffix(pattern, "/**") {
-			prefix := strings.TrimSuffix(pattern, "/**")
-			if strings.Contains(pkgPath, prefix) {
-				return true
-			}
-			continue
-		}
-		if ok, _ := filepath.Match(pattern, pkgPath); ok {
-			return true
-		}
-	}
-	return false
+// isExcluded returns true if the given project-relative path matches any of the
+// exclude globs.
+//
+// The path must be project-relative: matching was previously done by substring
+// containment against full import paths, so "gen/**" excluded anything whose path
+// merely contained "gen" — internal/agent among them. applyExcludes then extended
+// that to every finding category, so an unrelated exclude could silence a SQL
+// injection finding and still print "All checks pass".
+func isExcluded(relPath string, excludes []string) bool {
+	return pathglob.MatchAny(relPath, excludes)
 }
 
 // countCoveredComponentsFS checks component coverage using the filesystem —

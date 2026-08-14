@@ -108,7 +108,8 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
     }
 
     // Cross-package layering detectors (post-pass: they need every package).
-    all_findings.extend(detect_domain_imports_adapter(&pkg_imports));
+    let module_root = crate::import_graph::extract_module_root(&project.to_string_lossy());
+    all_findings.extend(detect_domain_imports_adapter(&pkg_imports, &module_root));
     let mut packages: Vec<String> = pkg_imports.keys().cloned().collect();
     packages.sort();
     all_findings.extend(detect_mvc_in_hexagonal(&packages));
@@ -349,11 +350,21 @@ fn is_domain_package(pkg_path: &str) -> bool {
     normalized.contains("/domain") || normalized.contains("/core") || normalized.contains("/port")
 }
 
-/// True if the import refers to an adapter (outer) layer package.
+/// True if the import refers to an adapter (outer) layer package of *this*
+/// project.
 ///
-/// Mirrors `checker.isAdapterPackage`. Imports are full import paths, so they are
-/// tested as-is.
-fn is_adapter_package(import_path: &str) -> bool {
+/// The module root is stripped before the markers are tested. Matching the raw
+/// import path meant the module name was searched too, so every first-party
+/// import in `github.com/acme/infra-tools` matched "/infra"; and a third-party
+/// dependency called `handler-kit` counted as this project's handler layer.
+/// Only packages below the module root can violate the project's own dependency
+/// direction.
+fn is_adapter_package(import_path: &str, module_root: &str) -> bool {
+    let relative = match import_path.strip_prefix(module_root) {
+        Some(rest) => rest,
+        None => return false, // third-party or stdlib: not our adapter layer
+    };
+    let normalized = format!("/{}", relative.trim_start_matches('/'));
     [
         "/adapter",
         "/infrastructure",
@@ -363,7 +374,7 @@ fn is_adapter_package(import_path: &str) -> bool {
         "/controller",
     ]
     .iter()
-    .any(|marker| import_path.contains(marker))
+    .any(|marker| normalized.contains(marker))
 }
 
 /// Domain packages that import adapter packages — the dependency rule inverted.
@@ -371,7 +382,10 @@ fn is_adapter_package(import_path: &str) -> bool {
 /// Cross-package, so it runs as a post-pass over every file's imports rather than
 /// per file. Mirrors `checker.detectDomainImportingAdapters`; without it the
 /// engine path silently skipped this check entirely.
-fn detect_domain_imports_adapter(pkg_imports: &HashMap<String, Vec<String>>) -> Vec<DetFinding> {
+fn detect_domain_imports_adapter(
+    pkg_imports: &HashMap<String, Vec<String>>,
+    module_root: &str,
+) -> Vec<DetFinding> {
     let mut pkgs: Vec<&String> = pkg_imports.keys().collect();
     pkgs.sort();
 
@@ -384,7 +398,7 @@ fn detect_domain_imports_adapter(pkg_imports: &HashMap<String, Vec<String>>) -> 
         imports.sort();
         imports.dedup();
         for import in imports {
-            if is_adapter_package(&import) {
+            if is_adapter_package(&import, module_root) {
                 findings.push(DetFinding {
                     detector: "domain_imports_adapter",
                     file: pkg.clone(),
@@ -434,45 +448,119 @@ fn detect_mvc_in_hexagonal(packages: &[String]) -> Vec<DetFinding> {
 /// Writes to a map that was declared but never allocated.
 ///
 /// `var m map[K]V` allocates nothing and writing to a nil map panics at runtime,
-/// unlike reading one which returns the zero value. Mirrors
-/// `checker.detectNilMapWrite`: a map assigned to as a whole anywhere in the file
-/// is treated as allocated, so only never-assigned declarations are reported.
+/// unlike reading one which returns the zero value.
+///
+/// Analysis is per function, because that is the scope a local declaration lives
+/// in. Tracking allocations across the whole file meant one `m := make(map…)`
+/// anywhere suppressed every `var m map[K]V` bug elsewhere in it — and `m`,
+/// `result` and `cache` are exactly the names that repeat, so the detector was
+/// close to inert outside single-function examples.
+///
+/// Package-scope declarations are the exception: they are visible everywhere, so
+/// an allocation anywhere in the file (an `init()`, typically) does make the
+/// write safe.
 fn detect_nil_map_write<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
-    let mut declared: Vec<String> = Vec::new();
-    let mut assigned: Vec<String> = Vec::new();
+    let package_declared = unallocated_map_declarations(root, source, true);
+    let file_assigned = assigned_identifiers(root, source);
 
+    let mut scopes: Vec<Node> = Vec::new();
+    collect_nodes(root, "function_declaration", &mut scopes);
+    collect_nodes(root, "method_declaration", &mut scopes);
+
+    let mut findings = Vec::new();
+    for scope in &scopes {
+        let mut declared = unallocated_map_declarations(*scope, source, false);
+        let mut assigned = assigned_identifiers(*scope, source);
+
+        // A package-level map is in scope here too, and any allocation of it in
+        // the file counts.
+        for name in &package_declared {
+            declared.push(name.clone());
+            if file_assigned.contains(name) {
+                assigned.push(name.clone());
+            }
+        }
+
+        findings.extend(nil_map_writes_in(*scope, source, file, &declared, &assigned));
+    }
+    findings
+}
+
+/// Names of maps declared with `var x map[K]V` and no value.
+///
+/// `package_scope` selects declarations directly under the file rather than
+/// inside a function body. Every name of a grouped declaration is collected:
+/// `child_by_field_name` returns only the first, so `var a, b map[string]int`
+/// left `b` untracked.
+fn unallocated_map_declarations(scope: Node, source: &[u8], package_scope: bool) -> Vec<String> {
     let mut specs: Vec<Node> = Vec::new();
-    collect_nodes(root, "var_spec", &mut specs);
+    collect_nodes(scope, "var_spec", &mut specs);
+
+    let mut names = Vec::new();
     for spec in specs {
+        if package_scope != is_package_scope(spec) {
+            continue;
+        }
         let has_value = spec.child_by_field_name("value").is_some();
         let is_map = spec
             .child_by_field_name("type")
             .map(|t| t.kind() == "map_type")
             .unwrap_or(false);
-        if is_map
-            && !has_value
-            && let Some(name) = spec.child_by_field_name("name")
-        {
-            declared.push(node_text(name, source).to_string());
+        if !is_map || has_value {
+            continue;
+        }
+        let mut cursor = spec.walk();
+        for name in spec.children_by_field_name("name", &mut cursor) {
+            names.push(node_text(name, source).to_string());
         }
     }
+    names
+}
 
+/// True if the declaration sits at file scope rather than inside a function.
+fn is_package_scope(spec: Node) -> bool {
+    let mut node = spec;
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            "function_declaration" | "method_declaration" | "func_literal" => return false,
+            _ => node = parent,
+        }
+    }
+    true
+}
+
+/// Identifiers that appear on the left of an assignment or short declaration —
+/// i.e. names given a value of their own, which for a map means allocated.
+fn assigned_identifiers(scope: Node, source: &[u8]) -> Vec<String> {
     let mut assignments: Vec<Node> = Vec::new();
-    collect_nodes(root, "assignment_statement", &mut assignments);
+    collect_nodes(scope, "assignment_statement", &mut assignments);
     let mut short_decls: Vec<Node> = Vec::new();
-    collect_nodes(root, "short_var_declaration", &mut short_decls);
+    collect_nodes(scope, "short_var_declaration", &mut short_decls);
 
+    let mut names = Vec::new();
     for node in assignments.iter().chain(short_decls.iter()) {
         if let Some(left) = node.child_by_field_name("left") {
             for i in 0..left.named_child_count() {
                 if let Some(target) = left.named_child(i)
                     && target.kind() == "identifier"
                 {
-                    assigned.push(node_text(target, source).to_string());
+                    names.push(node_text(target, source).to_string());
                 }
             }
         }
     }
+    names
+}
+
+fn nil_map_writes_in(
+    scope: Node,
+    source: &[u8],
+    file: &str,
+    declared: &[String],
+    assigned: &[String],
+) -> Vec<DetFinding> {
+    let mut assignments: Vec<Node> = Vec::new();
+    collect_nodes(scope, "assignment_statement", &mut assignments);
 
     let mut findings = Vec::new();
     for node in &assignments {
@@ -536,18 +624,27 @@ fn detect_type_assertion_without_ok<'a>(
     findings
 }
 
-/// True if the assertion is the right-hand side of a two-value assignment, which is
-/// the safe `v, ok := x.(T)` form.
+/// True if the assertion is the whole right-hand side of a two-value assignment,
+/// which is the safe `v, ok := x.(T)` form.
+///
+/// Both sides have to be counted. `s, n = v.(string), g()` also has two targets,
+/// but the assertion supplies only one of them and still panics on a type
+/// mismatch — so testing the left alone marked every parallel assignment safe.
 fn assertion_has_ok_binding(assertion: Node) -> bool {
     let mut node = assertion;
     // The assertion sits inside an expression_list on the right of the assignment.
     while let Some(parent) = node.parent() {
         match parent.kind() {
             "assignment_statement" | "short_var_declaration" => {
-                return parent
+                let targets = parent
                     .child_by_field_name("left")
-                    .map(|left| left.named_child_count() >= 2)
-                    .unwrap_or(false);
+                    .map(|left| left.named_child_count())
+                    .unwrap_or(0);
+                let values = parent
+                    .child_by_field_name("right")
+                    .map(|right| right.named_child_count())
+                    .unwrap_or(0);
+                return targets == 2 && values == 1;
             }
             "expression_list" => node = parent,
             _ => return false,
@@ -1200,6 +1297,36 @@ mod tests {
                 "package foo\nfunc f() {\n\tvar s []int\n\ts[0] = 1\n}\n",
                 0,
             ),
+            // Allocation tracking was file-scoped, so an allocation in any
+            // function suppressed the bug in every other function. Since m,
+            // result and cache are the usual names, the detector was inert in
+            // realistic files — it only fired in single-function examples.
+            (
+                "allocation in another function does not make this write safe",
+                "package foo\n\
+                 func Safe() map[string]int {\n\tm := make(map[string]int)\n\tm[\"ok\"] = 1\n\treturn m\n}\n\
+                 func Bug() map[string]int {\n\tvar m map[string]int\n\tm[\"boom\"] = 1\n\treturn m\n}\n",
+                1,
+            ),
+            (
+                "each function keeps its own allocation",
+                "package foo\n\
+                 func A() {\n\tvar m map[string]int\n\tm = make(map[string]int)\n\tm[\"a\"] = 1\n}\n\
+                 func B() {\n\tvar m map[string]int\n\tm = make(map[string]int)\n\tm[\"b\"] = 1\n}\n",
+                0,
+            ),
+            // child_by_field_name returns the first name only, so the second and
+            // subsequent variables of a grouped declaration were never tracked.
+            (
+                "every name in a grouped declaration is tracked",
+                "package foo\nfunc f() {\n\tvar a, b map[string]int\n\ta[\"x\"] = 1\n\tb[\"y\"] = 2\n}\n",
+                2,
+            ),
+            (
+                "a package-level map allocated in init is safe",
+                "package foo\nvar registry map[string]int\nfunc init() { registry = make(map[string]int) }\nfunc r() { registry[\"a\"] = 1 }\n",
+                0,
+            ),
         ];
 
         for (name, src, want) in cases {
@@ -1238,6 +1365,15 @@ mod tests {
                 "package foo\nfunc f(v any) {\n\tvar s string\n\tvar ok bool\n\ts, ok = v.(string)\n\t_, _ = s, ok\n}\n",
                 0,
             ),
+            // Two targets alone do not make the comma-ok form: here the second
+            // value comes from g(), so the assertion is still single-valued and
+            // still panics. Counting only the left-hand side treated every
+            // multi-assignment as safe.
+            (
+                "parallel assignment is not the comma-ok form",
+                "package foo\nfunc g() int { return 0 }\nfunc f(v any) {\n\tvar s string\n\tvar n int\n\ts, n = v.(string), g()\n\t_, _ = s, n\n}\n",
+                1,
+            ),
         ];
 
         for (name, src, want) in cases {
@@ -1266,12 +1402,63 @@ mod tests {
             vec!["example.com/app/internal/domain".to_string()],
         );
 
-        let findings = detect_domain_imports_adapter(&pkg_imports);
+        let findings = detect_domain_imports_adapter(&pkg_imports, "example.com/app");
 
         assert_eq!(findings.len(), 1, "only the inward violation is a finding");
         assert_eq!(findings[0].detector, "domain_imports_adapter");
         assert_eq!(findings[0].file, "internal/domain");
         assert!(findings[0].message.contains("adapter/postgres"));
+    }
+
+    /// The module path is a prefix of every first-party import, so testing the
+    /// raw import string for markers like "/infra" made the detector fire on
+    /// every import in any project whose module name happens to contain one.
+    /// `github.com/acme/infra-tools` flagged its own value objects, at error
+    /// severity, and this detector had just started running for everyone.
+    #[test]
+    fn adapter_markers_are_matched_below_the_module_root() {
+        let mut pkg_imports = HashMap::new();
+        pkg_imports.insert(
+            "internal/domain".to_string(),
+            vec![
+                "github.com/acme/infra-tools/internal/valueobject".to_string(),
+                "github.com/acme/infra-tools/internal/adapter/postgres".to_string(),
+            ],
+        );
+
+        let findings =
+            detect_domain_imports_adapter(&pkg_imports, "github.com/acme/infra-tools");
+
+        let messages: Vec<&str> = findings.iter().map(|f| f.message.as_str()).collect();
+        assert_eq!(
+            findings.len(),
+            1,
+            "only the adapter import crosses the layer boundary, got {messages:?}"
+        );
+        assert!(findings[0].message.contains("adapter/postgres"));
+    }
+
+    /// A third-party dependency is not this project's adapter layer, whatever it
+    /// is called. Only first-party packages can violate the project's own
+    /// dependency direction.
+    #[test]
+    fn third_party_imports_are_not_adapter_packages() {
+        let mut pkg_imports = HashMap::new();
+        pkg_imports.insert(
+            "internal/domain".to_string(),
+            vec![
+                "github.com/vendor/handler-kit".to_string(),
+                "github.com/vendor/go-repository".to_string(),
+                "net/http".to_string(),
+            ],
+        );
+
+        let findings = detect_domain_imports_adapter(&pkg_imports, "example.com/app");
+
+        assert!(
+            findings.is_empty(),
+            "third-party imports are not the project's adapters"
+        );
     }
 
     /// A top-level `domain/` package has no leading slash in its relative path;
@@ -1286,11 +1473,30 @@ mod tests {
 
     #[test]
     fn adapter_imports_are_recognised() {
-        assert!(is_adapter_package("example.com/app/adapter/db"));
-        assert!(is_adapter_package("example.com/app/internal/repository"));
-        assert!(is_adapter_package("example.com/app/infra/queue"));
-        assert!(!is_adapter_package("fmt"));
-        assert!(!is_adapter_package("example.com/app/internal/domain"));
+        let module = "example.com/app";
+        assert!(is_adapter_package("example.com/app/adapter/db", module));
+        assert!(is_adapter_package(
+            "example.com/app/internal/repository",
+            module
+        ));
+        assert!(is_adapter_package("example.com/app/infra/queue", module));
+        assert!(!is_adapter_package("fmt", module));
+        assert!(!is_adapter_package("example.com/app/internal/domain", module));
+    }
+
+    /// The marker must be found in the path below the module root, not in the
+    /// module name itself.
+    #[test]
+    fn module_name_is_not_searched_for_adapter_markers() {
+        let module = "github.com/acme/infra-tools";
+        assert!(!is_adapter_package(
+            "github.com/acme/infra-tools/internal/valueobject",
+            module
+        ));
+        assert!(is_adapter_package(
+            "github.com/acme/infra-tools/internal/adapter/postgres",
+            module
+        ));
     }
 
     #[test]
