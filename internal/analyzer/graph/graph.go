@@ -2,6 +2,7 @@ package graph
 
 import (
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/diktahq/verikt/internal/config"
@@ -95,7 +96,6 @@ func FindCycles(graph provider.DependencyGraph) [][]string {
 }
 
 func LayerViolations(graph provider.DependencyGraph, components []config.Component) []provider.Violation {
-	layerByPkg := map[string]string{}
 	allowed := map[string]map[string]bool{}
 	for _, comp := range components {
 		allow := make(map[string]bool, len(comp.MayDependOn))
@@ -105,20 +105,7 @@ func LayerViolations(graph provider.DependencyGraph, components []config.Compone
 		allowed[comp.Name] = allow
 	}
 
-	for _, node := range graph.Nodes {
-		layer := node.Layer
-		if layer == "" {
-			for _, comp := range components {
-				if matchesAnyRule(node.Path, comp.In) {
-					layer = comp.Name
-					break
-				}
-			}
-		}
-		if layer != "" {
-			layerByPkg[node.Path] = layer
-		}
-	}
+	layerByPkg := mapLayers(graph, components)
 
 	violations := []provider.Violation{}
 	for _, edge := range graph.Edges {
@@ -127,25 +114,120 @@ func LayerViolations(graph provider.DependencyGraph, components []config.Compone
 		if srcLayer == "" || tgtLayer == "" || srcLayer == tgtLayer {
 			continue
 		}
-		if allowedLayers, ok := allowed[srcLayer]; ok {
-			if allowedLayers[tgtLayer] {
-				continue
-			}
-			violations = append(violations, provider.Violation{
-				Rule:     "dependency",
-				Message:  srcLayer + " must not depend on " + tgtLayer,
-				Source:   edge.From,
-				Target:   edge.To,
-				Severity: "error",
-			})
+		// A source layer that is not a declared component name has no rules to
+		// look up. That only happens for packages no component claims, which
+		// checker.detectOrphanPackages already reports as an error.
+		allowedLayers, ok := allowed[srcLayer]
+		if !ok || allowedLayers[tgtLayer] {
+			continue
 		}
+		violations = append(violations, provider.Violation{
+			Rule:     "dependency",
+			Message:  srcLayer + " must not depend on " + tgtLayer,
+			Source:   edge.From,
+			Target:   edge.To,
+			Severity: "error",
+		})
 	}
 	return violations
+}
+
+// mapLayers resolves each package to the layer used for dependency lookups.
+//
+// Declared components win: verikt.yaml is the source of truth (ADR-010), and
+// guessLayer is only a fallback for packages no component claims. The other
+// order silently dropped violations whenever the guessed layer name ("adapters"
+// for adapter/**) differed from the declared component name ("adapter").
+func mapLayers(graph provider.DependencyGraph, components []config.Component) map[string]string {
+	layerByPkg := map[string]string{}
+
+	for _, node := range graph.Nodes {
+		layer := ""
+		for _, comp := range components {
+			if matchesAnyRule(node.Path, comp.In) {
+				layer = comp.Name
+				break
+			}
+		}
+		if layer == "" {
+			layer = node.Layer
+		}
+		if layer != "" {
+			layerByPkg[node.Path] = layer
+		}
+	}
+
+	return layerByPkg
 }
 
 // MatchesComponent returns true if the package path matches any of the component's patterns.
 func MatchesComponent(pkgPath string, comp config.Component) bool {
 	return matchesAnyRule(pkgPath, comp.In)
+}
+
+// UnclaimedPackages returns the package paths that no declared component claims,
+// preserving input order. These are packages verikt cannot enforce rules for:
+// checker reports them as orphan_package errors and analyze surfaces them too.
+//
+// With no components declared there is nothing to claim against, so the result
+// is empty rather than "everything".
+func UnclaimedPackages(pkgPaths []string, components []config.Component) []string {
+	if len(components) == 0 {
+		return nil
+	}
+
+	var unclaimed []string
+	for _, pkgPath := range pkgPaths {
+		claimed := false
+		for _, comp := range components {
+			if MatchesComponent(pkgPath, comp) {
+				claimed = true
+				break
+			}
+		}
+		if !claimed {
+			unclaimed = append(unclaimed, pkgPath)
+		}
+	}
+	return unclaimed
+}
+
+// ProjectLocalPackages returns the import paths of packages whose source files
+// live under projectPath, skipping any that match an exclude glob. Stdlib and
+// third-party dependencies are filtered out: rules only apply to project code.
+//
+// Exclude globs use the same matching as component `in:` patterns.
+func ProjectLocalPackages(pkgs []*packages.Package, projectPath string, excludes []string) []string {
+	// GoFiles are absolute, so projectPath must be too: a relative root (".",
+	// the default for `verikt check`) matched nothing and silently reported zero
+	// project packages. The trailing separator stops a sibling directory with a
+	// shared name prefix ("/tmp/app2" for root "/tmp/app") from matching.
+	root, err := filepath.Abs(projectPath)
+	if err != nil {
+		root = projectPath
+	}
+	if !strings.HasSuffix(root, string(filepath.Separator)) {
+		root += string(filepath.Separator)
+	}
+
+	seen := map[string]bool{}
+	var result []string
+	for _, pkg := range pkgs {
+		if pkg == nil || pkg.PkgPath == "" || seen[pkg.PkgPath] {
+			continue
+		}
+		if matchesAnyRule(pkg.PkgPath, excludes) {
+			continue
+		}
+		for _, f := range pkg.GoFiles {
+			if strings.HasPrefix(f, root) {
+				seen[pkg.PkgPath] = true
+				result = append(result, pkg.PkgPath)
+				break
+			}
+		}
+	}
+	return result
 }
 
 func matchesAnyRule(pkgPath string, patterns []string) bool {
@@ -170,7 +252,10 @@ func matchesAnyRule(pkgPath string, patterns []string) bool {
 func guessLayer(pkgPath string) string {
 	lower := strings.ToLower(pkgPath)
 	switch {
-	case strings.Contains(lower, "/domain"):
+	// "/core" is kept in sync with checker.isDomainPackage, which also treats it
+	// as the domain. Omitting it here made analyze report "unrecognized" for
+	// projects that name their domain package core.
+	case strings.Contains(lower, "/domain") || strings.Contains(lower, "/core"):
 		return "domain"
 	case strings.Contains(lower, "/port") || strings.Contains(lower, "/ports"):
 		return "ports"

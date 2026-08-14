@@ -97,6 +97,40 @@ func TestCheck_Integration_HexagonalProject(t *testing.T) {
 	}
 }
 
+// Component names that differ from the layer guessed for their directory used to
+// be exempt from dependency enforcement: the guessed name ("domain" for
+// domain/**) was used as the lookup key into a map built from declared names, and
+// the miss was an unlogged skip. Here the domain directory is declared as "core",
+// and domain/bad_dep.go imports service, which "core" does not allow.
+func TestCheck_Integration_EnforcesRenamedComponent(t *testing.T) {
+	projectPath := filepath.Join(testdataDir(t), "hexagonal-project")
+
+	cfg := &config.VeriktConfig{
+		Language:     "go",
+		Architecture: "hexagonal",
+		Components: []config.Component{
+			{Name: "core", In: []string{"domain/**"}},
+			{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"core"}},
+			{Name: "adapter", In: []string{"adapter/**"}, MayDependOn: []string{"core", "service"}},
+		},
+	}
+
+	result, err := Check(cfg, projectPath)
+	if err != nil {
+		t.Fatalf("Check() error: %v", err)
+	}
+
+	found := false
+	for _, v := range result.DependencyViolations {
+		if v.Rule == "dependency" && v.Message == "core must not depend on service" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected the renamed component's dependency rule to be enforced, got %v", result.DependencyViolations)
+	}
+}
+
 func TestCheck_Integration_CleanProject(t *testing.T) {
 	// Test with a minimal config and the same project — structure only.
 	projectPath := filepath.Join(testdataDir(t), "hexagonal-project")

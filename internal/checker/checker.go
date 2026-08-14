@@ -250,48 +250,26 @@ func checkArchitectureShape(cfg *config.VeriktConfig, pkgs []*packages.Package, 
 // (which for Go live in the module cache outside the project directory).
 // Paths matching any exclude glob are also removed.
 func projectLocalPkgPaths(pkgs []*packages.Package, projectPath string, excludes []string) []string {
-	seen := map[string]bool{}
-	var result []string
-	for _, pkg := range pkgs {
-		if pkg.PkgPath == "" || seen[pkg.PkgPath] {
-			continue
-		}
-		if isExcluded(pkg.PkgPath, excludes) {
-			continue
-		}
-		for _, f := range pkg.GoFiles {
-			if strings.HasPrefix(f, projectPath) {
-				seen[pkg.PkgPath] = true
-				result = append(result, pkg.PkgPath)
-				break
-			}
-		}
-	}
-	return result
+	return graph.ProjectLocalPackages(pkgs, projectPath, excludes)
 }
 
 // detectOrphanPackages finds project-local packages that match no declared
 // component. These represent unclassified code — likely a flat structure that
 // does not implement the declared architecture.
+//
+// The "unclaimed" condition itself lives in graph.UnclaimedPackages so that
+// analyze reports the same packages this does.
 func detectOrphanPackages(cfg *config.VeriktConfig, localPkgPaths []string) []Violation {
-	var violations []Violation
-	for _, pkgPath := range localPkgPaths {
-		matched := false
-		for _, comp := range cfg.Components {
-			if graph.MatchesComponent(pkgPath, comp) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			violations = append(violations, Violation{
-				Category: "architecture",
-				File:     pkgPath,
-				Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", pkgPath, cfg.Architecture),
-				Rule:     "orphan_package",
-				Severity: "error",
-			})
-		}
+	unclaimed := graph.UnclaimedPackages(localPkgPaths, cfg.Components)
+	violations := make([]Violation, 0, len(unclaimed))
+	for _, pkgPath := range unclaimed {
+		violations = append(violations, Violation{
+			Category: "architecture",
+			File:     pkgPath,
+			Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", pkgPath, cfg.Architecture),
+			Rule:     "orphan_package",
+			Severity: "error",
+		})
 	}
 	return violations
 }

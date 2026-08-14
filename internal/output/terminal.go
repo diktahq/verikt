@@ -55,7 +55,13 @@ func (f *TerminalFormatter) Format(result *provider.AnalyzeResponse) (string, er
 			fmt.Fprintf(b, "Cycle: %s\n", strings.Join(cycle, " -> "))
 		}
 		for _, violation := range result.Violations {
-			fmt.Fprintf(b, "[%s] %s (%s -> %s)\n", strings.ToUpper(violation.Severity), violation.Message, violation.Source, violation.Target)
+			// Target is empty for findings about a single package (orphan_package),
+			// where an arrow would imply a dependency that does not exist.
+			location := violation.Source
+			if violation.Target != "" {
+				location = violation.Source + " -> " + violation.Target
+			}
+			fmt.Fprintf(b, "[%s] %s (%s)\n", strings.ToUpper(violation.Severity), violation.Message, location)
 		}
 	}
 	return b.String(), nil
