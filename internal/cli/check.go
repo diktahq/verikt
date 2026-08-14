@@ -17,8 +17,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ErrCheckFailed is returned when architecture check finds error-severity violations.
+// ErrCheckFailed is returned when architecture check finds error-severity
+// violations, or when a proxy rule could not run (stale or invalid).
 var ErrCheckFailed = errors.New("architecture check failed")
+
+// checkJSONSchemaVersion is the version of the `verikt check -o json` document.
+// Bump it on any breaking change to the output shape or key names.
+const checkJSONSchemaVersion = 2
 
 type checkFlags struct {
 	projectPath string
@@ -40,7 +45,8 @@ func newCheckCommand(opts *globalOptions) *cobra.Command {
 
 Reports dependency violations, structure issues, and function complexity.
 Runs both built-in detectors and proxy rules by default.
-Exits with code 1 if any error-severity violations are found (useful in CI).`,
+Exits with code 1 if any error-severity violations are found, or if a proxy rule
+could not run (stale or invalid). Warnings do not affect the exit code.`,
 		Example: `  verikt check
   verikt check --path ./my-service
   verikt check --proxy-rules
@@ -73,6 +79,10 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 
 	cfg, err := config.LoadVeriktYAML(veriktPath)
 	if err != nil {
+		return err
+	}
+
+	if err := validateConfigCapabilities(cfg); err != nil {
 		return err
 	}
 
@@ -175,13 +185,8 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 	applySeverityOverrides(checkerResult, ruleResult, cfg.SeverityOverrides)
 
 	// Compute hasErrors from final (possibly filtered, overridden) results.
-	hasErrors = false
-	if checkerResult != nil && !checkerResult.Passed() {
-		hasErrors = true
-	}
-	if ruleResult != nil && ruleResult.ErrorCount() > 0 {
-		hasErrors = true
-	}
+	// Every category gates on error severity — see hasBlockingFindings.
+	hasErrors = hasBlockingFindings(checkerResult) || ruleResultBlocks(ruleResult)
 	for _, v := range decisionViolations {
 		if v.Severity == "error" {
 			hasErrors = true
@@ -342,7 +347,7 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 // filterViolationsBySeverity removes violations whose resolved severity is "ignore"
 // and updates the severity of remaining violations based on configured overrides.
 func filterViolationsBySeverity(violations []checker.Violation, overrides config.SeverityOverrides, keyFn func(checker.Violation) string) []checker.Violation {
-	var filtered []checker.Violation
+	filtered := make([]checker.Violation, 0, len(violations))
 	for _, v := range violations {
 		resolved := config.ResolveSeverity(overrides, keyFn(v), v.File, v.Severity)
 		mapped := config.MapSeverity(resolved)
@@ -422,14 +427,20 @@ func printProxyRuleSection(result *rules.RunResult) {
 	fmt.Printf("\nPROXY RULES (%d valid, %d invalid, %d stale)\n",
 		result.ValidRuleCount(), result.InvalidRuleCount(), result.StaleRuleCount())
 
-	if len(result.Violations) == 0 {
+	// A stale rule matched no files and an invalid rule failed to load: neither
+	// ran, so neither passed. Claiming otherwise hides the failure.
+	unrun := result.StaleRuleCount() + result.InvalidRuleCount()
+	if len(result.Violations) == 0 && unrun == 0 {
 		fmt.Println("  ✓ All proxy rules pass")
 		return
 	}
 
-	errors := result.ErrorCount()
-	warnings := result.WarningCount()
-	fmt.Printf("  %d errors, %d warnings\n", errors, warnings)
+	if len(result.Violations) > 0 {
+		fmt.Printf("  %d errors, %d warnings\n", result.ErrorCount(), result.WarningCount())
+	}
+	if unrun > 0 {
+		fmt.Printf("  %d rules did not run — they cannot pass\n", unrun)
+	}
 
 	for _, v := range result.Violations {
 		sev := "⚠"
@@ -453,6 +464,49 @@ func printProxyRuleSection(result *rules.RunResult) {
 			fmt.Printf("  ⚠ [%s] %s: %s\n", s.Filename, s.Status, s.Error)
 		}
 	}
+}
+
+// hasBlockingFindings reports whether the checker found anything that should
+// fail the build: an error-severity finding in any category.
+//
+// It deliberately ignores warnings. CheckResult.Passed() counts every violation,
+// and because anti-patterns are exempt from severity_overrides, one
+// warning-level anti-pattern (god_package on a deliberately large domain
+// package) made exit 0 unreachable with no waiver available. check --help and
+// ErrCheckFailed both document error severity as the gate.
+func hasBlockingFindings(result *checker.CheckResult) bool {
+	if result == nil {
+		return false
+	}
+
+	for _, group := range [][]checker.Violation{
+		result.DependencyViolations,
+		result.StructureViolations,
+		result.FunctionViolations,
+		result.NamingViolations,
+	} {
+		for _, v := range group {
+			if v.Severity == "error" {
+				return true
+			}
+		}
+	}
+	for _, ap := range result.AntiPatternViolations {
+		if ap.Severity == "error" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ruleResultBlocks reports whether proxy rules should fail the build: an
+// error-severity violation, or a rule that could not run at all.
+func ruleResultBlocks(result *rules.RunResult) bool {
+	if result == nil {
+		return false
+	}
+	return result.ErrorCount() > 0 || result.StaleRuleCount() > 0 || result.InvalidRuleCount() > 0
 }
 
 // splitByCategory splits violations into those matching category and the rest.
@@ -557,7 +611,12 @@ func printDecisionGateSection(decisions []config.Decision, violations []checker.
 }
 
 func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, hasErrors bool) error {
+	// SchemaVersion 2 gave anti_patterns[] the same lowercase json keys as
+	// violations[]. Version 1 (unversioned) emitted Go field names there
+	// (Severity, File, Message, Name, Line), so consumers of the old output need
+	// updating — check schema_version before parsing.
 	type jsonOutput struct {
+		SchemaVersion      int                         `json:"schema_version"`
 		Result             string                      `json:"result"`
 		Violations         []checker.Violation         `json:"violations,omitempty"`
 		AntiPatterns       []checker.AntiPattern       `json:"anti_patterns,omitempty"`
@@ -571,6 +630,7 @@ func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.Run
 	}
 
 	out := jsonOutput{
+		SchemaVersion:      checkJSONSchemaVersion,
 		Result:             status,
 		ProxyRules:         ruleResult,
 		DecisionViolations: decisionViolations,
