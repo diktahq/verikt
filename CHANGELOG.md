@@ -2,6 +2,39 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Changed — breaking
+- **`anti_patterns[]` in `verikt check --output json` uses lowercase keys** (`name`, `category`, `severity`, `file`, `line`, `message`) instead of Go field names. `violations[]` already used lowercase, so consumers had to handle both spellings. The document now carries `schema_version: 2` — check it before parsing.
+- **Anti-pattern severities are honoured on the Rust engine path.** The engine stamped every finding with the requesting rule's severity, so `sql_concatenation`, `swallowed_error` and `domain_imports_adapter` were warnings on the default path and errors on the Go fallback. They are errors again: a SQL-injection finding now fails CI where it previously did not.
+- **A stale proxy rule fails `verikt check`.** A rule whose `scope` matched no files never ran, so reporting it as a pass hid broken rules. With the scope fix below, rules that silently matched nothing will start failing.
+- **`verikt check` and `verikt guide` reject unknown capabilities.** A typo in the `capabilities:` list was accepted silently and rendered into the generated guide as though it were real.
+- **Configuration lookup stops at project boundaries.** `verikt.yaml` is no longer inherited across a directory holding its own `go.mod` or `package.json`. A nested module needs its own config.
+- **The docs site builds with [Bun](https://bun.sh).** `package-lock.json` is replaced by `bun.lock`; run `bun install` in `website/`.
+
+### Fixed
+- **Proxy rules ran against nothing under the default `--path .`** — scope expansion matched the walk root against its own hidden-directory guard and skipped the whole tree, so every rule reported "scope matches 0 files". They only worked with an absolute `--path`.
+- **Declared components are enforced again.** Dependency checks keyed `may_depend_on` on a guessed layer name rather than the declared component, so a component named `adapter` where the heuristic guesses `adapters` was exempt from all dependency enforcement (ADR-010).
+- **The exit code matches the documentation.** `--help` promised "error-severity violations" while the gate counted warnings, including anti-patterns exempt from `severity_overrides`: one warning-level `god_package` made exit 0 unreachable with no waiver.
+- **Symlinked directories are skipped in the Rust engine** (INV-002). None of its three walkers checked, and `path.is_dir()` follows symlinks, so it read files outside the project and could recurse forever on a cycle.
+- **Test files no longer produce dependency violations.** The engine's import graph included `_test.go` files while the Go implementation excludes them, so a test crossing a layer boundary to exercise it was reported as a violation.
+- **`verikt add --dry-run` exists.** It was documented in `--help` but never registered, so the documented example failed with `unknown flag`.
+- **`verikt analyze` reports packages no component claims.** Only `check` knew about the condition, so `analyze` looked cleaner than the code was.
+- **Testing conventions come from real test files.** `packages.Load` runs with `Tests` disabled, so no `_test.go` reached the detector and it reported "test files 0/N" for every project. Counting `.Run(` calls in production code also labelled projects with zero tests as `table-driven`.
+- **`guessLayer` recognises `/core`**, matching `isDomainPackage`; projects naming their domain package `core` were reported as `unrecognized`.
+- **The embedded engine cache is content-addressed.** It was keyed on a hand-maintained version constant, so changing the engine without bumping it left users running the previously extracted binary — silently, and indistinguishably from a successful upgrade. Stale directories are pruned.
+- **`middleware.Recoverer` is the outermost middleware** in the scaffolded chi router. Registered seventh, it left tracing, logging and security headers outside its recover boundary, where a panic kills the process.
+- **The `naked_goroutine` remedy names the panic consequence.** It recommended `errgroup`, which propagates panics rather than recovering them, so following the advice still crashed the process.
+- **`verikt setup` honours `CLAUDE_CONFIG_DIR`**, so Claude Code profile aliases no longer detect and write to the wrong profile.
+
+### Added
+- **verikt governs itself** — a root `verikt.yaml` describing the real component structure, so `verikt check` runs on this repository.
+- **`domain_imports_adapter` and `mvc_in_hexagonal` in the Rust engine.** Both were Go-only, and engine results replace the Go ones wholesale, so neither architecture detector ran for anyone whose engine resolved. Tests now fail when detector sets or severities diverge between the two implementations.
+- **CI for the Rust engine** — `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`. It is the default analysis path and had none.
+- **`.mise.toml`** pinning Go, Rust and Bun to the versions CI uses, with `build-engine` and `check-engine` tasks. The embedded binary is gitignored, so a fresh clone has nothing to embed until built.
+- **INV-004** — detectors never see test files.
+- A guard that fails when help text documents a flag that is not registered.
+
 ## [0.1.0] — 2026-03-23
 
 First public release of verikt. Previously developed as "archway" — renamed to verikt as part of the dikta platform (diktahq).

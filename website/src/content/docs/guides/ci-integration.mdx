@@ -104,10 +104,25 @@ repos:
 
 | Exit Code | Meaning |
 |-----------|---------|
-| `0` | All checks passed. Warnings may be present but do not cause failure. |
-| `1` | One or more architecture violations were found. |
+| `0` | No error-severity violations. Warnings may be present but do not cause failure. |
+| `1` | An error-severity violation was found, or a proxy rule could not run. |
 
-Warnings (such as missing optional capabilities) are printed to stderr but do not cause a non-zero exit code. Only actual violations fail the check.
+Only **error severity** fails the build, in every category — dependency,
+structure, function, naming and anti-pattern findings alike. Warnings (missing
+optional capabilities, advisory anti-patterns) never affect the exit code, so use
+`severity_overrides` in `verikt.yaml` to decide what blocks you.
+
+A proxy rule whose `scope` matches no files is reported as **stale** and fails the
+check. A rule that could not run has not passed, and treating it as a pass is how
+a silently-broken rule survives in CI for months.
+
+If you would rather gate in your own script, read the JSON and select on
+severity — the document carries a `schema_version` to check first:
+
+```bash
+verikt check --output json > verikt.json
+jq -e '[.violations[], .anti_patterns[]] | map(select(.severity == "error")) | length == 0' verikt.json
+```
 
 ## Testing Across Go Versions
 
