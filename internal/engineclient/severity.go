@@ -9,9 +9,11 @@ package engineclient
 // default path. Since `verikt check` gates its exit code on error severity, a
 // SQL-injection finding stopped failing CI depending on which binary ran.
 //
-// These values are the same ones the Go detectors assign in
-// checker.checkAntiPatterns. TestDetectorSeverityMatchesGoDetectors keeps the two
-// tables in step.
+// This table is the single source of truth for detector severity. The Go
+// detectors it was originally mirrored from are deleted (ADR-006, ADR-011), so
+// there is no second table to drift from — TestDetectorSeverityCoversEveryEngineDetector
+// instead compares it against the detectors the engine actually defines, in both
+// directions, and pins each severity.
 var detectorSeverities = map[string]string{
 	"context_background_in_handler": "warning",
 	"domain_imports_adapter":        "error",

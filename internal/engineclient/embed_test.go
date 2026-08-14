@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,4 +144,67 @@ func TestEnginePath_IdempotentOnSecondCall(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, path1, path2)
+}
+
+// The release build must embed exactly one engine.
+//
+// The development build embeds the bin/ directory so a fresh clone can compile
+// before any engine exists. During a release the workflow stages all four
+// platform engines for one parallel GoReleaser run, so that same pattern put
+// every engine into every artefact — roughly 17 MB per artefact of payload the
+// target platform can never execute.
+//
+// This asserts the two build modes still exist and disagree in the right
+// direction; the selection itself is a compile-time constraint, so the guard is
+// that the release files are present and constrained.
+func TestReleaseBuildSelectsASingleEngine(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+
+	platforms := map[string]bool{
+		"embed_engine_release_linux_amd64.go":  false,
+		"embed_engine_release_linux_arm64.go":  false,
+		"embed_engine_release_darwin_amd64.go": false,
+		"embed_engine_release_darwin_arm64.go": false,
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if _, ok := platforms[name]; !ok {
+			continue
+		}
+		data, readErr := os.ReadFile(name)
+		if readErr != nil {
+			t.Fatalf("read %s: %v", name, readErr)
+		}
+		source := string(data)
+		if !strings.Contains(source, "//go:build verikt_release") {
+			t.Errorf("%s is not gated on the verikt_release tag, so it would break the default build", name)
+		}
+		if strings.Count(source, "//go:embed") != 1 {
+			t.Errorf("%s must embed exactly one engine", name)
+		}
+		platforms[name] = true
+	}
+
+	for name, found := range platforms {
+		if !found {
+			t.Errorf("%s is missing: that platform's release build would have no engine", name)
+		}
+	}
+
+	// And the default build must stay tolerant of an absent engine, or a fresh
+	// clone cannot compile.
+	def, err := os.ReadFile("embed_engine.go")
+	if err != nil {
+		t.Fatalf("read embed_engine.go: %v", err)
+	}
+	if !strings.Contains(string(def), "//go:build !verikt_release") {
+		t.Error("the default embed must be excluded from release builds, or both would define engineBinary")
+	}
+	if !strings.Contains(string(def), "//go:embed bin\n") {
+		t.Error("the default embed must match the directory so a missing engine still compiles")
+	}
 }

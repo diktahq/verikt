@@ -515,6 +515,44 @@ fn build_digraph(imports: &[Import]) -> DiGraph<String, ()> {
 mod tests {
     use super::*;
 
+    /// INV-004: detectors never see test files. A test legitimately reaches
+    /// across layers to assemble a fixture, so counting its imports reported
+    /// violations for code that is not part of the architecture.
+    ///
+    /// The invariant had no engine test at all: dropping the `_test.go` filter
+    /// from both branches of collect_go_files, and the guards in antipatterns.rs
+    /// and metrics.rs, left `cargo test` fully green.
+    #[test]
+    fn collect_go_files_excludes_test_files() {
+        let base = std::env::temp_dir().join("verikt-inv004-walk");
+        let project = base.join("project");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(project.join("internal")).unwrap();
+        fs::write(project.join("internal").join("real.go"), "package p\n").unwrap();
+        fs::write(project.join("internal").join("real_test.go"), "package p\n").unwrap();
+
+        let names: Vec<String> = collect_go_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
+
+        // The explicit `--staged` list must apply the same exclusion.
+        let explicit: Vec<String> = collect_go_files(
+            &project,
+            &[
+                "internal/real.go".to_string(),
+                "internal/real_test.go".to_string(),
+            ],
+        )
+        .iter()
+        .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+        assert_eq!(explicit, vec!["real.go".to_string()], "got {explicit:?}");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
     /// Both entry points into collect_go_files must apply the same exclusions.
     /// `--staged` supplies an explicit list, and a fixture path in that list was
     /// analysed while recursive discovery skipped it.

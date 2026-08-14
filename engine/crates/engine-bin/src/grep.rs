@@ -214,6 +214,40 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
+fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // A symlink of any kind points outside the project boundary and is never
+        // project-local code (INV-002). Tested before the directory check because
+        // `is_dir()` follows symlinks.
+        if is_symlink(&entry) {
+            continue;
+        }
+
+        // Skip hidden dirs, vendor, node_modules, target, .git
+        if path.is_dir() {
+            if name_str.starts_with('.')
+                || name_str == "vendor"
+                || name_str == "node_modules"
+                || name_str == "target"
+            {
+                continue;
+            }
+            walk_dir(&path, files);
+        } else {
+            files.push(path);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,7 +320,10 @@ mod tests {
             &[("internal/agent/a.go", "package agent\n")],
         );
 
-        let responses = check(&project, grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]));
+        let responses = check(
+            &project,
+            grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]),
+        );
 
         assert_eq!(
             status_of(&responses, "no-sprintf"),
@@ -325,44 +362,13 @@ mod tests {
             &[("internal/agent/a.go", "package agent\nvar _ = Sprintf\n")],
         );
 
-        let responses = check(&project, grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]));
+        let responses = check(
+            &project,
+            grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]),
+        );
 
         assert_eq!(status_of(&responses, "no-sprintf"), Status::Valid as i32);
 
         let _ = fs::remove_dir_all(&project);
-    }
-}
-
-fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
-    let entries = match fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-
-        // A symlink of any kind points outside the project boundary and is never
-        // project-local code (INV-002). Tested before the directory check because
-        // `is_dir()` follows symlinks.
-        if is_symlink(&entry) {
-            continue;
-        }
-
-        // Skip hidden dirs, vendor, node_modules, target, .git
-        if path.is_dir() {
-            if name_str.starts_with('.')
-                || name_str == "vendor"
-                || name_str == "node_modules"
-                || name_str == "target"
-            {
-                continue;
-            }
-            walk_dir(&path, files);
-        } else {
-            files.push(path);
-        }
     }
 }

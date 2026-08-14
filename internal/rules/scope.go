@@ -30,9 +30,17 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 			return nil // skip unreadable entries
 		}
 
-		// Skip symlinked directories — they point outside the project boundary (INV-002).
-		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
-			return filepath.SkipDir
+		// A symlink of any kind points outside the project boundary and is never
+		// project-local code (INV-002).
+		//
+		// The guard was `d.IsDir() && d.Type()&fs.ModeSymlink != 0`, which never
+		// fires: WalkDir does not follow symlinks, so it reports one from Lstat
+		// and IsDir() is false even for a link to a directory. Linked directories
+		// were therefore skipped by accident — WalkDir simply never descended —
+		// while linked *files* fell straight through and were grepped. Testing
+		// the type alone covers both, deliberately.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
 		}
 
 		// Skip hidden directories (starting with ".") and known non-source dirs.

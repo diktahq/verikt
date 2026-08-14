@@ -16,7 +16,7 @@ Follow these directives in every file you write or edit.
 These are invariants. Violation is never acceptable.
 
 - Generated rules files from `verikt guide` MUST stay within 15-25 instructions, 500-1,500 tokens per file. Critical rules at start and end. Each instruction paired with motivation. 3-5 code examples included. (ref: INV-001)
-- Symlinked directories MUST be skipped when traversing project directories, in Go and in the Rust engine. NEVER treat symlinks as project-local code. Check `d.Type()&fs.ModeSymlink != 0` and return `filepath.SkipDir` in Go; `entry.file_type()?.is_symlink()` in Rust, because `path.is_dir()` follows links. (ref: INV-002)
+- Every symlink MUST be skipped when traversing project directories, files as well as directories, in Go and in the Rust engine. NEVER treat symlinks as project-local code. Check `d.Type()&fs.ModeSymlink != 0` in Go *before* any `d.IsDir()` filter — WalkDir reports symlinks from Lstat, so `IsDir()` is false even for a link to a directory and a guard behind that filter never fires. In Rust check `entry.file_type()?.is_symlink()`, because `path.is_dir()` follows links. (ref: INV-002)
 - Templates MUST be secure by default. NEVER ship hardcoded secrets or fallback credentials. NEVER default CORS to `*`, gRPC reflection to `true`, or TLS to disabled. Auth middleware MUST validate tokens, not just check they exist. Docker images MUST pin versions. SQL MUST use parameterized queries. (ref: INV-003)
 - Detectors MUST NEVER see test files. Keep `Tests` disabled in `packages.Config` and exclude `_test.go` from the engine's `collect_go_files`. Gather test statistics separately, and NEVER infer a testing pattern when a project has zero test files. (ref: INV-004)
 
@@ -38,6 +38,6 @@ These constraints were listed above and are restated for emphasis.
 Do not violate them under any circumstances.
 
 - Generated rules files: 15-25 instructions, 500-1,500 tokens, critical rules at start/end, motivation + examples. (ref: INV-001)
-- Symlinked directories: ALWAYS skip in both Go and Rust, NEVER treat as project-local. (ref: INV-002)
+- Every symlink, file or directory: ALWAYS skip in both Go and Rust, NEVER treat as project-local. (ref: INV-002)
 - Templates MUST be secure by default: no hardcoded secrets, no permissive defaults, no unpinned images, auth MUST validate, SQL MUST be parameterized. (ref: INV-003)
 - Detectors NEVER see test files: `Tests` stays disabled, `_test.go` excluded from the engine's file walk. (ref: INV-004)

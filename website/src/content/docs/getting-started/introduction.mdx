@@ -32,7 +32,7 @@ Think of it like Terraform for code architecture. You declare what you want, ver
 
 ## How It Works
 
-Capabilities generate only the code, imports, and configuration they need — nothing more. When you add an HTTP API, verikt suggests what else you likely need: health endpoints, request ID propagation, rate limiting, CORS. `verikt check` validates your dependency rules with 11 AST-based detectors — domain code importing adapter code gets caught at the command line, not in code review.
+Capabilities generate only the code, imports, and configuration they need — nothing more. When you add an HTTP API, verikt suggests what else you likely need: health endpoints, request ID propagation, rate limiting, CORS. `verikt check` validates your dependency rules with 14 AST-based detectors — domain code importing adapter code gets caught at the command line, not in code review.
 
 <Aside>
 verikt generates plain code with no runtime dependency — not a framework. Scaffold once and own the output. It sets up the infrastructure; you write the domain.

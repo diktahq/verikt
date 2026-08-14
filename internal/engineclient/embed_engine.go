@@ -1,3 +1,5 @@
+//go:build !verikt_release
+
 package engineclient
 
 import (
@@ -14,6 +16,13 @@ import (
 // not run `go build`, `go vet` or `go test` at all, and `go install` could never
 // work. bin/README.md is committed so the pattern always matches.
 //
+// The cost is that every file in bin/ is embedded, so a tree holding all four
+// platform binaries produces a binary carrying all four. That is fine locally,
+// where at most one is present, and wrong for a release, where the workflow
+// stages all of them for a single parallel GoReleaser run — hence the
+// verikt_release build tag, which switches to embed_engine_release.go and
+// embeds exactly the target platform's engine.
+//
 //go:embed bin
 var engineFS embed.FS
 
@@ -21,9 +30,10 @@ var engineFS embed.FS
 // when none was embedded.
 //
 // A nil binary is a supported configuration, not an error: EnginePath reports it
-// and callers fall back to Go-native analysis. That was already true for platforms
-// with no engine build; it is now also true for a local build that has not produced
-// one.
+// and `verikt check` fails with ErrEngineRequired rather than falling back to a
+// second, divergent implementation (ADR-006, ADR-011). That was already true for
+// platforms with no engine build; it is now also true for a local build that has
+// not produced one.
 var engineBinary = embeddedEngineFor(runtime.GOOS, runtime.GOARCH)
 
 // embeddedEngineFor returns the embedded engine for a platform, or nil if absent.

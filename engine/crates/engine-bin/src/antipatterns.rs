@@ -147,15 +147,12 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
             _ => continue,
         };
 
-        let mut rule_matched = false;
-
         for f in &all_findings {
             // Empty detectors list = all detectors enabled.
             if !spec.detectors.is_empty() && !spec.detectors.iter().any(|d| d == f.detector) {
                 continue;
             }
 
-            rule_matched = true;
             findings_total += 1;
             match rule.severity {
                 s if s == pb::Severity::Error as i32 => findings_error += 1,
@@ -178,12 +175,16 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
             });
         }
 
+        // Stale means the rule could not run — there was nothing in scope to
+        // analyse. It does not mean the detectors found nothing: a clean project
+        // is the success case, and reporting it as a broken rule is how the grep
+        // engine came to fail every compliant repository.
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if rule_matched {
-                Status::Valid
-            } else {
+            status: if go_files.is_empty() {
                 Status::Stale
+            } else {
+                Status::Valid
             }
             .into(),
             error: String::new(),
@@ -341,10 +342,9 @@ fn detect_init_abuse<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFi
 
 /// True if the package is part of the domain (inner) layer.
 ///
-/// Mirrors `checker.isDomainPackage`. Package paths here are project-relative
-/// directories ("internal/domain"), while the Go side matches full import paths,
-/// so a leading separator is added before testing: without it a top-level
-/// `domain/` package would not match "/domain".
+/// Package paths are project-relative directories ("internal/domain"), so a
+/// leading separator is added before testing: without it a top-level `domain/`
+/// package would not match "/domain".
 fn is_domain_package(pkg_path: &str) -> bool {
     let normalized = format!("/{pkg_path}");
     normalized.contains("/domain") || normalized.contains("/core") || normalized.contains("/port")
@@ -380,8 +380,8 @@ fn is_adapter_package(import_path: &str, module_root: &str) -> bool {
 /// Domain packages that import adapter packages — the dependency rule inverted.
 ///
 /// Cross-package, so it runs as a post-pass over every file's imports rather than
-/// per file. Mirrors `checker.detectDomainImportingAdapters`; without it the
-/// engine path silently skipped this check entirely.
+/// per file. The engine path skipped this check entirely until it was ported
+/// here, which is why it is cross-package rather than per-file.
 fn detect_domain_imports_adapter(
     pkg_imports: &HashMap<String, Vec<String>>,
     module_root: &str,
@@ -481,7 +481,9 @@ fn detect_nil_map_write<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<De
             }
         }
 
-        findings.extend(nil_map_writes_in(*scope, source, file, &declared, &assigned));
+        findings.extend(nil_map_writes_in(
+            *scope, source, file, &declared, &assigned,
+        ));
     }
     findings
 }
@@ -596,9 +598,9 @@ fn nil_map_writes_in(
 
 /// Single-value type assertions, which panic when the value holds another type.
 ///
-/// The two-value form and a type switch both make the failure explicit. Mirrors
-/// `checker.detectTypeAssertionWithoutOK`, including its warning severity: asserting
-/// without the comma-ok form is legitimate when the type is genuinely known.
+/// The two-value form and a type switch both make the failure explicit. Warning
+/// severity: asserting without the comma-ok form is legitimate when the type is
+/// genuinely known.
 fn detect_type_assertion_without_ok<'a>(
     root: Node<'a>,
     _source: &[u8],
@@ -655,10 +657,9 @@ fn assertion_has_ok_binding(assertion: Node) -> bool {
 
 /// Remedy reported for a bare `go` statement.
 ///
-/// Duplicated as `checker.nakedGoroutineMessage` in the Go fallback
-/// implementation (internal/checker/antipatterns.go); the Go test
-/// `TestNakedGoroutineMessageMatchesEngine` reads this file and fails if the two
-/// drift apart.
+/// Naming the panic consequence is what makes this finding land: the previous
+/// wording recommended errgroup, which propagates panics rather than containing
+/// them, so following the advice left the bug in place.
 const NAKED_GOROUTINE_MESSAGE: &str = "bare 'go' statement — an unrecovered panic in the goroutine body crashes the whole process \
 (errgroup propagates panics, it does not contain them): add a recover boundary inside the goroutine \
 and tie its lifetime to a context";
@@ -1426,8 +1427,7 @@ mod tests {
             ],
         );
 
-        let findings =
-            detect_domain_imports_adapter(&pkg_imports, "github.com/acme/infra-tools");
+        let findings = detect_domain_imports_adapter(&pkg_imports, "github.com/acme/infra-tools");
 
         let messages: Vec<&str> = findings.iter().map(|f| f.message.as_str()).collect();
         assert_eq!(
@@ -1481,7 +1481,10 @@ mod tests {
         ));
         assert!(is_adapter_package("example.com/app/infra/queue", module));
         assert!(!is_adapter_package("fmt", module));
-        assert!(!is_adapter_package("example.com/app/internal/domain", module));
+        assert!(!is_adapter_package(
+            "example.com/app/internal/domain",
+            module
+        ));
     }
 
     /// The marker must be found in the path below the module root, not in the
