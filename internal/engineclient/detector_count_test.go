@@ -11,7 +11,7 @@ import (
 
 // detectorCountClaim matches a documented detector count, e.g. "14 AST-based
 // detectors", "14 architecture detectors", "✅ 14 detectors".
-var detectorCountClaim = regexp.MustCompile(`(\d+)\s+(?:AST-based |architecture )?detectors`)
+var detectorCountClaim = regexp.MustCompile(`(\d+)\s+(?:[A-Za-z-]+\s+)*detectors`)
 
 // Every place that states how many detectors verikt has must state the real
 // number.

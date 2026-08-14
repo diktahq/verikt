@@ -132,7 +132,7 @@ The `.proto` file generates matching types on both sides. A field rename or type
 - **Two languages for contributors** — CLI contributors need Go, engine contributors need Rust. Clear boundary mitigates this.
 - **Protobuf toolchain** — adds `protoc` + `prost` (Rust) + `protoc-gen-go` to the build. One-time setup cost.
 - **Embedded binary size** — adds ~5-10MB to the verikt binary (total ~20-25MB)
-- **Anti-pattern queries are per-language work** — 8 of 11 current detectors are Go-semantic. Each new language needs its own anti-pattern query set.
+- **Anti-pattern queries are per-language work** — 12 of 14 current detectors are Go-semantic (goroutines, `init()`, nil maps, type assertions, exported-symbol counts). Only `domain_imports_adapter` and `mvc_in_hexagonal` are structural and carry over. Each new language needs its own anti-pattern query set.
 
 ### Timeline
 

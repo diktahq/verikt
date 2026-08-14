@@ -36,7 +36,7 @@ verikt new my-api --arch hexagonal \
 | **Guide** | `verikt guide` | Generates architecture context for AI agents (Claude Code, Cursor, Copilot, Windsurf) |
 | **Compose** | `verikt new` | Scaffolds services from architecture + capabilities — health checks, graceful shutdown, observability wired by default |
 | **Analyze** | `verikt analyze` | Detects architecture patterns in existing codebases |
-| **Enforce** | `verikt check` | Validates code against architecture rules — 11 anti-pattern detectors, `--diff main` for CI |
+| **Enforce** | `verikt check` | Validates code against architecture rules — 14 anti-pattern detectors, `--diff main` for CI |
 
 ## Language Support
 
