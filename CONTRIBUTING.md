@@ -69,18 +69,23 @@ cd website && bun install && bun run build
 
 ## Changing a detector
 
-Anti-pattern detectors exist **twice** — in Go (`internal/checker/`) and in Rust
-(`engine/crates/engine-bin/src/antipatterns.rs`). When the embedded engine resolves,
-its results replace the Go ones wholesale, so a detector implemented in only one
-place silently does not run for most users.
+Anti-pattern detectors live **only** in the Rust engine
+(`engine/crates/engine-bin/src/antipatterns.rs`). There is no Go implementation, and
+adding one is forbidden — see ADR-011. Two implementations disagreed silently for a
+release, and which one ran depended on whether the embedded binary resolved.
 
-Tests enforce the pairing: `TestDetectorSetsMatchEngine` fails when the two sets
-diverge, and `TestDetectorSeverityMatchesGoDetectors` fails when a detector's severity
-differs between them. Both read the sources directly, so add your detector to both
-implementations and give it the same severity in each.
+`detectorSeverities` in `internal/engineclient/severity.go` is the single source of truth
+for severity: the engine stamps every finding with the requesting rule's severity, so a
+detector without an entry there is reported as a warning whatever its real severity.
+`TestDetectorSeverityCoversEveryEngineDetector` fails if you add an engine detector and
+forget it.
 
 After changing the engine, rebuild and re-embed it with `mise run build-engine` —
 otherwise you are still testing the previously embedded binary.
+
+`verikt check` requires the engine for Go projects. Without it you get a clear error, not
+a partial answer. `verikt analyze` is different: architecture and convention detection are
+Go-side (`internal/analyzer/detector/`) because no Rust equivalent exists.
 
 ## Architecture decisions and invariants
 

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diktahq/verikt/internal/checker"
 	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,25 +31,6 @@ var fullDetectors = []struct {
 	{name: "init_abuse", subpkg: "initabuse"},
 	{name: "init_side_effects", subpkg: "initside"},
 	{name: "uuid_v4_as_key", subpkg: "uuidkey"},
-}
-
-// TestAntiPatternsFull_GoPath validates that all remaining detectors fire via the Go AST path.
-func TestAntiPatternsFull_GoPath(t *testing.T) {
-	cfg := &config.VeriktConfig{Language: "go"}
-	projectPath := antipatternFullProjectPath(t)
-
-	start := time.Now()
-	result, err := checker.Check(cfg, projectPath)
-	duration := time.Since(start)
-	require.NoError(t, err)
-
-	found := detectorSet(result)
-	t.Logf("Go AST full (%v): %d anti-patterns found", duration, len(result.AntiPatternViolations))
-	logAntiPatterns(t, result)
-
-	for _, d := range fullDetectors {
-		assert.True(t, found[d.name], "Go path must detect %q (triggered by %s/)", d.name, d.subpkg)
-	}
 }
 
 // TestAntiPatternsFull_EnginePath validates the same detectors via the Rust engine.
@@ -90,7 +70,7 @@ func TestAntiPatternsFull_FalsePositives(t *testing.T) {
 
 	// Go path.
 	cfg := &config.VeriktConfig{Language: "go"}
-	goResult, err := checker.Check(cfg, cleanPath)
+	goResult, err := checkViaEngine(t, cfg, cleanPath)
 	require.NoError(t, err)
 	assert.Empty(t, goResult.AntiPatternViolations,
 		"Go path: clean/ must produce zero anti-pattern findings")
@@ -107,7 +87,7 @@ func TestAntiPatternsFull_GodPackage(t *testing.T) {
 	cfg := &config.VeriktConfig{Language: "go"}
 	projectPath := antipatternFullProjectPath(t)
 
-	result, err := checker.Check(cfg, projectPath)
+	result, err := checkViaEngine(t, cfg, projectPath)
 	require.NoError(t, err)
 
 	found := detectorSet(result)

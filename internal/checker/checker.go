@@ -3,17 +3,13 @@ package checker
 import (
 	"errors"
 	"fmt"
-	"go/ast"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/diktahq/verikt/internal/analyzer"
 	"github.com/diktahq/verikt/internal/analyzer/graph"
 	"github.com/diktahq/verikt/internal/config"
-	"github.com/diktahq/verikt/internal/provider"
-	"golang.org/x/tools/go/packages"
 )
 
 // Violation represents a single rule violation.
@@ -86,85 +82,33 @@ type MetricClient interface {
 	CheckFunctionMetrics(projectPath string, rules config.FunctionRules) ([]Violation, error)
 }
 
-// Check validates a project at the given path against its verikt.yaml config.
-// It calls CheckWithEngine(cfg, projectPath, nil, nil, nil).
-func Check(cfg *config.VeriktConfig, projectPath string) (*CheckResult, error) {
-	return CheckWithEngine(cfg, projectPath, nil, nil, nil)
-}
+// ErrEngineRequired is returned when analysis is requested without an engine.
+//
+// ADR-006 made the Rust engine the sole implementation of code analysis, and ADR-011
+// keeps it that way. There is deliberately no Go fallback: two implementations of the
+// same detector disagreed silently, and which one ran depended on whether the embedded
+// binary resolved — invisible to the user.
+var ErrEngineRequired = errors.New("analysis engine unavailable: verikt check requires the embedded Rust engine")
 
-// CheckWithEngine is like Check but uses the provided engine clients for
-// anti-pattern, dependency, and function metric detection when non-nil.
-// When all three clients are non-nil, go/packages loading is skipped entirely.
-// TypeScript projects always skip go/packages — the Rust engine handles analysis.
+// CheckWithEngine validates a project against its verikt.yaml config.
+//
+// All three engine clients are required. Structure, component coverage and
+// architecture-shape checks are filesystem-based and need no engine; dependency,
+// function-metric and anti-pattern analysis are the engine's.
 func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient AntiPatternClient, depClient DependencyClient, metricClient MetricClient) (*CheckResult, error) {
 	result := &CheckResult{
 		ComponentsTotal: len(cfg.Components),
 	}
 
-	// TypeScript: no Go packages to load. Use engine-only path when available,
-	// or fall back to structure + component coverage checks only.
 	if cfg.Language == "typescript" {
 		return checkTypeScript(cfg, projectPath, result, apClient, depClient, metricClient)
 	}
 
-	// Engine fast path: all three clients available — skip go/packages entirely.
-	if apClient != nil && depClient != nil && metricClient != nil {
-		return checkWithEngineOnly(cfg, projectPath, result, apClient, depClient, metricClient)
+	if apClient == nil || depClient == nil || metricClient == nil {
+		return nil, ErrEngineRequired
 	}
 
-	// Go packages path (fallback or partial).
-	a := analyzer.New(projectPath)
-	if err := a.LoadPackages(""); err != nil {
-		return nil, fmt.Errorf("load packages: %w", err)
-	}
-	depGraph := graph.BuildGraph(a.Packages())
-
-	// Dependency violations.
-	if depClient != nil {
-		if engineViolations, err := depClient.CheckDependencies(projectPath, cfg.Components); err == nil {
-			result.DependencyViolations = engineViolations
-		} else {
-			result.DependencyViolations = goLayerViolations(depGraph, cfg.Components)
-		}
-	} else {
-		result.DependencyViolations = goLayerViolations(depGraph, cfg.Components)
-	}
-
-	// Component coverage (requires package graph).
-	result.ComponentsCovered = countCoveredComponents(depGraph, cfg.Components)
-
-	// Architecture shape violations (orphan packages + missing components).
-	result.DependencyViolations = append(result.DependencyViolations,
-		checkArchitectureShape(cfg, a.Packages(), projectPath)...)
-
-	// Structure violations.
-	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
-
-	// Function violations.
-	if metricClient != nil {
-		if engineViolations, err := metricClient.CheckFunctionMetrics(projectPath, cfg.Rules.Functions); err == nil {
-			result.FunctionViolations = engineViolations
-		} else {
-			result.FunctionViolations = checkFunctions(cfg.Rules.Functions, a.Packages())
-		}
-	} else {
-		result.FunctionViolations = checkFunctions(cfg.Rules.Functions, a.Packages())
-	}
-
-	// Anti-pattern violations.
-	if apClient != nil {
-		if antiPatterns, err := apClient.CheckAntiPatterns(projectPath, nil); err == nil {
-			result.AntiPatternViolations = antiPatterns
-		} else {
-			result.AntiPatternViolations = checkAntiPatterns(a.Packages(), projectPath)
-		}
-	} else {
-		result.AntiPatternViolations = checkAntiPatterns(a.Packages(), projectPath)
-	}
-
-	applyExcludes(result, cfg.Check.Exclude)
-	computeMetrics(cfg, result)
-	return result, nil
+	return checkWithEngineOnly(cfg, projectPath, result, apClient, depClient, metricClient)
 }
 
 // checkTypeScript runs checks for TypeScript projects.
@@ -229,52 +173,6 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	applyExcludes(result, cfg.Check.Exclude)
 	computeMetrics(cfg, result)
 	return result, nil
-}
-
-// checkArchitectureShape runs two checks:
-//  1. Orphan packages — project-local Go packages that match no declared component.
-//  2. Missing components — declared components with no Go files in their paths.
-//
-// Both are reported as "architecture" category violations. Paths matching
-// cfg.Check.Exclude globs are skipped.
-func checkArchitectureShape(cfg *config.VeriktConfig, pkgs []*packages.Package, projectPath string) []Violation {
-	if len(cfg.Components) == 0 {
-		return nil
-	}
-	violations := make([]Violation, 0, len(cfg.Components))
-	localPaths := projectLocalPkgPaths(pkgs, projectPath, cfg.Check.Exclude)
-	violations = append(violations, detectOrphanPackages(cfg, localPaths)...)
-	violations = append(violations, detectMissingComponents(cfg, projectPath)...)
-	return violations
-}
-
-// projectLocalPkgPaths returns import paths of packages whose source files
-// live under projectPath. This filters out stdlib and third-party dependencies
-// (which for Go live in the module cache outside the project directory).
-// Paths matching any exclude glob are also removed.
-func projectLocalPkgPaths(pkgs []*packages.Package, projectPath string, excludes []string) []string {
-	return graph.ProjectLocalPackages(pkgs, projectPath, excludes)
-}
-
-// detectOrphanPackages finds project-local packages that match no declared
-// component. These represent unclassified code — likely a flat structure that
-// does not implement the declared architecture.
-//
-// The "unclaimed" condition itself lives in graph.UnclaimedPackages so that
-// analyze reports the same packages this does.
-func detectOrphanPackages(cfg *config.VeriktConfig, localPkgPaths []string) []Violation {
-	unclaimed := graph.UnclaimedPackages(localPkgPaths, cfg.Components)
-	violations := make([]Violation, 0, len(unclaimed))
-	for _, pkgPath := range unclaimed {
-		violations = append(violations, Violation{
-			Category: "architecture",
-			File:     pkgPath,
-			Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", pkgPath, cfg.Architecture),
-			Rule:     "orphan_package",
-			Severity: "error",
-		})
-	}
-	return violations
 }
 
 // detectMissingComponents finds components declared in verikt.yaml that have
@@ -415,20 +313,6 @@ func isExcluded(pkgPath string, excludes []string) bool {
 	return false
 }
 
-func goLayerViolations(depGraph provider.DependencyGraph, components []config.Component) []Violation {
-	violations := make([]Violation, 0, len(components))
-	for _, v := range graph.LayerViolations(depGraph, components) {
-		violations = append(violations, Violation{
-			Category: "dependency",
-			File:     v.Source,
-			Message:  v.Message,
-			Rule:     v.Rule,
-			Severity: v.Severity,
-		})
-	}
-	return violations
-}
-
 // countCoveredComponentsFS checks component coverage using the filesystem —
 // no go/packages required. A component is covered if any directory matching
 // one of its In patterns exists under projectPath.
@@ -457,19 +341,6 @@ func computeMetrics(cfg *config.VeriktConfig, result *CheckResult) {
 	}
 }
 
-func countCoveredComponents(depGraph provider.DependencyGraph, components []config.Component) int {
-	covered := 0
-	for _, comp := range components {
-		for _, node := range depGraph.Nodes {
-			if graph.MatchesComponent(node.Path, comp) {
-				covered++
-				break
-			}
-		}
-	}
-	return covered
-}
-
 func checkStructure(rules config.StructureConfig, projectPath string) []Violation {
 	var violations []Violation
 	for _, dir := range rules.RequiredDirs {
@@ -492,76 +363,6 @@ func checkStructure(rules config.StructureConfig, projectPath string) []Violatio
 				Rule:     "forbidden_dir",
 				Severity: "error",
 			})
-		}
-	}
-	return violations
-}
-
-func checkFunctions(rules config.FunctionRules, pkgs []*packages.Package) []Violation {
-	if rules.MaxLines == 0 && rules.MaxParams == 0 && rules.MaxReturnValues == 0 {
-		return nil
-	}
-
-	var violations []Violation
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			fset := pkg.Fset
-			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn == nil {
-					continue
-				}
-
-				filePath := fset.Position(fn.Pos()).Filename
-				line := fset.Position(fn.Pos()).Line
-
-				// Check line count.
-				if rules.MaxLines > 0 && fn.Body != nil {
-					startLine := fset.Position(fn.Body.Lbrace).Line
-					endLine := fset.Position(fn.Body.Rbrace).Line
-					lines := endLine - startLine
-					if lines > rules.MaxLines {
-						violations = append(violations, Violation{
-							Category: "function",
-							File:     filePath,
-							Line:     line,
-							Message:  fmt.Sprintf("%s — %d lines (max: %d)", fn.Name.Name, lines, rules.MaxLines),
-							Rule:     "max_lines",
-							Severity: "warning",
-						})
-					}
-				}
-
-				// Check param count.
-				if rules.MaxParams > 0 && fn.Type.Params != nil {
-					params := fn.Type.Params.NumFields()
-					if params > rules.MaxParams {
-						violations = append(violations, Violation{
-							Category: "function",
-							File:     filePath,
-							Line:     line,
-							Message:  fmt.Sprintf("%s — %d params (max: %d)", fn.Name.Name, params, rules.MaxParams),
-							Rule:     "max_params",
-							Severity: "warning",
-						})
-					}
-				}
-
-				// Check return value count.
-				if rules.MaxReturnValues > 0 && fn.Type.Results != nil {
-					results := fn.Type.Results.NumFields()
-					if results > rules.MaxReturnValues {
-						violations = append(violations, Violation{
-							Category: "function",
-							File:     filePath,
-							Line:     line,
-							Message:  fmt.Sprintf("%s — %d return values (max: %d)", fn.Name.Name, results, rules.MaxReturnValues),
-							Rule:     "max_return_values",
-							Severity: "warning",
-						})
-					}
-				}
-			}
 		}
 	}
 	return violations
