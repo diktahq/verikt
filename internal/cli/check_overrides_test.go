@@ -79,9 +79,12 @@ func TestApplySeverityOverrides_DowngradesErrorToWarning(t *testing.T) {
 	assert.Equal(t, "warning", result.DependencyViolations[0].Severity)
 }
 
-// TestApplySeverityOverrides_AntiPatternsNotFiltered verifies that anti-pattern violations
-// are never removed regardless of overrides.
-func TestApplySeverityOverrides_AntiPatternsNotFiltered(t *testing.T) {
+// A waived anti-pattern leaves the blocking set and is recorded as waived.
+//
+// This asserted the opposite until the exemption was removed: anti-patterns were
+// the one category severity_overrides skipped, while the upgrade notes told users
+// to scope newly-failing findings with exactly that key.
+func TestApplySeverityOverrides_AntiPatternWaived(t *testing.T) {
 	antiPatterns := []checker.AntiPattern{
 		{Name: "naked_goroutine", File: "cmd/main.go", Severity: "error"},
 	}
@@ -89,13 +92,16 @@ func TestApplySeverityOverrides_AntiPatternsNotFiltered(t *testing.T) {
 
 	overrides := config.SeverityOverrides{
 		"naked_goroutine": []config.SeverityOverride{
-			{Severity: "ignore", Reason: "intentional", Paths: []string{}},
+			{Severity: "ignore", Reason: "signal handler, recover boundary reviewed in #77", Paths: []string{}},
 		},
 	}
 
 	applySeverityOverrides(result, nil, overrides)
 
-	assert.Len(t, result.AntiPatternViolations, 1, "anti-pattern violations must not be filtered")
+	assert.Empty(t, result.AntiPatternViolations, "a waived detector no longer blocks")
+	require.Len(t, result.WaivedFindings, 1, "and is reported as waived rather than dropped")
+	assert.Equal(t, "naked_goroutine", result.WaivedFindings[0].Rule)
+	assert.Contains(t, result.WaivedFindings[0].Reason, "recover boundary reviewed")
 }
 
 // TestApplySeverityOverrides_ProxyRuleIgnored verifies that proxy rule violations are
@@ -204,9 +210,9 @@ func TestCheck_SeverityOverride_WithDiff(t *testing.T) {
 	assert.Equal(t, "adapter/new/repo.go", diffResult.DependencyViolations[0].File)
 }
 
-// TestCheck_SeverityOverride_AntiPatternsNotOverridable verifies that a severity_override
-// entry targeting an anti-pattern name has no effect — anti-patterns are safety rules.
-func TestCheck_SeverityOverride_AntiPatternsNotOverridable(t *testing.T) {
+// Waiving a finding must keep the reported metrics honest: a waived finding is
+// not a violation any more, so the counts have to agree.
+func TestCheck_SeverityOverride_AntiPatternWaiverRecalculatesMetrics(t *testing.T) {
 	result := &checker.CheckResult{
 		RulesChecked: 3,
 		AntiPatternViolations: []checker.AntiPattern{
@@ -217,14 +223,15 @@ func TestCheck_SeverityOverride_AntiPatternsNotOverridable(t *testing.T) {
 
 	overrides := config.SeverityOverrides{
 		"naked_goroutine": []config.SeverityOverride{
-			{Severity: "ignore", Reason: "intentional", Paths: []string{}},
+			{Severity: "ignore", Reason: "lifecycle goroutine, reviewed", Paths: []string{}},
 		},
 	}
 
 	applySeverityOverrides(result, nil, overrides)
 
-	assert.Len(t, result.AntiPatternViolations, 1, "anti-pattern must survive any severity override")
-	assert.Equal(t, "naked_goroutine", result.AntiPatternViolations[0].Name)
+	assert.Empty(t, result.AntiPatternViolations)
+	assert.Equal(t, 0, result.TotalViolations())
+	assert.Equal(t, result.RulesChecked, result.RulesPassing)
 }
 
 // TestFilterCheckerResultByFiles_RecalculatesMetrics verifies that the --diff file filter

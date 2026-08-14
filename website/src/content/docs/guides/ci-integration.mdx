@@ -110,19 +110,33 @@ repos:
 Only **error severity** fails the build, in every category — dependency,
 structure, function, naming and anti-pattern findings alike. Warnings (missing
 optional capabilities, advisory anti-patterns) never affect the exit code, so use
-`severity_overrides` in `verikt.yaml` to decide what blocks you.
+`severity_overrides` in `verikt.yaml` to decide what blocks you. That includes
+anti-patterns: a finding you have reviewed and accepted can be waived with a
+required reason, and stays visible in the `WAIVED` section rather than vanishing.
+
+```yaml
+severity_overrides:
+  god_package:
+    - severity: ignore
+      reason: "the shared domain vocabulary; nothing to trim"
+      paths: ["internal/core/**"]
+```
 
 A proxy rule whose `scope` matches no files is reported as **stale** and fails the
 check. A rule that could not run has not passed, and treating it as a pass is how
-a silently-broken rule survives in CI for months.
+a silently-broken rule survives in CI for months. A rule that ran across its scope
+and found nothing has passed.
 
 If you would rather gate in your own script, read the JSON and select on
 severity — the document carries a `schema_version` to check first:
 
 ```bash
 verikt check --output json > verikt.json
-jq -e '[.violations[], .anti_patterns[]] | map(select(.severity == "error")) | length == 0' verikt.json
+jq -e '[(.violations // [])[], (.anti_patterns // [])[]] | map(select(.severity == "error")) | length == 0' verikt.json
 ```
+
+`violations[]` and `anti_patterns[]` are always present, so the `// []` defaults
+are belt and braces — keep them and the snippet works against any verikt version.
 
 ## Testing Across Go Versions
 

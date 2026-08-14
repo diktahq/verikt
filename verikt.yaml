@@ -18,6 +18,7 @@ components:
       - internal/provider/**
       - internal/config/**
       - internal/security/**
+      - internal/pathglob/**
 
   # Reads existing code: package graphs, architecture detection, rule evaluation.
   # Reaches the engine because proxy rules execute there (internal/rules).
