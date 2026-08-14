@@ -50,3 +50,45 @@ echo "placed internal/engineclient/bin/$target"
 description = "Run the engine's own gates (matches the CI engine job)"
 dir = "engine"
 run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
+
+# One command that runs exactly what CI runs, in CI's order, against a freshly built
+# engine.
+#
+# Two defects on this branch came from local verification that did not match CI: a lint
+# run against an older golangci-lint reported no issues on code CI rejected, and a debt
+# baseline measured against a stale embedded engine was 4 findings short of what CI
+# computes. Both local runs succeeded, so nothing signalled the gap. Rebuilding the
+# engine first is the part that is easy to forget and impossible to notice.
+[tasks.verify]
+description = "Run every gate CI runs, against a freshly built engine"
+run = """
+set -euo pipefail
+
+echo '── engine ──'
+cd engine
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cd ..
+
+echo '── embed the engine just built ──'
+mise run build-engine
+
+echo '── go ──'
+go build ./...
+go vet ./...
+test -z "$(gofmt -l internal cmd providers | grep -v experiment/testdata || true)"
+go test ./...
+golangci-lint run
+
+echo '── verikt checks itself ──'
+go build -o "$TMPDIR/verikt-verify" ./cmd/verikt
+"$TMPDIR/verikt-verify" check
+"$TMPDIR/verikt-verify" check --output json > "$TMPDIR/verikt-verify.json"
+baseline=$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' .github/verikt-debt-baseline | head -1)
+current=$(jq '[.violations[], .anti_patterns[]] | map(select(.severity != "error")) | length' "$TMPDIR/verikt-verify.json")
+echo "non-error findings: $current (baseline $baseline)"
+[ "$current" -le "$baseline" ]
+
+echo '── all gates passed ──'
+"""

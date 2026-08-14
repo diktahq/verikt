@@ -34,13 +34,25 @@ all (`embed_other.go`), not a local checkout that has not produced one.
 
 ## Verifying a change
 
-CI runs these; run them before pushing.
+Run one command:
 
 ```bash
-go test ./...                  # Go suite
-go vet ./...
-golangci-lint run              # must report 0 issues (mise pins the CI version)
+mise run verify
+```
+
+It runs every gate CI runs, in CI's order, **against a freshly built engine** — that last
+part matters. Verifying against a stale embedded engine produces a passing local run that
+says nothing about CI, which has already happened twice on this repository: once with an
+older golangci-lint reporting no issues on code CI rejected, once with a debt baseline
+measured four findings short.
+
+The individual gates, if you need them separately:
+
+```bash
 mise run check-engine          # cargo fmt --check, clippy -D warnings, cargo test
+mise run build-engine          # rebuild and re-embed before measuring anything
+go test ./... && go vet ./...
+golangci-lint run              # mise pins the version CI installs
 verikt check                   # verikt governs itself — see verikt.yaml
 ```
 
