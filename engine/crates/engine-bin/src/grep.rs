@@ -1,8 +1,6 @@
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
-    engine_response::Payload,
-    rule::Spec,
-    rule_status::Status,
+    engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::Regex;
@@ -83,15 +81,15 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             let rel_str = rel.to_string_lossy();
 
             // Scope filtering
-            if let Some(ref inc) = include_set {
-                if !inc.is_match(rel) {
-                    continue;
-                }
+            if let Some(ref inc) = include_set
+                && !inc.is_match(rel)
+            {
+                continue;
             }
-            if let Some(ref exc) = exclude_set {
-                if exc.is_match(rel) {
-                    continue;
-                }
+            if let Some(ref exc) = exclude_set
+                && exc.is_match(rel)
+            {
+                continue;
             }
 
             let content = match fs::read_to_string(file_path) {
@@ -100,10 +98,10 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             };
 
             // File-level prerequisite
-            if let Some(ref fmc) = file_must_contain {
-                if !fmc.is_match(&content) {
-                    continue;
-                }
+            if let Some(ref fmc) = file_must_contain
+                && !fmc.is_match(&content)
+            {
+                continue;
             }
 
             for (line_num, line) in content.lines().enumerate() {
@@ -111,16 +109,16 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
                     continue;
                 }
 
-                if let Some(ref mc) = must_contain {
-                    if !mc.is_match(line) {
-                        continue;
-                    }
+                if let Some(ref mc) = must_contain
+                    && !mc.is_match(line)
+                {
+                    continue;
                 }
 
-                if let Some(ref mnc) = must_not_contain {
-                    if mnc.is_match(line) {
-                        continue;
-                    }
+                if let Some(ref mnc) = must_not_contain
+                    && mnc.is_match(line)
+                {
+                    continue;
                 }
 
                 rule_matched = true;
@@ -149,7 +147,12 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
 
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if rule_matched { Status::Valid } else { Status::Stale }.into(),
+            status: if rule_matched {
+                Status::Valid
+            } else {
+                Status::Stale
+            }
+            .into(),
             error: String::new(),
         });
     }
@@ -192,13 +195,21 @@ fn build_globset(patterns: &[String]) -> Option<GlobSet> {
     builder.build().ok()
 }
 
+/// True if the entry is itself a symbolic link, without following it.
+///
+/// Used to honour INV-002: a symlinked directory is not project-local code, and
+/// following one can escape the project or loop forever.
+pub(crate) fn is_symlink(entry: &fs::DirEntry) -> bool {
+    entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false)
+}
+
 fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    walk_dir(root, root, &mut files);
+    walk_dir(root, &mut files);
     files
 }
 
-fn walk_dir(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
+fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -211,6 +222,12 @@ fn walk_dir(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
 
         // Skip hidden dirs, vendor, node_modules, target, .git
         if path.is_dir() {
+            // Symlinked directories point outside the project boundary and must
+            // never be treated as project-local code (INV-002). `is_dir()`
+            // follows symlinks, so the link itself has to be tested separately.
+            if is_symlink(&entry) {
+                continue;
+            }
             if name_str.starts_with('.')
                 || name_str == "vendor"
                 || name_str == "node_modules"
@@ -218,7 +235,7 @@ fn walk_dir(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
             {
                 continue;
             }
-            walk_dir(root, &path, files);
+            walk_dir(&path, files);
         } else {
             files.push(path);
         }
