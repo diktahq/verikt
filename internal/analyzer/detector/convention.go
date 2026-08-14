@@ -2,6 +2,10 @@ package detector
 
 import (
 	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -192,11 +196,70 @@ func detectConfig(pkgs []*packages.Package) provider.ConventionFinding {
 	return provider.ConventionFinding{Pattern: best, Confidence: confidence, Evidence: []string{"config tags: " + strconv.Itoa(tags)}}
 }
 
+// testFileStats summarises the _test.go files found alongside loaded packages.
+type testFileStats struct {
+	files       int
+	tableDriven int
+	bdd         int
+}
+
+// countRunCalls counts calls to a .Run method — the signal for subtests, and
+// therefore a table-driven suite.
+func countRunCalls(file *ast.File) int {
+	count := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Run" {
+			count++
+		}
+		return true
+	})
+	return count
+}
+
+// scanTestFiles parses the _test.go files in the given directories. Unparseable
+// files are counted but contribute no signal — a syntax error in one test file
+// should not discard the statistics for the rest.
+func scanTestFiles(dirs map[string]bool) testFileStats {
+	var stats testFileStats
+	fset := token.NewFileSet()
+
+	for dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			stats.files++
+
+			file, parseErr := parser.ParseFile(fset, filepath.Join(dir, entry.Name()), nil, 0)
+			if parseErr != nil {
+				continue
+			}
+			stats.tableDriven += countRunCalls(file)
+			for _, imp := range file.Imports {
+				path := strings.Trim(imp.Path.Value, `"`)
+				if strings.Contains(path, "ginkgo") || strings.Contains(path, "godog") {
+					stats.bdd++
+				}
+			}
+		}
+	}
+
+	return stats
+}
+
 func detectTesting(pkgs []*packages.Package) provider.TestingFinding {
-	testFiles := 0
 	totalGoFiles := 0
 	tableDriven := 0
 	bdd := 0
+	dirs := map[string]bool{}
 
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
@@ -204,20 +267,11 @@ func detectTesting(pkgs []*packages.Package) provider.TestingFinding {
 			if strings.HasSuffix(filename, ".go") {
 				totalGoFiles++
 			}
-			if strings.HasSuffix(filename, "_test.go") {
-				testFiles++
+			if dir := filepath.Dir(filename); dir != "." {
+				dirs[dir] = true
 			}
-			ast.Inspect(file, func(node ast.Node) bool {
-				call, ok := node.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if ok && sel.Sel.Name == "Run" {
-					tableDriven++
-				}
-				return true
-			})
+			// Subtests are only counted from test files (see scanTestFiles):
+			// ".Run(" in production code is some other method entirely.
 		}
 		for importPath := range pkg.Imports {
 			if strings.Contains(importPath, "ginkgo") || strings.Contains(importPath, "godog") {
@@ -226,18 +280,33 @@ func detectTesting(pkgs []*packages.Package) provider.TestingFinding {
 		}
 	}
 
+	// packages.Load runs with Tests disabled, so no _test.go file appears in
+	// pkg.Syntax — test files have to be read from the package directories or
+	// the count is always 0 and t.Run usage is never seen.
+	tests := scanTestFiles(dirs)
+	testFiles := tests.files
+	totalGoFiles += tests.files
+	tableDriven += tests.tableDriven
+	bdd += tests.bdd
+
 	pattern := "minimal"
 	confidence := 0.4
 	evidence := []string{}
-	if tableDriven > 0 {
-		pattern = "table-driven"
-		confidence = 0.85
-		evidence = append(evidence, "found t.Run usage")
-	}
-	if bdd > 0 {
-		pattern = "bdd"
-		confidence = 0.9
-		evidence = append(evidence, "found BDD test libraries")
+	// A testing pattern cannot be inferred from a project with no test files.
+	// Both signals can appear in production code — a Run method, or a BDD
+	// library imported by a helper — and reporting a pattern from those alone
+	// produced a high-confidence answer about tests that do not exist.
+	if testFiles > 0 {
+		if tableDriven > 0 {
+			pattern = "table-driven"
+			confidence = 0.85
+			evidence = append(evidence, "found t.Run usage")
+		}
+		if bdd > 0 {
+			pattern = "bdd"
+			confidence = 0.9
+			evidence = append(evidence, "found BDD test libraries")
+		}
 	}
 
 	return provider.TestingFinding{
