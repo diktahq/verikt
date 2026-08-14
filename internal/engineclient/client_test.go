@@ -149,12 +149,54 @@ func main() {
 		t.Errorf("expected 0 total findings, got %d", result.Summary.FindingsTotal)
 	}
 
-	// Rule should be STALE (matched 0 files with violations)
+	// The rule ran over a file in its scope and found nothing, so it is VALID.
+	// Reporting it stale conflated "found no violations" with "could not run",
+	// and stale rules fail the build — every clean project exited 1.
+	if len(result.Summary.RuleStatuses) != 1 {
+		t.Fatalf("expected 1 rule status, got %d", len(result.Summary.RuleStatuses))
+	}
+	if result.Summary.RuleStatuses[0].Status != pb.RuleStatus_VALID {
+		t.Errorf("a rule that scanned its scope and found nothing is VALID, got %v",
+			result.Summary.RuleStatuses[0].Status)
+	}
+}
+
+// A scope that expands to no files is the real stale case: the rule never ran,
+// so reporting it as passing would hide a rule that silently stopped working.
+func TestCheckGrepUnmatchedScopeIsStale(t *testing.T) {
+	client := newTestClient(t)
+
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "main.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rules := []*pb.Rule{
+		{
+			Id:       "arch/no-global-mutable-state",
+			Severity: pb.Severity_ERROR,
+			Message:  "Global mutable state is forbidden",
+			Engine:   pb.EngineType_GREP,
+			Scope: &pb.RuleScope{
+				Include: []string{"removed/**/*.go"},
+			},
+			Spec: &pb.Rule_Grep{Grep: &pb.GrepSpec{Pattern: `var\s+\w+`}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := client.Check(ctx, projectDir, rules, nil)
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+
 	if len(result.Summary.RuleStatuses) != 1 {
 		t.Fatalf("expected 1 rule status, got %d", len(result.Summary.RuleStatuses))
 	}
 	if result.Summary.RuleStatuses[0].Status != pb.RuleStatus_STALE {
-		t.Errorf("expected STALE status, got %v", result.Summary.RuleStatuses[0].Status)
+		t.Errorf("a scope matching no files is STALE, got %v", result.Summary.RuleStatuses[0].Status)
 	}
 }
 

@@ -443,10 +443,7 @@ func printProxyRuleSection(result *rules.RunResult) {
 	}
 
 	for _, v := range result.Violations {
-		sev := "⚠"
-		if v.Severity == "error" {
-			sev = "✗"
-		}
+		sev := severityMarker(v.Severity)
 		if v.Line > 0 {
 			fmt.Printf("  %s [%s] %s:%d %s\n", sev, v.RuleID, v.File, v.Line, v.Description)
 		} else {
@@ -457,11 +454,13 @@ func printProxyRuleSection(result *rules.RunResult) {
 		}
 	}
 
-	// Report invalid/stale rules.
+	// Report invalid/stale rules. These fail the build (see ruleResultBlocks), so
+	// they take the failure marker — a run can otherwise exit 1 with no ✗ on
+	// screen, which is the same "looks fine, isn't" problem as the inverse case.
 	for _, s := range result.Statuses {
 		switch s.Status {
 		case "invalid", "stale":
-			fmt.Printf("  ⚠ [%s] %s: %s\n", s.Filename, s.Status, s.Error)
+			fmt.Printf("  ✗ [%s] %s: %s\n", s.Filename, s.Status, s.Error)
 		}
 	}
 }
@@ -521,6 +520,19 @@ func splitByCategory(violations []checker.Violation, category string) (matched, 
 	return matched, rest
 }
 
+// severityMarker returns the glyph for a finding's severity.
+//
+// Only error severity fails the check, so warnings must not carry the failure
+// marker: 51 warning-level findings rendered as ✗ read as 51 failures in a run
+// that exits 0. This lived inline in three print functions and was corrected in
+// one of them, which is why the other two kept printing the wrong glyph.
+func severityMarker(severity string) string {
+	if severity == "error" {
+		return "✗"
+	}
+	return "⚠"
+}
+
 func printViolationSection(title string, violations []checker.Violation) {
 	fmt.Printf("\n%s (%d)\n", title, len(violations))
 	if len(violations) == 0 {
@@ -528,13 +540,7 @@ func printViolationSection(title string, violations []checker.Violation) {
 		return
 	}
 	for _, v := range violations {
-		// Only error severity fails the check, so warnings must not be printed
-		// with the same marker: 51 warning-level findings rendered as ✗ read as 51
-		// failures in a run that exits 0.
-		marker := "⚠"
-		if v.Severity == "error" {
-			marker = "✗"
-		}
+		marker := severityMarker(v.Severity)
 		switch {
 		case v.File != "" && v.Line > 0:
 			fmt.Printf("  %s %s:%d %s\n", marker, v.File, v.Line, v.Message)
@@ -553,10 +559,7 @@ func printAntiPatternSection(title string, violations []checker.AntiPattern) {
 		return
 	}
 	for _, v := range violations {
-		sev := "⚠"
-		if v.Severity == "error" {
-			sev = "✗"
-		}
+		sev := severityMarker(v.Severity)
 		switch {
 		case v.File != "" && v.Line > 0:
 			fmt.Printf("  %s [%s] %s:%d %s\n", sev, v.Name, v.File, v.Line, v.Message)
