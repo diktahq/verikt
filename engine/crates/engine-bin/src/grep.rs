@@ -74,7 +74,11 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
         let include_set = build_globset(&rule.scope.as_ref().map_or(vec![], |s| s.include.clone()));
         let exclude_set = build_globset(&rule.scope.as_ref().map_or(vec![], |s| s.exclude.clone()));
 
-        let mut rule_matched = false;
+        // Staleness is about reach, not results: a rule is stale when its scope
+        // expands to no files, which is the same definition the Go loader applies
+        // in ExpandScope. Counting findings here instead meant a rule that ran
+        // cleanly was reported as broken, and stale rules fail the build.
+        let mut files_in_scope: u32 = 0;
 
         for file_path in &files {
             let rel = file_path.strip_prefix(&project).unwrap_or(file_path);
@@ -91,6 +95,8 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             {
                 continue;
             }
+
+            files_in_scope += 1;
 
             let content = match fs::read_to_string(file_path) {
                 Ok(c) => c,
@@ -121,7 +127,6 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
                     continue;
                 }
 
-                rule_matched = true;
                 findings_total += 1;
                 match rule.severity {
                     s if s == pb::Severity::Error as i32 => findings_error += 1,
@@ -147,7 +152,7 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
 
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if rule_matched {
+            status: if files_in_scope > 0 {
                 Status::Valid
             } else {
                 Status::Stale
@@ -207,6 +212,125 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     walk_dir(root, &mut files);
     files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pb::{GrepSpec, Rule, RuleScope};
+
+    fn fixture(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let base = std::env::temp_dir().join(name);
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        for (rel, content) in files {
+            let path = base.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, content).unwrap();
+        }
+        base
+    }
+
+    fn grep_rule(id: &str, pattern: &str, include: &[&str]) -> Rule {
+        Rule {
+            id: id.to_string(),
+            severity: pb::Severity::Error as i32,
+            message: "test rule".to_string(),
+            engine: pb::EngineType::Grep as i32,
+            scope: Some(RuleScope {
+                language: String::new(),
+                include: include.iter().map(|s| s.to_string()).collect(),
+                exclude: vec![],
+            }),
+            spec: Some(Spec::Grep(GrepSpec {
+                pattern: pattern.to_string(),
+                must_contain: String::new(),
+                must_not_contain: String::new(),
+                file_must_contain: String::new(),
+            })),
+        }
+    }
+
+    fn status_of(responses: &[EngineResponse], rule_id: &str) -> i32 {
+        for response in responses {
+            if let Some(Payload::CheckComplete(complete)) = &response.payload {
+                for status in &complete.rule_statuses {
+                    if status.rule_id == rule_id {
+                        return status.status;
+                    }
+                }
+            }
+        }
+        panic!("no status reported for rule {rule_id}");
+    }
+
+    fn check(project: &Path, rule: Rule) -> Vec<EngineResponse> {
+        handle_check(CheckRequest {
+            project_path: project.to_string_lossy().to_string(),
+            rules: vec![rule],
+            target_files: vec![],
+        })
+    }
+
+    /// A rule that ran over its scope and found nothing has passed. Stale means
+    /// the scope matched no files — a rule that could not run at all.
+    ///
+    /// These were conflated: `rule_matched` was only set when a finding was
+    /// emitted. Because a stale rule fails the build, every clean repository
+    /// using proxy rules exited 1, and the closer a codebase was to compliant
+    /// the more of its rules were reported broken.
+    #[test]
+    fn rule_that_finds_nothing_in_scope_is_valid_not_stale() {
+        let project = fixture(
+            "verikt-grep-clean-scope",
+            &[("internal/agent/a.go", "package agent\n")],
+        );
+
+        let responses = check(&project, grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]));
+
+        assert_eq!(
+            status_of(&responses, "no-sprintf"),
+            Status::Valid as i32,
+            "a rule whose scope matched a file has run, regardless of findings"
+        );
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// The counterpart: a scope that expands to nothing is genuinely stale, and
+    /// must stay stale — that signal is why the status exists.
+    #[test]
+    fn rule_whose_scope_matches_no_files_is_stale() {
+        let project = fixture(
+            "verikt-grep-empty-scope",
+            &[("internal/agent/a.go", "package agent\n")],
+        );
+
+        let responses = check(&project, grep_rule("gone", "Sprintf", &["removed/**/*.go"]));
+
+        assert_eq!(
+            status_of(&responses, "gone"),
+            Status::Stale as i32,
+            "a scope matching no files is a rule that did not run"
+        );
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// A rule with findings is valid too — the case that accidentally worked.
+    #[test]
+    fn rule_with_findings_is_valid() {
+        let project = fixture(
+            "verikt-grep-findings",
+            &[("internal/agent/a.go", "package agent\nvar _ = Sprintf\n")],
+        );
+
+        let responses = check(&project, grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]));
+
+        assert_eq!(status_of(&responses, "no-sprintf"), Status::Valid as i32);
+
+        let _ = fs::remove_dir_all(&project);
+    }
 }
 
 fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
