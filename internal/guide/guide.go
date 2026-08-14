@@ -775,7 +775,7 @@ func writeAntiPatterns(b *strings.Builder, arch string) {
 	b.WriteString("- NEVER use init() for business logic — use explicit constructors (`NewService(deps)`) from `main()`\n")
 	b.WriteString("- NEVER ignore errors with `_` — handle, wrap, or return: `return fmt.Errorf(\"op: %w\", err)`\n")
 	b.WriteString("- NEVER use `uuid.New()` for entity IDs (B-tree fragmentation) — use UUIDv7: `uuid.Must(uuid.NewV7())`\n")
-	b.WriteString("- NEVER start a naked goroutine — use `errgroup.Go()` or `context.Context` + `sync.WaitGroup` for lifecycle control\n")
+	b.WriteString("- NEVER start a naked goroutine — an unrecovered panic in it crashes the process, and `errgroup` propagates panics rather than containing them: `defer` a `recover()` inside the goroutine and bound its lifetime with `context.Context`\n")
 	b.WriteString("- NEVER use `context.Background()` in handlers — propagate `r.Context()` through the call chain\n")
 	b.WriteString("- NEVER concatenate SQL strings (injection risk) — use parameterized queries: `db.QueryContext(ctx, \"SELECT ... WHERE id = $1\", id)`\n")
 	b.WriteString("- NEVER use package-level mutable `var` (data races) — inject state through struct constructors\n")
