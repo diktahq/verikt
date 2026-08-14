@@ -138,6 +138,8 @@ func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *Check
 	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
 	result.ComponentsCovered = countCoveredComponentsFS(projectPath, cfg.Components)
 	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
+	result.DependencyViolations = append(result.DependencyViolations,
+		detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
 
 	// Dependency checks via the Rust engine's TypeScript import graph.
 	//
@@ -179,6 +181,8 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 		detectMissingComponents(cfg, projectPath)...)
 	result.DependencyViolations = append(result.DependencyViolations,
 		detectOrphanPackagesFS(cfg, projectPath)...)
+	result.DependencyViolations = append(result.DependencyViolations,
+		detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
 
 	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
 
@@ -239,9 +243,6 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 
 	var violations []Violation
 	seen := map[string]bool{}
-	// WalkDir reports an unreadable directory twice: once as an entry from its
-	// parent's listing, once when descending into it fails. Report it once.
-	reportedUnreadable := map[string]bool{}
 
 	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
 		// Symlinks are never project-local code (INV-002). Tested before the
@@ -249,22 +250,15 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 		// is false even for a link to a directory, so the check that followed the
 		// `!d.IsDir()` return was unreachable and linked directories were skipped
 		// only because WalkDir does not follow them.
-		// A path the walk cannot read is reported, not skipped and not fatal.
+		// An unreadable path is skipped here and reported by
+		// detectUnreadablePaths, which walks the whole tree for exactly this and
+		// runs for every language.
 		//
-		// This returned the error, which aborted the walk, and the caller then
-		// discarded every violation found so far — so one unreadable directory
-		// anywhere under the project root turned orphan detection off entirely
-		// and reported a clean tree. A check that could not run must never read
-		// as a check that passed.
-		//
-		// Error severity, because the tool cannot vouch for what it could not
-		// read. A path that is legitimately unreadable can be waived with a
-		// reason via severity_overrides, like any other finding.
+		// What matters here is that it is not fatal. This returned the error,
+		// which aborted the walk, and the caller then discarded every violation
+		// found so far — so one unreadable directory anywhere under the project
+		// root turned orphan detection off entirely and reported a clean tree.
 		if err != nil {
-			if !reportedUnreadable[path] {
-				reportedUnreadable[path] = true
-				violations = append(violations, unreadablePathViolation(projectPath, path, err))
-			}
 			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
@@ -304,11 +298,7 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 		// as finding nothing in it.
 		entries, err := os.ReadDir(path)
 		if err != nil {
-			if !reportedUnreadable[path] {
-				reportedUnreadable[path] = true
-				violations = append(violations, unreadablePathViolation(projectPath, path, err))
-			}
-			return nil
+			return nil // reported by detectUnreadablePaths
 		}
 		hasGo := false
 		for _, e := range entries {
@@ -348,11 +338,72 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 		return nil
 	})
 	if err != nil {
-		// Per-entry errors are handled inside the callback, so reaching here means
-		// the walk itself failed — the root is gone or unreadable. Report it
-		// rather than returning an empty, clean-looking result.
-		violations = append(violations, unreadablePathViolation(projectPath, projectPath, err))
+		// Per-entry errors are skipped inside the callback, so reaching here means
+		// the walk itself failed. detectUnreadablePaths reports it; the findings
+		// gathered so far are still returned rather than discarded.
+		return violations
 	}
+	return violations
+}
+
+// detectUnreadablePaths walks the project and reports every path it cannot read.
+//
+// A path the tool could not read has not been checked, so reporting nothing for
+// it is indistinguishable from checking it and finding nothing — the failure this
+// whole package is built to avoid. The engine's walkers discard read errors
+// silently, so this is the only thing looking.
+//
+// It runs for every language and needs no module path: the detection used to live
+// inside orphan-package detection, which is Go-only and returns early without a
+// go.mod, so a TypeScript project or a Go project before `go mod init` got a clean
+// report for a tree that was never read.
+//
+// excludes are honoured, so a deliberately excluded path that happens to be
+// unreadable is not reported.
+func detectUnreadablePaths(projectPath string, excludes []string) []Violation {
+	var violations []Violation
+	reported := map[string]bool{}
+
+	report := func(path string, cause error) {
+		if reported[path] {
+			return
+		}
+		reported[path] = true
+		violations = append(violations, unreadablePathViolation(projectPath, path, cause))
+	}
+
+	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// WalkDir reports an unreadable directory twice: once as an entry in
+			// its parent's listing, once when descending into it fails.
+			report(path, err)
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // INV-002: symlinks are not project-local code
+		}
+		if !d.IsDir() {
+			return nil
+		}
+
+		name := d.Name()
+		if path != projectPath && (strings.HasPrefix(name, ".") || name == "vendor" || name == "node_modules") {
+			return filepath.SkipDir
+		}
+
+		rel, relErr := filepath.Rel(projectPath, path)
+		if relErr == nil {
+			relSlash := filepath.ToSlash(rel)
+			if relSlash != "." && isExcluded(relSlash, excludes) {
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		report(projectPath, err)
+	}
+
 	return violations
 }
 
