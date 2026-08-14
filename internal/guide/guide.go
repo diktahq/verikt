@@ -30,7 +30,7 @@ type GenerateOptions struct {
 
 // Generate produces guide files for the specified target(s).
 func Generate(opts GenerateOptions) error {
-	targets, err := resolveTargets(opts.Target)
+	targets, err := resolveTargets(opts.Target, opts.ProjectDir)
 	if err != nil {
 		return err
 	}
