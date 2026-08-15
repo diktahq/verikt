@@ -13,7 +13,7 @@ PoC complete on `dev-0.2.0` branch. Phase 1 (ping + grep engine) is done:
 - Experiment E25 result: 2.2x grep speedup vs Go on real codebase (191ms → 86ms, 6 rules)
 - Scope walker bug found and fixed: Go was scanning `.claude/worktrees/` (24 copies), inflating violations 25x. Fix: skip all hidden directories in scope.go.
 
-`//go:embed` (Phase 2) and `verikt check` wiring (Phase 3) are next. See `docs/product/plans/PLAN-v0.2.0-rust-engine.md`.
+`//go:embed` (Phase 2) and `verikt check` wiring (Phase 3) are next.
 
 ## Context
 

@@ -43,8 +43,8 @@ engine-artifacts/
 # edikt hook runtime state (machine-local, not project config)
 .edikt/state/
 
-# Review reports and other process artefacts. These describe a moment in a
-# review, not the project, so they stay out of the repository — while remaining
-# on disk for whoever is working through them.
-docs/internal/pr-2-review-report.md
-docs/internal/branch-review-2-report.md
+# Internal material: brand, GTM, ICP, review reports, maintainer scripts. None of
+# it describes the tool, and this repository is public.
+docs/internal/
+docs/product/
+scripts/corpus-audit.sh

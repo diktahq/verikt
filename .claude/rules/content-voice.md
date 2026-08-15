@@ -57,7 +57,8 @@ Four words that define who verikt sounds like. Voice is constant — it doesn't 
 - Blog posts: grounded + personal
 - Social media: confident + accessible
 
-Full definition: `docs/internal/brand-voice.md`
+The four words above are the definition. The longer treatment is kept outside
+this repository.
 
 ## What This Does NOT Apply To
 
