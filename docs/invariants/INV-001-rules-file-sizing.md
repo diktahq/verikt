@@ -1,0 +1,73 @@
+# Invariant 001: Rules File Sizing Constraints
+
+**Status:** active
+**Date:** 2026-03-10
+
+## Constraint
+
+Generated rules files (from `verikt guide`) MUST stay within these bounds:
+
+- **15-25 instructions** maximum per file
+- **500-1,500 tokens** per file
+- Critical rules (NEVER/ALWAYS) placed at **start and end** of file
+- Each instruction paired with **motivation** (why, not just what)
+- **3-5 code examples** included (most reliable steering mechanism)
+
+### The two output shapes
+
+`verikt guide` emits two shapes, and the bound above applies per file:
+
+| Output | Target | Bound |
+|---|---|---|
+| `.claude/rules/verikt-index.md` + `verikt-<category>.md` | Claude Code | 500–1,500 tokens each |
+| A single composite file | cursor, copilot, windsurf | **3,100 tokens** |
+
+The sentinel targets accept one file only, so their output necessarily carries what
+the Claude path distributes across several: usage preamble, governance checkpoint,
+codebase mapping, smart suggestions, interaction warnings, design questions and the
+verification checklist. That composite is bounded at 3,100 tokens rather than 1,500
+and enforced by `TestGuideTokenCompliance`.
+
+This exception was previously recorded only in a comment on that test, so a reader
+of this invariant would conclude the guide violated it. The bound is stated here so
+the invariant and its enforcement agree.
+
+### Onboarding content does not belong in a normative guide
+
+The scaffold interview is emitted **only** in catalog-only output — the shape a
+project without a `verikt.yaml` receives. A guide generated *from* a `verikt.yaml`
+describes an architecture that already exists, so instructions for scaffolding a new
+service steer nothing.
+
+Emitting it unconditionally cost 664 tokens, 23% of the composite file and the
+majority of the Claude index. Removing it took the composite from ~2,935 to ~2,229
+tokens and the index from ~1,092 to ~410. `verikt init --ai` and the `/verikt:init`
+skill compose the protocol themselves, so the capability is unaffected.
+
+A small project's index can fall below the 500-token lower bound. That bound
+describes how much context an instruction-bearing file needs, not a requirement to
+pad a file that has less to say.
+
+## Rationale
+
+Research on LLM instruction following (2025-2026 frontier models) shows:
+
+1. **Compliance = f(instruction_count)** — more instructions exponentially reduces full compliance. At 10 instructions, GPT-4o achieves 15% full compliance. Even Gemini 2.5 Pro only achieves 68.9% at 500 instructions. (Source: IFScale, NeurIPS 2025 Workshop — https://arxiv.org/abs/2507.11538)
+
+2. **Position matters** — "Lost in the Middle" effect: 20%+ performance drop for instructions in the middle of context. Start and end positions get highest attention. (Source: Liu et al., TACL 2023 — https://arxiv.org/abs/2307.03172)
+
+3. **Agentic scenarios are hardest** — best models follow <30% of instructions perfectly in agentic contexts (exactly where coding agents operate). (Source: AgentIF, NeurIPS 2025 — https://arxiv.org/abs/2505.16944)
+
+4. **Rephrasing fragility** — even GPT-5 drops 18% with subtle prompt variations. Consistent phrasing matters. (Source: IFEval++ — https://arxiv.org/abs/2512.14754)
+
+## Consequences of Violation
+
+- Bloated rules files (50+ instructions) will have lower total compliance than focused ones
+- Users will experience inconsistent AI agent behavior
+- The value proposition of `verikt guide` degrades
+
+## Enforcement
+
+- Review generated output token count in `internal/guide/guide.go`
+- Count instructions in generated content during tests
+- Add test: `TestGuideOutput_InstructionCount` that fails if >30 instructions generated

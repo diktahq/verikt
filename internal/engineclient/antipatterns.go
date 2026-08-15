@@ -46,7 +46,9 @@ func (c *Client) CheckAntiPatterns(projectPath string, detectors []string) ([]An
 		out = append(out, AntiPatternResult{
 			Name:     f.Match, // Match field carries the detector name.
 			Category: detectorCategory(f.Match),
-			Severity: severityString(f.Severity),
+			// Severity is resolved per detector, not taken from the wire: the
+			// engine stamps every finding with the requesting rule's severity.
+			Severity: detectorSeverity(f.Match, severityString(f.Severity)),
 			File:     f.File,
 			Line:     int(f.Line),
 			Message:  f.Message,

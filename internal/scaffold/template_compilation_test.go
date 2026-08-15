@@ -75,7 +75,7 @@ func TestTemplateCompilation(t *testing.T) {
 
 	combos := []combo{
 		// Hexagonal — core service patterns
-		{"hexagonal", []string{"platform", "bootstrap", "http-api", "health"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "health", "makefile"}},
 		{"hexagonal", []string{"platform", "bootstrap", "grpc", "health"}},
 		{"hexagonal", []string{"platform", "bootstrap", "http-api", "health", "cors", "validation"}},
 		{"hexagonal", []string{"platform", "bootstrap", "http-api", "postgres", "uuid", "migrations", "health"}},
@@ -93,8 +93,18 @@ func TestTemplateCompilation(t *testing.T) {
 		{"clean", []string{"platform", "bootstrap", "http-api", "health"}},
 		{"clean", []string{"platform", "bootstrap", "http-api", "postgres", "health"}},
 
+		// Capabilities that contribute bootstrap partials or config sections but
+		// had no combo here. mailpit shipped a partial that declared a provider
+		// nothing consumed, so every project including it failed to compile, and
+		// no test built one.
+		{"hexagonal", []string{"platform", "bootstrap", "mysql", "mailpit"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "mailpit", "email-gateway"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "i18n"}},
+		{"hexagonal", []string{"platform", "bootstrap", "http-api", "i18n", "email-gateway", "mailpit"}},
+		{"hexagonal", []string{"platform", "bootstrap", "grpc", "postgres", "redis", "kafka-consumer", "mailpit"}},
+
 		// Flat
-		{"flat", []string{"http-api", "health"}},
+		{"flat", []string{"http-api", "health", "makefile"}},
 	}
 
 	for _, c := range combos {
@@ -119,6 +129,7 @@ func TestTemplateCompilation(t *testing.T) {
 			}
 
 			goBuild(t, outDir, c.arch, displayVersion)
+			makeBuild(t, outDir, c.arch)
 		})
 	}
 }
@@ -144,5 +155,29 @@ func goBuild(t *testing.T, dir, arch, goVersion string) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go build failed for %s (Go %s):\n%s", arch, goVersion, string(output))
+	}
+}
+
+// makeBuild runs the scaffolded Makefile's build target.
+//
+// `go build ./...` passing says nothing about the Makefile verikt ships: its build target
+// used `go build -o <file> ./...`, which fails with "cannot write multiple packages to
+// non-directory" as soon as a project has a second package — every non-trivial scaffold.
+// Nothing executed the generated Makefile, so it shipped broken.
+func makeBuild(t *testing.T, dir, arch string) {
+	t.Helper()
+
+	if _, err := os.Stat(filepath.Join(dir, "Makefile")); err != nil {
+		return // this combo does not include the makefile capability
+	}
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make not available")
+	}
+
+	cmd := exec.CommandContext(context.Background(), "make", "build")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GONOSUMCHECK=*", "GONOSUMDB=*")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make build failed for scaffolded %s output:\n%s", arch, string(output))
 	}
 }

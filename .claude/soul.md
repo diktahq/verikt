@@ -34,7 +34,7 @@ Give developers the tools to declare their architecture, compose services from p
 
 ## What This Is
 
-The architecture layer for agentic engineering. Feeds AI agents architectural context before they write the first line (`verikt guide`). Scaffolds production-ready services from architecture patterns and capability modules (`verikt new`). Detects what's in any existing codebase (`verikt analyze`). Enforces structural rules in CI with 11 AST-based detectors (`verikt check`). The gap between intended architecture and actual architecture is zero.
+The architecture layer for agentic engineering. Feeds AI agents architectural context before they write the first line (`verikt guide`). Scaffolds production-ready services from architecture patterns and capability modules (`verikt new`). Detects what's in any existing codebase (`verikt analyze`). Enforces structural rules in CI with 14 AST-based detectors (`verikt check`). The gap between intended architecture and actual architecture is zero.
 
 ## Product Pillars
 

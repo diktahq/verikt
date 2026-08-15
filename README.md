@@ -36,13 +36,15 @@ verikt new my-api --arch hexagonal \
 | **Guide** | `verikt guide` | Generates architecture context for AI agents (Claude Code, Cursor, Copilot, Windsurf) |
 | **Compose** | `verikt new` | Scaffolds services from architecture + capabilities — health checks, graceful shutdown, observability wired by default |
 | **Analyze** | `verikt analyze` | Detects architecture patterns in existing codebases |
-| **Enforce** | `verikt check` | Validates code against architecture rules — 11 anti-pattern detectors, `--diff main` for CI |
+| **Enforce** | `verikt check` | Validates code against architecture rules — 14 anti-pattern detectors, `--diff main` for CI |
 
 ## Language Support
 
-**Go** — 4 architecture patterns, 63 capabilities across 10 categories. Fully supported.
+**Go** — 4 architecture patterns, 65 capabilities across 10 categories. Fully supported.
 
-**TypeScript/Node.js** — 2 architecture patterns (hexagonal, flat), 39 capabilities. HTTP framework choice: Express, Fastify, or Hono.
+**TypeScript/Node.js** — 2 architecture patterns (hexagonal, flat), 39 capabilities. HTTP framework choice: Express, Fastify, or Hono. Scaffolding and agent context are on par with Go; `check` covers dependency rules and structure only.
+
+Depth differs per language — see [docs/reference/language-support.md](docs/reference/language-support.md).
 
 ## License
 

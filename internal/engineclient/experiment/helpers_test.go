@@ -36,6 +36,22 @@ func checkerTestdataDir(t *testing.T) string {
 	return filepath.Join(filepath.Dir(filename), "..", "..", "checker", "testdata")
 }
 
+// engineHexagonalPath returns the self-contained hexagonal fixture under this
+// package's own testdata.
+//
+// It is passed as the project root rather than the repository root: the engine
+// skips testdata directories, mirroring the Go toolchain, so a fixture nested
+// under testdata is only visible when it is itself the project being analysed.
+// The fixture carries its own go.mod so the engine can resolve its import paths.
+func engineHexagonalPath(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot determine test file path")
+	}
+	return filepath.Join(filepath.Dir(filename), "testdata", "hexagonal")
+}
+
 // checkFunctionMetrics calls the engine for function metric violations.
 func checkFunctionMetrics(t *testing.T, client *engineclient.Client, projectPath string, rules config.FunctionRules) []checker.Violation {
 	t.Helper()
@@ -218,4 +234,59 @@ func (m *metricAdapter) CheckFunctionMetrics(projectPath string, rules config.Fu
 		})
 	}
 	return out, nil
+}
+
+// checkViaEngine runs a full `verikt check` through the Rust engine.
+//
+// It replaces checker.Check, which ran the Go duplicates of the engine's analysis.
+// Those were deleted per ADR-006's "clean cut" and ADR-011: the engine is the sole
+// implementation, so a test exercising check behaviour must go through it.
+//
+// Signature mirrors the old checker.Check so call sites keep their error handling.
+func checkViaEngine(t *testing.T, cfg *config.VeriktConfig, projectPath string) (*checker.CheckResult, error) {
+	t.Helper()
+	client := newEngineClient(t) // skips the test when no engine is available
+	return checker.CheckWithEngine(cfg, projectPath,
+		&testAntiPatternAdapter{client: client},
+		&testDependencyAdapter{t: t, client: client},
+		&testMetricAdapter{t: t, client: client},
+	)
+}
+
+// The adapters below bridge engineclient results into the checker interfaces. The
+// production equivalents live in internal/cli; these exist so the experiment suite
+// does not depend on that package.
+type testAntiPatternAdapter struct{ client *engineclient.Client }
+
+func (a *testAntiPatternAdapter) CheckAntiPatterns(projectPath string, detectors []string) ([]checker.AntiPattern, error) {
+	results, err := a.client.CheckAntiPatterns(projectPath, detectors)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]checker.AntiPattern, 0, len(results))
+	for _, r := range results {
+		out = append(out, checker.AntiPattern{
+			Name: r.Name, Category: r.Category, Severity: r.Severity,
+			File: r.File, Line: r.Line, Message: r.Message,
+		})
+	}
+	return out, nil
+}
+
+type testDependencyAdapter struct {
+	t      *testing.T
+	client *engineclient.Client
+}
+
+func (a *testDependencyAdapter) CheckDependencies(projectPath string, components []config.Component) ([]checker.Violation, error) {
+	return checkDependencies(a.t, a.client, projectPath, components), nil
+}
+
+type testMetricAdapter struct {
+	t      *testing.T
+	client *engineclient.Client
+}
+
+func (a *testMetricAdapter) CheckFunctionMetrics(projectPath string, rules config.FunctionRules) ([]checker.Violation, error) {
+	return checkFunctionMetrics(a.t, a.client, projectPath, rules), nil
 }

@@ -29,6 +29,36 @@ func sampleResult() *provider.AnalyzeResponse {
 	}
 }
 
+// Not every violation is about an edge between two packages: orphan_package
+// names a single package. Printing "(pkg -> )" with an empty arrow target
+// implies a dependency that does not exist.
+func TestTerminalFormatterOmitsEmptyViolationTarget(t *testing.T) {
+	result := sampleResult()
+	result.Violations = []provider.Violation{
+		{Rule: "orphan_package", Message: "package matches no declared component", Source: "example.com/app/helpers", Severity: "error"},
+		{Rule: "dependency", Message: "domain must not depend on adapters", Source: "example.com/app/domain", Target: "example.com/app/adapter", Severity: "error"},
+	}
+
+	terminal, err := NewFormatter("terminal", true)
+	if err != nil {
+		t.Fatalf("NewFormatter terminal: %v", err)
+	}
+	out, err := terminal.Format(result)
+	if err != nil {
+		t.Fatalf("terminal format: %v", err)
+	}
+
+	if strings.Contains(out, "-> )") {
+		t.Errorf("output renders an empty arrow target:\n%s", out)
+	}
+	if !strings.Contains(out, "(example.com/app/helpers)") {
+		t.Errorf("expected the source alone for a single-package violation:\n%s", out)
+	}
+	if !strings.Contains(out, "(example.com/app/domain -> example.com/app/adapter)") {
+		t.Errorf("expected both endpoints for a dependency violation:\n%s", out)
+	}
+}
+
 func TestFormatters(t *testing.T) {
 	result := sampleResult()
 

@@ -1,8 +1,6 @@
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
-    engine_response::Payload,
-    rule::Spec,
-    rule_status::Status,
+    engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::Regex;
@@ -76,23 +74,29 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
         let include_set = build_globset(&rule.scope.as_ref().map_or(vec![], |s| s.include.clone()));
         let exclude_set = build_globset(&rule.scope.as_ref().map_or(vec![], |s| s.exclude.clone()));
 
-        let mut rule_matched = false;
+        // Staleness is about reach, not results: a rule is stale when its scope
+        // expands to no files, which is the same definition the Go loader applies
+        // in ExpandScope. Counting findings here instead meant a rule that ran
+        // cleanly was reported as broken, and stale rules fail the build.
+        let mut files_in_scope: u32 = 0;
 
         for file_path in &files {
             let rel = file_path.strip_prefix(&project).unwrap_or(file_path);
             let rel_str = rel.to_string_lossy();
 
             // Scope filtering
-            if let Some(ref inc) = include_set {
-                if !inc.is_match(rel) {
-                    continue;
-                }
+            if let Some(ref inc) = include_set
+                && !inc.is_match(rel)
+            {
+                continue;
             }
-            if let Some(ref exc) = exclude_set {
-                if exc.is_match(rel) {
-                    continue;
-                }
+            if let Some(ref exc) = exclude_set
+                && exc.is_match(rel)
+            {
+                continue;
             }
+
+            files_in_scope += 1;
 
             let content = match fs::read_to_string(file_path) {
                 Ok(c) => c,
@@ -100,10 +104,10 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             };
 
             // File-level prerequisite
-            if let Some(ref fmc) = file_must_contain {
-                if !fmc.is_match(&content) {
-                    continue;
-                }
+            if let Some(ref fmc) = file_must_contain
+                && !fmc.is_match(&content)
+            {
+                continue;
             }
 
             for (line_num, line) in content.lines().enumerate() {
@@ -111,19 +115,18 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
                     continue;
                 }
 
-                if let Some(ref mc) = must_contain {
-                    if !mc.is_match(line) {
-                        continue;
-                    }
+                if let Some(ref mc) = must_contain
+                    && !mc.is_match(line)
+                {
+                    continue;
                 }
 
-                if let Some(ref mnc) = must_not_contain {
-                    if mnc.is_match(line) {
-                        continue;
-                    }
+                if let Some(ref mnc) = must_not_contain
+                    && mnc.is_match(line)
+                {
+                    continue;
                 }
 
-                rule_matched = true;
                 findings_total += 1;
                 match rule.severity {
                     s if s == pb::Severity::Error as i32 => findings_error += 1,
@@ -149,7 +152,12 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
 
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if rule_matched { Status::Valid } else { Status::Stale }.into(),
+            status: if files_in_scope > 0 {
+                Status::Valid
+            } else {
+                Status::Stale
+            }
+            .into(),
             error: String::new(),
         });
     }
@@ -192,13 +200,21 @@ fn build_globset(patterns: &[String]) -> Option<GlobSet> {
     builder.build().ok()
 }
 
+/// True if the entry is itself a symbolic link, without following it.
+///
+/// Used to honour INV-002: a symlinked directory is not project-local code, and
+/// following one can escape the project or loop forever.
+pub(crate) fn is_symlink(entry: &fs::DirEntry) -> bool {
+    entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false)
+}
+
 fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    walk_dir(root, root, &mut files);
+    walk_dir(root, &mut files);
     files
 }
 
-fn walk_dir(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
+fn walk_dir(dir: &Path, files: &mut Vec<PathBuf>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -209,18 +225,197 @@ fn walk_dir(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        // Skip hidden dirs, vendor, node_modules, target, .git
+        // A symlink of any kind points outside the project boundary and is never
+        // project-local code (INV-002). Tested before the directory check because
+        // `is_dir()` follows symlinks.
+        if is_symlink(&entry) {
+            continue;
+        }
+
+        // Skip hidden dirs, vendor, node_modules, target, .git, testdata.
+        //
+        // testdata is skipped for the same reason the Go and TypeScript
+        // collectors skip it: fixtures contain the patterns rules look for, on
+        // purpose. Without it the same directory was simultaneously out of scope
+        // for every detector and in scope for every proxy grep rule, so a
+        // fixture holding a deliberate `fmt.Sprintf("SELECT ...")` failed the
+        // build at error severity while the detectors correctly ignored it.
+        //
+        // A fixture is still greppable by pointing --path at it, which is the
+        // same escape hatch the detectors have.
+        //
+        // `_`-prefixed directories are ignored by the Go toolchain too, so code
+        // there is not part of the build and should not be part of the check.
         if path.is_dir() {
             if name_str.starts_with('.')
+                || name_str.starts_with('_')
                 || name_str == "vendor"
                 || name_str == "node_modules"
                 || name_str == "target"
+                || name_str == "testdata"
             {
                 continue;
             }
-            walk_dir(root, &path, files);
+            walk_dir(&path, files);
         } else {
             files.push(path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pb::{GrepSpec, Rule, RuleScope};
+
+    fn fixture(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let base = std::env::temp_dir().join(name);
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        for (rel, content) in files {
+            let path = base.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, content).unwrap();
+        }
+        base
+    }
+
+    fn grep_rule(id: &str, pattern: &str, include: &[&str]) -> Rule {
+        Rule {
+            id: id.to_string(),
+            severity: pb::Severity::Error as i32,
+            message: "test rule".to_string(),
+            engine: pb::EngineType::Grep as i32,
+            scope: Some(RuleScope {
+                language: String::new(),
+                include: include.iter().map(|s| s.to_string()).collect(),
+                exclude: vec![],
+            }),
+            spec: Some(Spec::Grep(GrepSpec {
+                pattern: pattern.to_string(),
+                must_contain: String::new(),
+                must_not_contain: String::new(),
+                file_must_contain: String::new(),
+            })),
+        }
+    }
+
+    fn status_of(responses: &[EngineResponse], rule_id: &str) -> i32 {
+        for response in responses {
+            if let Some(Payload::CheckComplete(complete)) = &response.payload {
+                for status in &complete.rule_statuses {
+                    if status.rule_id == rule_id {
+                        return status.status;
+                    }
+                }
+            }
+        }
+        panic!("no status reported for rule {rule_id}");
+    }
+
+    fn check(project: &Path, rule: Rule) -> Vec<EngineResponse> {
+        handle_check(CheckRequest {
+            project_path: project.to_string_lossy().to_string(),
+            rules: vec![rule],
+            target_files: vec![],
+        })
+    }
+
+    /// A rule that ran over its scope and found nothing has passed. Stale means
+    /// the scope matched no files — a rule that could not run at all.
+    ///
+    /// These were conflated: `rule_matched` was only set when a finding was
+    /// emitted. Because a stale rule fails the build, every clean repository
+    /// using proxy rules exited 1, and the closer a codebase was to compliant
+    /// the more of its rules were reported broken.
+    #[test]
+    fn rule_that_finds_nothing_in_scope_is_valid_not_stale() {
+        let project = fixture(
+            "verikt-grep-clean-scope",
+            &[("internal/agent/a.go", "package agent\n")],
+        );
+
+        let responses = check(
+            &project,
+            grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]),
+        );
+
+        assert_eq!(
+            status_of(&responses, "no-sprintf"),
+            Status::Valid as i32,
+            "a rule whose scope matched a file has run, regardless of findings"
+        );
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// The counterpart: a scope that expands to nothing is genuinely stale, and
+    /// must stay stale — that signal is why the status exists.
+    #[test]
+    fn rule_whose_scope_matches_no_files_is_stale() {
+        let project = fixture(
+            "verikt-grep-empty-scope",
+            &[("internal/agent/a.go", "package agent\n")],
+        );
+
+        let responses = check(&project, grep_rule("gone", "Sprintf", &["removed/**/*.go"]));
+
+        assert_eq!(
+            status_of(&responses, "gone"),
+            Status::Stale as i32,
+            "a scope matching no files is a rule that did not run"
+        );
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// Fixtures are out of scope for grep rules, as they are for detectors.
+    ///
+    /// testdata holds the patterns rules look for on purpose. The Go and
+    /// TypeScript collectors skip it and this walk did not, so the same
+    /// directory was simultaneously invisible to every detector and visible to
+    /// every proxy rule.
+    #[test]
+    fn walk_skips_testdata_and_underscore_dirs() {
+        let project = fixture(
+            "verikt-grep-testdata-skip",
+            &[
+                ("internal/real.go", "package p\nvar _ = Sprintf\n"),
+                (
+                    "internal/testdata/fixture/bad.go",
+                    "package q\nvar _ = Sprintf\n",
+                ),
+                ("_scratch/old.go", "package r\nvar _ = Sprintf\n"),
+                ("vendor/dep.go", "package s\nvar _ = Sprintf\n"),
+            ],
+        );
+
+        let files = walk_files(&project);
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// A rule with findings is valid too — the case that accidentally worked.
+    #[test]
+    fn rule_with_findings_is_valid() {
+        let project = fixture(
+            "verikt-grep-findings",
+            &[("internal/agent/a.go", "package agent\nvar _ = Sprintf\n")],
+        );
+
+        let responses = check(
+            &project,
+            grep_rule("no-sprintf", "Sprintf", &["internal/**/*.go"]),
+        );
+
+        assert_eq!(status_of(&responses, "no-sprintf"), Status::Valid as i32);
+
+        let _ = fs::remove_dir_all(&project);
     }
 }

@@ -51,11 +51,11 @@ verikt states positions clearly. It doesn't hedge, doesn't apologise for what it
 
 ### Precise
 
-verikt names the specific thing. Numbers over adjectives. Capability names over vague descriptions. "11 AST-based detectors" not "powerful analysis." "63 capabilities" not "a wide range of features."
+verikt names the specific thing. Numbers over adjectives. Capability names over vague descriptions. "14 AST-based detectors" not "powerful analysis." "63 capabilities" not "a wide range of features."
 
 | Like this | Not like this |
 |---|---|
-| 11 AST-based detectors catch dependency violations. | Our powerful analysis engine catches a wide variety of architectural issues. |
+| 14 AST-based detectors catch dependency violations. | Our powerful analysis engine catches a wide variety of architectural issues. |
 | EXP-12d: 0 violations with explicit context vs 4 without. 16 turns vs 30. $0.33 vs $1.01. | In our testing, we found that providing architecture context significantly improved agent output quality. |
 | `retry` without `idempotency` means retrying a payment endpoint will double-charge the customer. | Certain capability combinations can lead to issues in production if not properly configured. |
 
@@ -123,7 +123,7 @@ verikt speaks to practitioners. Technical terms are fine when they're the right 
 **Use freely (below the fold, subpages, docs — not the hero):**
 - circuit breaker, idempotency, retry, outbox — resonate with engineers who've hit production issues
 - DDD, CQRS, saga, bounded context — fine on concepts pages, not homepage
-- AST — "11 architecture detectors" on homepage. "AST-based" in docs, CLI reference, and For Engineers page
+- AST — "14 architecture detectors" on homepage. "AST-based" in docs, CLI reference, and For Engineers page
 
 **Avoid** — corporate jargon that signals nothing:
 - leverage, synergy, at scale, robust, seamless

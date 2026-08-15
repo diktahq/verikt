@@ -53,7 +53,8 @@ func TestCheckFilterRuleResult_MatchingViolationsAndStatuses(t *testing.T) {
 		},
 	}
 
-	filtered := filterRuleResult(result, "rule-a")
+	filtered, err := filterRuleResult(result, "rule-a")
+	require.NoError(t, err)
 
 	assert.Len(t, filtered.Violations, 2)
 	assert.Len(t, filtered.Statuses, 1)
@@ -64,6 +65,9 @@ func TestCheckFilterRuleResult_MatchingViolationsAndStatuses(t *testing.T) {
 	assert.Equal(t, "rule-a", filtered.Statuses[0].Rule.ID)
 }
 
+// A rule ID that matches nothing is an error, not an empty pass. This asserted
+// the empty-result behaviour, which is what let `--rule <typo>` print "All proxy
+// rules pass" and exit 0.
 func TestCheckFilterRuleResult_NoMatch(t *testing.T) {
 	result := &rules.RunResult{
 		Duration: 50 * time.Millisecond,
@@ -75,11 +79,11 @@ func TestCheckFilterRuleResult_NoMatch(t *testing.T) {
 		},
 	}
 
-	filtered := filterRuleResult(result, "nonexistent")
+	_, err := filterRuleResult(result, "nonexistent")
 
-	assert.Empty(t, filtered.Violations)
-	assert.Empty(t, filtered.Statuses)
-	assert.Equal(t, result.Duration, filtered.Duration)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
+	assert.Contains(t, err.Error(), "rule-a", "the error names the rules that do exist")
 }
 
 // --- printProxyRuleSection ---
@@ -149,6 +153,9 @@ func TestCheckPrintProxyRuleSection_ViolationWithMatch(t *testing.T) {
 	assert.Contains(t, out, "> fmt.Println(secret)")
 }
 
+// A rule that matched no files has not passed — it did not run. Reporting
+// "All proxy rules pass" alongside a stale count is the same "couldn't run
+// rendered as passed" failure that verikt exists to catch.
 func TestCheckPrintProxyRuleSection_InvalidAndStaleRules(t *testing.T) {
 	result := &rules.RunResult{
 		Statuses: []rules.RuleStatus{
@@ -161,11 +168,125 @@ func TestCheckPrintProxyRuleSection_InvalidAndStaleRules(t *testing.T) {
 	out := captureStdout(t, func() { printProxyRuleSection(result) })
 
 	assert.Contains(t, out, "1 valid, 1 invalid, 1 stale")
+	assert.NotContains(t, out, "All proxy rules pass")
+	// Invalid and stale rules are always reported, violations or not.
+	assert.Contains(t, out, "r2.yaml")
+	assert.Contains(t, out, "missing id field")
+	assert.Contains(t, out, "r3.yaml")
+	assert.Contains(t, out, "scope glob matches no files")
+}
+
+// With every rule valid and no violations, the pass message is still correct.
+func TestCheckPrintProxyRuleSection_PassMessageOnlyWhenNothingStaleOrInvalid(t *testing.T) {
+	result := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "valid"},
+		},
+	}
+
+	out := captureStdout(t, func() { printProxyRuleSection(result) })
+
 	assert.Contains(t, out, "All proxy rules pass")
-	// Note: invalid/stale status details are only printed when there are violations,
-	// because the function returns early after "All proxy rules pass".
-	assert.NotContains(t, out, "r2.yaml")
-	assert.NotContains(t, out, "r3.yaml")
+}
+
+// --- exit code severity gating ---
+
+// check --help and ErrCheckFailed both promise "error-severity violations", but
+// the gate counted every violation, including warnings. An unsuppressable
+// warning-level anti-pattern (god_package) made exit 0 unreachable.
+func TestCheckHasBlockingFindings_OnlyErrorSeverity(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *checker.CheckResult
+		want    bool
+		comment string
+	}{
+		{
+			name:   "no findings",
+			result: &checker.CheckResult{},
+			want:   false,
+		},
+		{
+			name: "warning anti-pattern does not block",
+			result: &checker.CheckResult{
+				AntiPatternViolations: []checker.AntiPattern{
+					{Name: "god_package", Severity: "warning", File: "internal/core", Message: "50 exported symbols"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "error anti-pattern blocks",
+			result: &checker.CheckResult{
+				AntiPatternViolations: []checker.AntiPattern{
+					{Name: "sql_concatenation", Severity: "error", File: "db.go", Message: "raw SQL"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "warning dependency violation does not block",
+			result: &checker.CheckResult{
+				DependencyViolations: []checker.Violation{{Severity: "warning", Message: "soft"}},
+			},
+			want: false,
+		},
+		{
+			name: "error dependency violation blocks",
+			result: &checker.CheckResult{
+				DependencyViolations: []checker.Violation{{Severity: "error", Message: "domain imports adapters"}},
+			},
+			want: true,
+		},
+		{
+			name: "error in any category blocks",
+			result: &checker.CheckResult{
+				NamingViolations: []checker.Violation{{Severity: "error", Message: "bad name"}},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, hasBlockingFindings(tt.result))
+		})
+	}
+}
+
+func TestCheckHasBlockingFindings_NilResult(t *testing.T) {
+	assert.False(t, hasBlockingFindings(nil))
+}
+
+// A stale rule could not run, so it must not leave the exit code at 0.
+func TestCheckRuleResultBlocks_StaleCountsAsBlocking(t *testing.T) {
+	stale := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "stale", Error: "scope matches 0 files"},
+		},
+	}
+	assert.True(t, ruleResultBlocks(stale))
+
+	invalid := &rules.RunResult{
+		Statuses: []rules.RuleStatus{
+			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "invalid", Error: "missing id"},
+		},
+	}
+	assert.True(t, ruleResultBlocks(invalid))
+
+	warningOnly := &rules.RunResult{
+		Violations: []rules.RuleViolation{{RuleID: "r1", Severity: "warning", File: "x.go", Description: "soft"}},
+		Statuses:   []rules.RuleStatus{{Rule: rules.Rule{ID: "r1"}, Status: "valid"}},
+	}
+	assert.False(t, ruleResultBlocks(warningOnly))
+
+	errorViolation := &rules.RunResult{
+		Violations: []rules.RuleViolation{{RuleID: "r1", Severity: "error", File: "x.go", Description: "hard"}},
+		Statuses:   []rules.RuleStatus{{Rule: rules.Rule{ID: "r1"}, Status: "valid"}},
+	}
+	assert.True(t, ruleResultBlocks(errorViolation))
+
+	assert.False(t, ruleResultBlocks(nil))
 }
 
 func TestCheckPrintProxyRuleSection_InvalidStaleWithViolations(t *testing.T) {
@@ -212,13 +333,26 @@ func TestCheckPrintCombinedJSON_PassNoChecker(t *testing.T) {
 	require.NoError(t, json.Unmarshal(parsed["result"], &result))
 	assert.Equal(t, "pass", result)
 
-	// No violations key when checker is nil.
-	_, hasViolations := parsed["violations"]
-	assert.False(t, hasViolations)
+	// violations[] is present and empty even with no checker result. It carried
+	// omitempty, so the key vanished on a passing project and the gate published
+	// in the docs — jq '[.violations[], .anti_patterns[]] | ...' — died with
+	// "Cannot iterate over null" on exactly the projects that were clean.
+	assertEmptyJSONArray(t, parsed, "violations")
+	assertEmptyJSONArray(t, parsed, "anti_patterns")
 
 	// proxy_rules should be present.
 	_, hasProxy := parsed["proxy_rules"]
 	assert.True(t, hasProxy)
+}
+
+// assertEmptyJSONArray fails unless key holds [] — not null, and not absent.
+func assertEmptyJSONArray(t *testing.T, parsed map[string]json.RawMessage, key string) {
+	t.Helper()
+	raw, ok := parsed[key]
+	require.True(t, ok, "%s must always be present so consumers can iterate it", key)
+	var items []json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &items), "%s must be an array, got %s", key, raw)
+	assert.Empty(t, items)
 }
 
 func TestCheckPrintCombinedJSON_FailWithCheckerViolations(t *testing.T) {
@@ -403,7 +537,7 @@ func TestCheckFilterRuleResult_NilRunResult(t *testing.T) {
 			t.Fatal("expected panic when filterRuleResult receives nil, but got none")
 		}
 	}()
-	filterRuleResult(nil, "any-rule")
+	_, _ = filterRuleResult(nil, "any-rule")
 }
 
 func TestCheckFilterRuleResult_EmptyRuleID(t *testing.T) {
@@ -418,12 +552,10 @@ func TestCheckFilterRuleResult_EmptyRuleID(t *testing.T) {
 		},
 	}
 
-	filtered := filterRuleResult(result, "")
+	_, err := filterRuleResult(result, "")
 
-	// Empty rule ID matches nothing since no violation has RuleID == "".
-	assert.Empty(t, filtered.Violations)
-	assert.Empty(t, filtered.Statuses)
-	assert.Equal(t, result.Duration, filtered.Duration)
+	// An empty rule ID matches nothing, which is the unknown-rule case.
+	require.Error(t, err)
 }
 
 func TestCheckPrintCombinedJSON_NilBothResults(t *testing.T) {
@@ -439,9 +571,11 @@ func TestCheckPrintCombinedJSON_NilBothResults(t *testing.T) {
 	require.NoError(t, json.Unmarshal(parsed["result"], &result))
 	assert.Equal(t, "pass", result)
 
-	// No violations or proxy_rules keys when both are nil.
-	_, hasViolations := parsed["violations"]
-	assert.False(t, hasViolations)
+	// The finding arrays are always iterable; proxy_rules is genuinely absent
+	// when no rules ran, which is a different statement from "no findings".
+	assertEmptyJSONArray(t, parsed, "violations")
+	assertEmptyJSONArray(t, parsed, "anti_patterns")
+	assertEmptyJSONArray(t, parsed, "waived")
 	_, hasProxy := parsed["proxy_rules"]
 	assert.False(t, hasProxy)
 }

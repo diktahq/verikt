@@ -208,6 +208,51 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 	return errs
 }
 
+// ValidateCapabilities reports capabilities declared in verikt.yaml that the
+// language provider does not define. known is injected by the caller because
+// config must not depend on the provider package.
+//
+// An empty known set means the provider exposed no templates — validating
+// against it would reject everything, so validation is skipped.
+func ValidateCapabilities(cfg *VeriktConfig, known []string) []error {
+	if cfg == nil || len(known) == 0 {
+		return nil
+	}
+
+	knownSet := make(map[string]bool, len(known))
+	for _, k := range known {
+		knownSet[k] = true
+	}
+
+	var errs []error
+	for i, c := range cfg.Capabilities {
+		name := strings.TrimSpace(c)
+		if name == "" {
+			errs = append(errs, fmt.Errorf("capabilities[%d] is empty", i))
+			continue
+		}
+		if !knownSet[name] {
+			errs = append(errs, fmt.Errorf("capabilities[%d] %q is not a known %s capability", i, name, cfg.Language))
+		}
+	}
+	return errs
+}
+
+// projectManifests mark the root of a distinct project. Finding one while
+// searching upwards means the search has left the project it started in.
+var projectManifests = []string{"go.mod", "package.json"}
+
+// FindVeriktYAML locates the verikt.yaml governing startDir by searching it and
+// then its ancestors.
+//
+// The search stops at a project boundary: a directory holding a module manifest
+// (go.mod, package.json) but no verikt.yaml is the root of its own project, and
+// the parent's configuration does not describe it. Walking past such a boundary
+// checked nested projects against an unrelated config, where none of the declared
+// components matched and every package looked orphaned.
+//
+// A config beside a manifest in the same directory is still found — a project
+// root normally holds both.
 func FindVeriktYAML(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -218,12 +263,25 @@ func FindVeriktYAML(startDir string) (string, error) {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
+		if isProjectRoot(dir) {
+			return "", os.ErrNotExist
+		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", os.ErrNotExist
 		}
 		dir = parent
 	}
+}
+
+// isProjectRoot reports whether dir holds a manifest that marks its own project.
+func isProjectRoot(dir string) bool {
+	for _, manifest := range projectManifests {
+		if _, err := os.Stat(filepath.Join(dir, manifest)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func DefaultVeriktConfig(language, architecture string) *VeriktConfig {

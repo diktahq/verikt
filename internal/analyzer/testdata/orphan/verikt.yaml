@@ -1,0 +1,5 @@
+language: go
+architecture: hexagonal
+components:
+  - name: domain
+    in: [domain/**]

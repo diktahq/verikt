@@ -1,10 +1,13 @@
 package rules
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/diktahq/verikt/internal/pathglob"
 )
 
 func TestExpandScope_SimpleGlob(t *testing.T) {
@@ -108,7 +111,15 @@ func TestExpandScope_MultipleScopes(t *testing.T) {
 	assert.Contains(t, files, "adapter/handler.go")
 }
 
-func TestMatchGlob(t *testing.T) {
+// Rule scopes are matched by internal/pathglob, the same matcher verikt.yaml's
+// check.exclude and severity_overrides use.
+//
+// This package had its own implementation, so the same glob string meant
+// different things in a rule file and in verikt.yaml: `internal/**/*.go` matched
+// here and matched nothing there, and any scope with two `**` segments was
+// reported stale even though the engine could reach the files. These cases are
+// kept to pin the rule-scope behaviour through the shared matcher.
+func TestRuleScopeGlobs(t *testing.T) {
 	tests := []struct {
 		pattern string
 		path    string
@@ -120,17 +131,79 @@ func TestMatchGlob(t *testing.T) {
 		{"**/*.go", "internal/foo.go", true},
 		{"**/*.go", "a/b/c.go", true},
 		{"domain/**/*.go", "domain/order.go", true},
+		{"domain/**/*.go", "domain/a/b/order.go", true},
 		{"domain/**/*.go", "adapter/foo.go", false},
 		{"*_test.go", "main_test.go", true},
 		{"*_test.go", "main.go", false},
+		// Two `**` segments: the old implementation split on the first and
+		// reported these as matching nothing, so the rule was marked stale.
+		{"**/internal/**/*.go", "svc/internal/a/b/c.go", true},
+		{"internal/**/pkg/**/*.go", "internal/a/pkg/b/c.go", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.pattern+"_"+tt.path, func(t *testing.T) {
-			got := matchGlob(tt.pattern, tt.path)
-			assert.Equal(t, tt.want, got, "matchGlob(%q, %q)", tt.pattern, tt.path)
+			got := pathglob.Match(tt.pattern, tt.path)
+			assert.Equal(t, tt.want, got, "pathglob.Match(%q, %q)", tt.pattern, tt.path)
 		})
 	}
+}
+
+// A relative projectRoot of "." is the default `verikt check` invocation. The
+// hidden-directory guard used to match the walk root itself (d.Name() == ".")
+// and SkipDir on the root ended the walk, so every rule matched 0 files and
+// reported as stale no matter what its scope was.
+func TestExpandScope_RelativeDotProjectRoot(t *testing.T) {
+	dir := setupTestProject(t, map[string]string{
+		"main.go":                 "package main\n",
+		"internal/core/engine.go": "package core\n",
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	require.NoError(t, os.Chdir(dir))
+
+	files, err := ExpandScope([]string{"**/*.go"}, nil, ".", nil)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"main.go", "internal/core/engine.go"}, files)
+}
+
+// A literal file path as scope must resolve against a relative root too.
+func TestExpandScope_RelativeDotProjectRootLiteralPath(t *testing.T) {
+	dir := setupTestProject(t, map[string]string{
+		"internal/core/engine.go": "package core\n",
+		"internal/core/other.go":  "package core\n",
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	require.NoError(t, os.Chdir(dir))
+
+	files, err := ExpandScope([]string{"internal/core/engine.go"}, nil, ".", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"internal/core/engine.go"}, files)
+}
+
+// Hidden directories below the root must still be skipped — the root exemption
+// must not disable the guard itself.
+func TestExpandScope_RelativeDotRootStillSkipsHiddenDirs(t *testing.T) {
+	dir := setupTestProject(t, map[string]string{
+		"main.go":                "package main\n",
+		".git/hooks/pre-commit":  "#!/bin/sh\n",
+		".hidden/secret.go":      "package hidden\n",
+		"vendor/dep/vendored.go": "package dep\n",
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	require.NoError(t, os.Chdir(dir))
+
+	files, err := ExpandScope([]string{"**/*.go"}, nil, ".", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"main.go"}, files)
 }
 
 func TestExpandScope_EmptyProjectRoot(t *testing.T) {

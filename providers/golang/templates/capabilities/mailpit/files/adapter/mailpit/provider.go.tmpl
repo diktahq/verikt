@@ -1,5 +1,17 @@
 package mailpit
 
+// Mailpit is a local SMTP server for development: mail is captured and shown in
+// its web UI rather than delivered.
+//
+// This provider is constructed where the application sends mail — typically by
+// passing it to emailgateway.NewGateway — rather than in bootstrap. A mail
+// transport is used at a call site, unlike a database pool, which bootstrap owns
+// for the lifetime of the process.
+//
+// It previously contributed a bootstrap partial that declared the provider and
+// nothing consumed it, so any project with platform + bootstrap + mailpit failed
+// to compile with "declared and not used".
+
 import (
 	"context"
 	"fmt"

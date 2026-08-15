@@ -1,8 +1,6 @@
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
-    engine_response::Payload,
-    rule::Spec,
-    rule_status::Status,
+    engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use crate::typescript_imports;
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -84,8 +82,8 @@ pub fn handle_import_graph_check(req: &CheckRequest) -> Vec<EngineResponse> {
 
     // Evaluate Go rules.
     for rule in &go_rules {
-        files_checked = (collect_go_files(&project, &req.target_files).len() as u32)
-            .max(files_checked);
+        files_checked =
+            (collect_go_files(&project, &req.target_files).len() as u32).max(files_checked);
         let (matched, mut rule_findings) =
             evaluate_rule(rule, &go_pkg_imports, &req.project_path, false);
         findings_total += rule_findings.len() as u32;
@@ -101,7 +99,12 @@ pub fn handle_import_graph_check(req: &CheckRequest) -> Vec<EngineResponse> {
         responses.append(&mut rule_findings);
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if matched { Status::Valid } else { Status::Stale }.into(),
+            status: if matched {
+                Status::Valid
+            } else {
+                Status::Stale
+            }
+            .into(),
             error: String::new(),
         });
     }
@@ -124,7 +127,12 @@ pub fn handle_import_graph_check(req: &CheckRequest) -> Vec<EngineResponse> {
         responses.append(&mut rule_findings);
         rule_statuses.push(RuleStatus {
             rule_id: rule.id.clone(),
-            status: if matched { Status::Valid } else { Status::Stale }.into(),
+            status: if matched {
+                Status::Valid
+            } else {
+                Status::Stale
+            }
+            .into(),
             error: String::new(),
         });
     }
@@ -164,7 +172,7 @@ fn evaluate_rule(
         _ => return (false, vec![]),
     };
 
-    let pkg_glob = match build_globset(&[spec.package_pattern.clone()]) {
+    let pkg_glob = match build_globset(std::slice::from_ref(&spec.package_pattern)) {
         Some(g) => g,
         None => return (false, vec![]),
     };
@@ -172,13 +180,13 @@ fn evaluate_rule(
     let forbidden_globs: Vec<GlobSet> = spec
         .forbidden
         .iter()
-        .filter_map(|p| build_globset(&[p.clone()]))
+        .filter_map(|p| build_globset(std::slice::from_ref(p)))
         .collect();
 
     let allowed_globs: Vec<GlobSet> = spec
         .allowed_only
         .iter()
-        .filter_map(|p| build_globset(&[p.clone()]))
+        .filter_map(|p| build_globset(std::slice::from_ref(p)))
         .collect();
 
     let mut rule_matched = false;
@@ -205,8 +213,11 @@ fn evaluate_rule(
             // Check forbidden patterns.
             let is_forbidden = forbidden_globs.iter().any(|g| g.is_match(&to_rel));
             if is_forbidden {
-                let is_allowed = !allowed_globs.is_empty()
-                    && allowed_globs.iter().all(|g| g.is_match(&to_rel));
+                // allowed_only lists alternatives: matching any one of them permits the
+                // import. `all` rejected an import that matched one allowed pattern but
+                // not another, and contradicted the `any` used further down this file.
+                let is_allowed =
+                    !allowed_globs.is_empty() && allowed_globs.iter().any(|g| g.is_match(&to_rel));
                 if !is_allowed {
                     rule_matched = true;
                     findings.push(EngineResponse {
@@ -261,7 +272,7 @@ fn evaluate_rule(
 }
 
 /// Extract imports from a single Go file using tree-sitter.
-fn extract_imports_from_file(_path: &Path, source: &str) -> Vec<String> {
+pub(crate) fn extract_imports_from_file(_path: &Path, source: &str) -> Vec<String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_go::LANGUAGE.into())
@@ -308,11 +319,19 @@ pub(crate) fn file_to_package(file_path: &Path, project_root: &Path) -> String {
 }
 
 /// Walk all Go files under the project, respecting target_files filter.
+///
+/// Test files are excluded. The Go implementation loads packages with `Tests`
+/// disabled, so it never sees them; including them here made the engine report
+/// dependency violations for imports that exist only in tests — a test crossing
+/// a layer boundary to exercise it is not an architecture violation (INV-004).
 pub(crate) fn collect_go_files(project: &Path, target_files: &[String]) -> Vec<PathBuf> {
     if !target_files.is_empty() {
         return target_files
             .iter()
-            .filter(|f| f.ends_with(".go"))
+            // Both entry points must apply the same exclusions. `--staged` passes an
+            // explicit list, and a fixture path in that list was analysed while
+            // recursive discovery skipped it.
+            .filter(|f| f.ends_with(".go") && !f.ends_with("_test.go") && !is_in_testdata(f))
             .map(|f| project.join(f))
             .collect();
     }
@@ -320,6 +339,11 @@ pub(crate) fn collect_go_files(project: &Path, target_files: &[String]) -> Vec<P
     let mut files = Vec::new();
     collect_go_files_recursive(project, &mut files);
     files
+}
+
+/// True if a project-relative path lies under a `testdata` directory.
+fn is_in_testdata(rel: &str) -> bool {
+    rel.split('/').any(|segment| segment == "testdata")
 }
 
 fn collect_go_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -331,12 +355,26 @@ fn collect_go_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
+        // Any symlink is outside the project boundary (INV-002); tested before the
+        // directory check because `is_dir()` follows symlinks.
+        if crate::grep::is_symlink(&entry) {
+            continue;
+        }
+
         if path.is_dir() {
-            if name_str.starts_with('.') || name_str == "vendor" || name_str == "target" {
+            // testdata is excluded by the Go toolchain, so go/packages never
+            // reports it and neither should the engine: fixtures deliberately
+            // contain the anti-patterns and violations the detectors look for.
+            // A fixture is still analysable by passing it as the project root.
+            if name_str.starts_with('.')
+                || name_str == "vendor"
+                || name_str == "target"
+                || name_str == "testdata"
+            {
                 continue;
             }
             collect_go_files_recursive(&path, files);
-        } else if name_str.ends_with(".go") {
+        } else if name_str.ends_with(".go") && !name_str.ends_with("_test.go") {
             files.push(path);
         }
     }
@@ -412,7 +450,7 @@ fn strip_module_prefix(pkg: &str, project_path: &str) -> String {
 }
 
 /// Extract the Go module name from go.mod in the project root.
-fn extract_module_root(project_path: &str) -> String {
+pub(crate) fn extract_module_root(project_path: &str) -> String {
     let go_mod = PathBuf::from(project_path).join("go.mod");
     if let Ok(content) = fs::read_to_string(&go_mod) {
         for line in content.lines() {
@@ -436,48 +474,13 @@ fn build_globset(patterns: &[String]) -> Option<GlobSet> {
         if let Ok(g) = Glob::new(p) {
             builder.add(g);
         }
-        if let Some(bare) = p.strip_suffix("/**") {
-            if let Ok(g) = Glob::new(bare) {
-                builder.add(g);
-            }
+        if let Some(bare) = p.strip_suffix("/**")
+            && let Ok(g) = Glob::new(bare)
+        {
+            builder.add(g);
         }
     }
     builder.build().ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_single_import() {
-        let src = "package main\n\nimport \"fmt\"\n";
-        let imports = extract_imports_from_file(Path::new("main.go"), src);
-        assert_eq!(imports, vec!["fmt"]);
-    }
-
-    #[test]
-    fn extract_grouped_imports() {
-        let src = "package main\n\nimport (\n    \"fmt\"\n    \"os\"\n    \"github.com/diktahq/verikt/internal/scaffold\"\n)\n";
-        let mut imports = extract_imports_from_file(Path::new("main.go"), src);
-        imports.sort();
-        assert_eq!(
-            imports,
-            vec![
-                "fmt",
-                "github.com/diktahq/verikt/internal/scaffold",
-                "os",
-            ]
-        );
-    }
-
-    #[test]
-    fn extract_aliased_imports() {
-        let src = "package main\n\nimport (\n    log \"github.com/rs/zerolog\"\n    _ \"github.com/lib/pq\"\n)\n";
-        let mut imports = extract_imports_from_file(Path::new("main.go"), src);
-        imports.sort();
-        assert_eq!(imports, vec!["github.com/lib/pq", "github.com/rs/zerolog"]);
-    }
 }
 
 // Keep petgraph in scope — used for future cycle detection.
@@ -506,4 +509,200 @@ fn build_digraph(imports: &[Import]) -> DiGraph<String, ()> {
     }
 
     graph
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// INV-004: detectors never see test files. A test legitimately reaches
+    /// across layers to assemble a fixture, so counting its imports reported
+    /// violations for code that is not part of the architecture.
+    ///
+    /// The invariant had no engine test at all: dropping the `_test.go` filter
+    /// from both branches of collect_go_files, and the guards in antipatterns.rs
+    /// and metrics.rs, left `cargo test` fully green.
+    #[test]
+    fn collect_go_files_excludes_test_files() {
+        let base = std::env::temp_dir().join("verikt-inv004-walk");
+        let project = base.join("project");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(project.join("internal")).unwrap();
+        fs::write(project.join("internal").join("real.go"), "package p\n").unwrap();
+        fs::write(project.join("internal").join("real_test.go"), "package p\n").unwrap();
+
+        let names: Vec<String> = collect_go_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
+
+        // The explicit `--staged` list must apply the same exclusion.
+        let explicit: Vec<String> = collect_go_files(
+            &project,
+            &[
+                "internal/real.go".to_string(),
+                "internal/real_test.go".to_string(),
+            ],
+        )
+        .iter()
+        .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+        assert_eq!(explicit, vec!["real.go".to_string()], "got {explicit:?}");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Both entry points into collect_go_files must apply the same exclusions.
+    /// `--staged` supplies an explicit list, and a fixture path in that list was
+    /// analysed while recursive discovery skipped it.
+    #[test]
+    fn collect_go_files_excludes_testdata_from_explicit_targets() {
+        let project = std::env::temp_dir().join("verikt-target-testdata");
+        let files = collect_go_files(
+            &project,
+            &[
+                "internal/real.go".to_string(),
+                "internal/testdata/fixture/bad.go".to_string(),
+                "testdata/top.go".to_string(),
+            ],
+        );
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
+    }
+
+    /// A symlink to a regular file is not project-local code either (INV-002). Only
+    /// symlinked directories were skipped, so a linked file was still analysed.
+    #[test]
+    #[cfg(unix)]
+    fn collect_go_files_skips_symlinked_files() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join("verikt-file-symlink");
+        let project = base.join("project");
+        let outside = base.join("outside");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(project.join("real.go"), "package p\n").unwrap();
+        fs::write(outside.join("external.go"), "package q\n").unwrap();
+        symlink(outside.join("external.go"), project.join("linked.go")).unwrap();
+
+        let names: Vec<String> = collect_go_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// The Go toolchain ignores testdata, so go/packages never reports it and the
+    /// Go implementation finds nothing there. The engine walked it, so fixtures
+    /// that exist to trigger detectors were reported as real findings — `verikt
+    /// check` on this repository failed on its own test fixtures.
+    ///
+    /// A fixture remains analysable by passing it as the project root, which is how
+    /// the engine deps tests use theirs.
+    #[test]
+    fn collect_go_files_skips_testdata() {
+        let base = std::env::temp_dir().join("verikt-testdata-skip");
+        let project = base.join("project");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(project.join("internal")).unwrap();
+        let fixture = project.join("internal").join("testdata").join("fixture");
+        fs::create_dir_all(&fixture).unwrap();
+        fs::write(
+            project.join("internal").join("real.go"),
+            "package internal\n",
+        )
+        .unwrap();
+        fs::write(fixture.join("bad.go"), "package fixture\n").unwrap();
+
+        let names: Vec<String> = collect_go_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.contains(&"real.go".to_string()), "got {names:?}");
+        assert!(
+            !names.contains(&"bad.go".to_string()),
+            "testdata fixture was analysed: {names:?}"
+        );
+
+        // Passing the fixture itself as the project root still analyses it.
+        let direct: Vec<String> = collect_go_files(&fixture, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(direct, vec!["bad.go".to_string()]);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A symlinked directory is not project-local code (INV-002). `is_dir()`
+    /// follows symlinks, so the walker used to descend into the link target —
+    /// pulling in files from outside the project, and looping forever on a cycle.
+    #[test]
+    #[cfg(unix)]
+    fn collect_go_files_skips_symlinked_dirs() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join("verikt-symlink-test");
+        let project = base.join("project");
+        let outside = base.join("outside");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(project.join("internal")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+
+        fs::write(
+            project.join("internal").join("real.go"),
+            "package internal\n",
+        )
+        .unwrap();
+        fs::write(outside.join("external.go"), "package outside\n").unwrap();
+        symlink(&outside, project.join("linked")).unwrap();
+
+        let files = collect_go_files(&project, &[]);
+
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.contains(&"real.go".to_string()), "got {names:?}");
+        assert!(
+            !names.contains(&"external.go".to_string()),
+            "symlinked directory was followed: {names:?}"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn extract_single_import() {
+        let src = "package main\n\nimport \"fmt\"\n";
+        let imports = extract_imports_from_file(Path::new("main.go"), src);
+        assert_eq!(imports, vec!["fmt"]);
+    }
+
+    #[test]
+    fn extract_grouped_imports() {
+        let src = "package main\n\nimport (\n    \"fmt\"\n    \"os\"\n    \"github.com/diktahq/verikt/internal/scaffold\"\n)\n";
+        let mut imports = extract_imports_from_file(Path::new("main.go"), src);
+        imports.sort();
+        assert_eq!(
+            imports,
+            vec!["fmt", "github.com/diktahq/verikt/internal/scaffold", "os",]
+        );
+    }
+
+    #[test]
+    fn extract_aliased_imports() {
+        let src = "package main\n\nimport (\n    log \"github.com/rs/zerolog\"\n    _ \"github.com/lib/pq\"\n)\n";
+        let mut imports = extract_imports_from_file(Path::new("main.go"), src);
+        imports.sort();
+        assert_eq!(imports, vec!["github.com/lib/pq", "github.com/rs/zerolog"]);
+    }
 }

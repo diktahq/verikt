@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,65 @@ func TestValidateVeriktYAML(t *testing.T) {
 	}
 }
 
+// A typo in the capabilities list used to be accepted silently by both check
+// and guide, and rendered into the guide as a real capability.
+func TestValidateCapabilities(t *testing.T) {
+	known := []string{"http-api", "postgres", "redis"}
+
+	tests := []struct {
+		name         string
+		capabilities []string
+		wantErrs     int
+		wantContains string
+	}{
+		{name: "all known", capabilities: []string{"http-api", "redis"}, wantErrs: 0},
+		{name: "none declared", capabilities: nil, wantErrs: 0},
+		{
+			name:         "unknown name",
+			capabilities: []string{"http-api", "totally-made-up"},
+			wantErrs:     1,
+			wantContains: `"totally-made-up"`,
+		},
+		{
+			name:         "each unknown reported",
+			capabilities: []string{"nope", "also-nope"},
+			wantErrs:     2,
+			wantContains: `"nope"`,
+		},
+		{
+			name:         "blank entry",
+			capabilities: []string{""},
+			wantErrs:     1,
+			wantContains: "capabilities[0]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &VeriktConfig{Language: "go", Architecture: "hexagonal", Capabilities: tt.capabilities}
+
+			errs := ValidateCapabilities(cfg, known)
+
+			if len(errs) != tt.wantErrs {
+				t.Fatalf("ValidateCapabilities() returned %d errors, want %d: %v", len(errs), tt.wantErrs, errs)
+			}
+			if tt.wantContains != "" && !strings.Contains(errs[0].Error(), tt.wantContains) {
+				t.Errorf("error %q does not mention %q", errs[0], tt.wantContains)
+			}
+		})
+	}
+}
+
+// An empty known set means the provider exposed no templates; validating against
+// it would reject every capability, so validation must be skipped instead.
+func TestValidateCapabilitiesSkipsWhenKnownSetEmpty(t *testing.T) {
+	cfg := &VeriktConfig{Language: "go", Capabilities: []string{"anything"}}
+
+	if errs := ValidateCapabilities(cfg, nil); len(errs) != 0 {
+		t.Fatalf("expected no errors with an empty known set, got %v", errs)
+	}
+}
+
 func TestSaveLoadVeriktYAMLRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "verikt.yaml")
@@ -72,6 +132,72 @@ func TestFindVeriktYAML(t *testing.T) {
 	}
 	if found != path {
 		t.Fatalf("FindVeriktYAML = %q, want %q", found, path)
+	}
+}
+
+// A nested project with its own module manifest is a different project. The
+// ancestor search used to walk straight past it, so a directory with its own
+// go.mod and no verikt.yaml was checked against the parent repository's config —
+// every one of its packages then looked like it belonged to no component.
+func TestFindVeriktYAML_StopsAtNestedModuleBoundary(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "testdata", "fixture")
+	if err := mkdirAll(nested); err != nil {
+		t.Fatalf("mkdirAll: %v", err)
+	}
+	if err := SaveVeriktYAML(filepath.Join(dir, "verikt.yaml"), DefaultVeriktConfig("go", "hexagonal")); err != nil {
+		t.Fatalf("SaveVeriktYAML: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "go.mod"), []byte("module example.com/fixture\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	if found, err := FindVeriktYAML(nested); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("FindVeriktYAML = (%q, %v), want os.ErrNotExist", found, err)
+	}
+}
+
+// The boundary check must not shadow a config in the same directory: a project
+// root normally holds both go.mod and verikt.yaml.
+func TestFindVeriktYAML_ConfigBesideModuleManifestIsFound(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "internal", "adapter")
+	if err := mkdirAll(nested); err != nil {
+		t.Fatalf("mkdirAll: %v", err)
+	}
+	path := filepath.Join(dir, "verikt.yaml")
+	if err := SaveVeriktYAML(path, DefaultVeriktConfig("go", "hexagonal")); err != nil {
+		t.Fatalf("SaveVeriktYAML: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	found, err := FindVeriktYAML(nested)
+	if err != nil {
+		t.Fatalf("FindVeriktYAML: %v", err)
+	}
+	if found != path {
+		t.Fatalf("FindVeriktYAML = %q, want %q", found, path)
+	}
+}
+
+// The same boundary applies to TypeScript projects, which verikt also supports.
+func TestFindVeriktYAML_StopsAtNestedPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "website")
+	if err := mkdirAll(nested); err != nil {
+		t.Fatalf("mkdirAll: %v", err)
+	}
+	if err := SaveVeriktYAML(filepath.Join(dir, "verikt.yaml"), DefaultVeriktConfig("go", "hexagonal")); err != nil {
+		t.Fatalf("SaveVeriktYAML: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+
+	if found, err := FindVeriktYAML(nested); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("FindVeriktYAML = (%q, %v), want os.ErrNotExist", found, err)
 	}
 }
 

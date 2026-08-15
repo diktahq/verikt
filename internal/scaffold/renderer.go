@@ -412,6 +412,71 @@ func (r *Renderer) RenderCapabilityFiles(capDir, outputDir string, vars map[stri
 	return result, skipped, nil
 }
 
+// PreviewCapabilityFiles reports the files RenderCapabilityFiles would create
+// and skip, without writing anything. It backs `verikt add --dry-run`.
+//
+// Templates are still executed, because a template that renders to empty
+// content is not written — the preview would otherwise overreport.
+func (r *Renderer) PreviewCapabilityFiles(capDir, outputDir string, vars map[string]interface{}) (created, skipped []string, err error) {
+	filesRoot := path.Join(capDir, "files")
+	if _, statErr := fs.Stat(r.fs, filesRoot); statErr != nil {
+		return nil, nil, nil
+	}
+
+	absOutputDir, err := filepath.Abs(outputDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve output dir: %w", err)
+	}
+
+	walkErr := fs.WalkDir(r.fs, filesRoot, func(current string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if current == filesRoot || d.IsDir() {
+			return nil
+		}
+		rel := strings.TrimPrefix(current, filesRoot+"/")
+
+		renderedRel, renderErr := RenderPath(rel, vars)
+		if renderErr != nil {
+			return fmt.Errorf("render path %q: %w", rel, renderErr)
+		}
+
+		relDst := filepath.FromSlash(renderedRel)
+		if err := validatePathWithinDir(filepath.Join(absOutputDir, relDst), absOutputDir); err != nil {
+			return err
+		}
+
+		finalPath := filepath.Join(absOutputDir, strings.TrimSuffix(relDst, ".tmpl"))
+		if _, statErr := os.Stat(finalPath); statErr == nil {
+			skipped = append(skipped, finalPath)
+			return nil
+		}
+
+		if strings.HasSuffix(relDst, ".tmpl") {
+			srcBytes, readErr := fs.ReadFile(r.fs, current)
+			if readErr != nil {
+				return readErr
+			}
+			rendered, tmplErr := executeTemplate(string(srcBytes), vars)
+			if tmplErr != nil {
+				return fmt.Errorf("render template %q: %w", rel, tmplErr)
+			}
+			if len(strings.TrimSpace(string(rendered))) == 0 {
+				return nil
+			}
+		}
+
+		created = append(created, finalPath)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, nil, walkErr
+	}
+
+	return created, skipped, nil
+}
+
 // removeEmptyDirs walks bottom-up and removes directories that contain no files.
 func removeEmptyDirs(rootDir string) {
 	// Collect dirs in reverse depth order (deepest first).

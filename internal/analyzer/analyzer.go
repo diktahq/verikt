@@ -95,9 +95,30 @@ func (a *Analyzer) Analyze(_ context.Context) (*provider.AnalyzeResponse, error)
 	if veriktPath, err := config.FindVeriktYAML(a.path); err == nil {
 		if cfg, err := config.LoadVeriktYAML(veriktPath); err == nil {
 			result.Violations = graph.LayerViolations(depGraph, cfg.Components)
+			result.Violations = append(result.Violations, unclaimedPackageViolations(a.pkgs, a.path, cfg)...)
 		}
 	}
 	return result, nil
+}
+
+// unclaimedPackageViolations reports project packages that no declared component
+// claims. Their dependency rules cannot be enforced, so leaving them unreported
+// here made analyze look cleaner than the code was — checker reports the same
+// condition as an orphan_package error.
+func unclaimedPackageViolations(pkgs []*packages.Package, projectPath string, cfg *config.VeriktConfig) []provider.Violation {
+	localPaths := graph.ProjectLocalPackages(pkgs, projectPath, cfg.Check.Exclude)
+	unclaimed := graph.UnclaimedPackages(localPaths, cfg.Components)
+
+	violations := make([]provider.Violation, 0, len(unclaimed))
+	for _, pkgPath := range unclaimed {
+		violations = append(violations, provider.Violation{
+			Rule:     "orphan_package",
+			Message:  fmt.Sprintf("package %q matches no declared component in verikt.yaml — its dependencies are not enforced", pkgPath),
+			Source:   pkgPath,
+			Severity: "error",
+		})
+	}
+	return violations
 }
 
 func countFiles(pkgs []*packages.Package) int {

@@ -236,7 +236,9 @@ func TestResolveTargets(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.selector, func(t *testing.T) {
-			targets, err := resolveTargets(tt.selector)
+			// A directory with no agent markers has no signal to go on, so every
+			// target is written — this is the `verikt new` case.
+			targets, err := resolveTargets(tt.selector, t.TempDir())
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -245,6 +247,49 @@ func TestResolveTargets(t *testing.T) {
 			assert.Len(t, targets, tt.count)
 		})
 	}
+}
+
+// "all" means every agent the project actually uses. Writing .cursorrules,
+// .windsurfrules and a copilot instructions file into a repository that only uses
+// Claude Code leaves three unwanted files behind on every guide run.
+func TestResolveTargets_AllPrefersAgentsTheProjectUses(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".claude"), 0o755))
+
+	targets, err := resolveTargets("all", dir)
+	require.NoError(t, err)
+
+	require.Len(t, targets, 1)
+	assert.Equal(t, "claude", targets[0].Name())
+}
+
+// Several markers present: each of those agents is written, and only those.
+func TestResolveTargets_AllHonoursEveryMarkerPresent(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".claude"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".cursorrules"), []byte("x\n"), 0o644))
+
+	targets, err := resolveTargets("all", dir)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(targets))
+	for _, target := range targets {
+		names = append(names, target.Name())
+	}
+	assert.ElementsMatch(t, []string{"claude", "cursor"}, names)
+}
+
+// An explicit --target still writes that agent even with no marker: the user asked
+// for it.
+func TestResolveTargets_ExplicitTargetIgnoresDetection(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".claude"), 0o755))
+
+	targets, err := resolveTargets("cursor", dir)
+	require.NoError(t, err)
+
+	require.Len(t, targets, 1)
+	assert.Equal(t, "cursor", targets[0].Name())
 }
 
 func TestGenerate_EmptyProjectDir(t *testing.T) {
@@ -596,9 +641,9 @@ func TestGuideTokenCompliance(t *testing.T) {
 	words := len(strings.Fields(content))
 	approxTokens := int(float64(words) * 1.3)
 
-	// Guide should stay under 3100 tokens (INV-001 upper bound for rules files is 1500,
-	// but guide is a generated composite with mode instructions, AI interview protocol,
-	// codebase mapping table, and governance checkpoint — so we allow up to 3100).
+	// 3,100 tokens is the composite bound recorded in INV-001: the sentinel targets
+	// (cursor, copilot, windsurf) accept one file, so it carries what the Claude path
+	// splits across several. Per-file rules stay within 500-1,500.
 	if approxTokens > 3100 {
 		t.Errorf("guide output too large: ~%d tokens (%d words); consider trimming", approxTokens, words)
 	}

@@ -3,8 +3,13 @@
 bin/
 *.exe
 
-# Engine binary (built locally, not committed — see internal/engineclient/embed.go)
-internal/engineclient/bin/
+# Engine binaries (build artefacts, not committed — see internal/engineclient/embed.go).
+# The README is committed so the //go:embed pattern always matches a file. The
+# directory has to be re-included first: git cannot re-include a file whose parent
+# directory is excluded, and `bin/` above excludes this one.
+!internal/engineclient/bin/
+internal/engineclient/bin/*
+!internal/engineclient/bin/README.md
 
 # IDE
 .idea/
@@ -34,3 +39,12 @@ engine/target/
 
 # Release artifacts (downloaded by CI, not committed)
 engine-artifacts/
+
+# edikt hook runtime state (machine-local, not project config)
+.edikt/state/
+
+# Review reports and other process artefacts. These describe a moment in a
+# review, not the project, so they stay out of the repository — while remaining
+# on disk for whoever is working through them.
+docs/internal/pr-2-review-report.md
+docs/internal/branch-review-2-report.md
