@@ -68,6 +68,7 @@ func newRootCommand() *cobra.Command {
 		newDiffCommand(opts),
 		newGuideCommand(opts),
 		newDecideCommand(opts),
+		newFalsePositiveCommand(),
 		newVersionCommand(),
 		newSetupCommand(),
 	)

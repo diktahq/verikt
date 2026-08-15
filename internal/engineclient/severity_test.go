@@ -70,7 +70,7 @@ func TestEveryDetectorSeverityIsPinned(t *testing.T) {
 		"mvc_in_hexagonal":              "warning",
 		"naked_goroutine":               "warning",
 		"nil_map_write":                 "error",
-		"sql_concatenation":             "error",
+		"sql_concatenation":             "warning",
 		"swallowed_error":               "error",
 		"type_assertion_without_ok":     "warning",
 		"uuid_v4_as_key":                "info",
@@ -90,7 +90,7 @@ func TestEveryDetectorSeverityIsPinned(t *testing.T) {
 // The severities that gate CI, called out separately: these are the findings
 // that must fail a build.
 func TestDetectorSeverity_ErrorLevelFindingsAreNotDowngraded(t *testing.T) {
-	for _, detector := range []string{"sql_concatenation", "swallowed_error", "domain_imports_adapter", "nil_map_write"} {
+	for _, detector := range []string{"swallowed_error", "domain_imports_adapter", "nil_map_write"} {
 		assert.Equal(t, "error", detectorSeverity(detector, "warning"),
 			"%s must stay error-severity even though the engine reports warning", detector)
 	}
@@ -100,4 +100,38 @@ func TestDetectorSeverity_ErrorLevelFindingsAreNotDowngraded(t *testing.T) {
 // severity rather than being dropped or mislabelled.
 func TestDetectorSeverity_UnknownDetectorFallsBackToReported(t *testing.T) {
 	assert.Equal(t, "warning", detectorSeverity("brand_new_detector", "warning"))
+}
+
+// Error severity is earned, not assumed (INV-005).
+//
+// A detector that reads text rather than resolved structure cannot know its
+// match means what it looks like. `sql_concatenation` read string literals for
+// SQL keywords and fired on English prose in a module with no database — at
+// error severity, so it failed the build, and the finding could not be acted on
+// because there was no query to parameterise.
+//
+// Error severity is for checks that can be wrong about intent but not about
+// fact: an import that crosses a layer, a write to a map never allocated, an
+// error discarded by an empty block. Heuristics start at warning and are raised
+// by the user with severity_overrides if they want them blocking.
+func TestHeuristicDetectorsAreNotErrorSeverity(t *testing.T) {
+	// Detectors whose evidence is textual or statistical rather than structural.
+	heuristic := []string{
+		"sql_concatenation",         // reads string literals for keywords
+		"god_package",               // a symbol count against a threshold
+		"fat_handler",               // a statement count against a threshold
+		"global_mutable_state",      // cannot see other files in the package
+		"uuid_v4_as_key",            // infers intent from a call site
+		"type_assertion_without_ok", // a bare assertion is legitimate when the type is known
+		"init_abuse",                // a statement count against a threshold
+	}
+
+	for _, detector := range heuristic {
+		severity, ok := detectorSeverities[detector]
+		require.True(t, ok, "%s is not in the severity table", detector)
+		assert.NotEqual(t, "error", severity,
+			"%s is heuristic, so it must not fail a build until it has demonstrated "+
+				"precision on real code — raise it with severity_overrides instead (INV-005)",
+			detector)
+	}
 }
