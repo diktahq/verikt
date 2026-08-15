@@ -115,3 +115,41 @@ func TestCheckWithEngineOnlyAppliesExcludesToPartialResults(t *testing.T) {
 		assert.NotContains(t, v.File, "gen/", "excluded path leaked into partial results")
 	}
 }
+
+// TypeScript needs the engine too, and must not pass without it.
+//
+// The language branch ran before the client check, so a TypeScript project with
+// every client nil returned a clean result. TypeScript dependency analysis is
+// engine-only — there is no second implementation — so with no client nothing
+// checks imports at all and the run reports a pass. That is the failure
+// ErrEngineRequired exists to prevent, reached by taking the other branch.
+//
+// Only the dependency client is required: anti-pattern and function-metric
+// analysis are Go-only and TypeScript ignores them, so demanding those would
+// fail a check that could otherwise run correctly.
+func TestCheckTypeScriptRequiresTheDependencyClient(t *testing.T) {
+	cfg := &config.VeriktConfig{
+		Language:     "typescript",
+		Architecture: "hexagonal",
+		Components:   []config.Component{{Name: "domain", In: []string{"src/domain"}}},
+	}
+
+	_, err := CheckWithEngine(cfg, typescriptProject(t), nil, nil, nil)
+
+	require.ErrorIs(t, err, ErrEngineRequired,
+		"a TypeScript check with no engine has not verified anything, so it cannot pass")
+}
+
+// The clients TypeScript does not use are not required.
+func TestCheckTypeScriptDoesNotRequireGoOnlyClients(t *testing.T) {
+	cfg := &config.VeriktConfig{
+		Language:     "typescript",
+		Architecture: "hexagonal",
+		Components:   []config.Component{{Name: "domain", In: []string{"src/domain"}}},
+	}
+
+	result, err := CheckWithEngine(cfg, typescriptProject(t), nil, dependencyClientReturning(nil), nil)
+
+	require.NoError(t, err, "anti-pattern and metric analysis are Go-only; TypeScript ignores them")
+	require.NotNil(t, result)
+}

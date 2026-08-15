@@ -6,7 +6,7 @@ All notable changes to verikt are documented here. Format follows [Keep a Change
 
 Fixes an external audit of 0.1.0 (8 findings, all reproduced) and the parity gaps that
 surfaced while fixing them — cases where the Go and Rust implementations disagreed and
-nothing detected it. Six breaking changes; read *Upgrading* first.
+nothing detected it. Seven breaking changes; read *Upgrading* first.
 
 ### Upgrading from 0.1.0
 
