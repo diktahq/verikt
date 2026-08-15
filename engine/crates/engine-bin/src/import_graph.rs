@@ -373,6 +373,13 @@ fn collect_go_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
             {
                 continue;
             }
+            // A directory with its own go.mod is a different module. Its packages
+            // belong to that module's import path, so analysing them here reports
+            // findings against a project the user did not ask about, under an
+            // import path derived from the wrong module.
+            if path.join("go.mod").is_file() {
+                continue;
+            }
             collect_go_files_recursive(&path, files);
         } else if name_str.ends_with(".go") && !name_str.ends_with("_test.go") {
             files.push(path);
@@ -514,6 +521,41 @@ fn build_digraph(imports: &[Import]) -> DiGraph<String, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A nested module is a different project and is not walked.
+    ///
+    /// Its packages belong to that module's import path, so analysing them here
+    /// produces findings against code the user did not ask about — reported
+    /// under an import path derived from the parent module, which does not exist.
+    #[test]
+    fn collect_go_files_stops_at_nested_modules() {
+        let base = std::env::temp_dir().join("verikt-nested-module");
+        let project = base.join("project");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(project.join("internal")).unwrap();
+        fs::write(project.join("go.mod"), "module example.com/parent\n").unwrap();
+        fs::write(project.join("internal").join("real.go"), "package p\n").unwrap();
+
+        let nested = project.join("tools").join("gen");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("go.mod"), "module example.com/unrelated\n").unwrap();
+        fs::write(nested.join("main.go"), "package gen\n").unwrap();
+
+        let names: Vec<String> = collect_go_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["real.go".to_string()], "got {names:?}");
+
+        // Passing the nested module as the root still analyses it.
+        let direct: Vec<String> = collect_go_files(&nested, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(direct, vec!["main.go".to_string()]);
+
+        let _ = fs::remove_dir_all(&base);
+    }
 
     /// INV-004: detectors never see test files. A test legitimately reaches
     /// across layers to assemble a fixture, so counting its imports reported

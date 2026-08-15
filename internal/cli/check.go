@@ -595,6 +595,14 @@ func printProxyRuleSection(result *rules.RunResult) {
 
 	// A stale rule matched no files and an invalid rule failed to load: neither
 	// ran, so neither passed. Claiming otherwise hides the failure.
+	// No rules at all is not a pass. Printing a green tick for checks that do not
+	// exist reads, to anyone scanning the output, as something verified — the
+	// same confusion as a stale rule reporting as passing.
+	if len(result.Statuses) == 0 {
+		fmt.Println("  – no proxy rules defined (.verikt/rules/)")
+		return
+	}
+
 	unrun := result.StaleRuleCount() + result.InvalidRuleCount()
 	if len(result.Violations) == 0 && unrun == 0 {
 		fmt.Println("  ✓ All proxy rules pass")
@@ -608,17 +616,7 @@ func printProxyRuleSection(result *rules.RunResult) {
 		fmt.Printf("  %d rules did not run — they cannot pass\n", unrun)
 	}
 
-	for _, v := range result.Violations {
-		sev := severityMarker(v.Severity)
-		if v.Line > 0 {
-			fmt.Printf("  %s [%s] %s:%d %s\n", sev, v.RuleID, v.File, v.Line, v.Description)
-		} else {
-			fmt.Printf("  %s [%s] %s — %s\n", sev, v.RuleID, v.File, v.Description)
-		}
-		if v.Match != "" {
-			fmt.Printf("    > %s\n", v.Match)
-		}
-	}
+	printProxyRuleViolations(result.Violations)
 
 	// Report invalid/stale rules. These fail the build (see ruleResultBlocks), so
 	// they take the failure marker — a run can otherwise exit 1 with no ✗ on
@@ -684,6 +682,21 @@ func splitByCategory(violations []checker.Violation, category string) (matched, 
 		}
 	}
 	return matched, rest
+}
+
+// printProxyRuleViolations lists the findings proxy rules produced.
+func printProxyRuleViolations(violations []rules.RuleViolation) {
+	for _, v := range violations {
+		sev := severityMarker(v.Severity)
+		if v.Line > 0 {
+			fmt.Printf("  %s [%s] %s:%d %s\n", sev, v.RuleID, v.File, v.Line, v.Description)
+		} else {
+			fmt.Printf("  %s [%s] %s — %s\n", sev, v.RuleID, v.File, v.Description)
+		}
+		if v.Match != "" {
+			fmt.Printf("    > %s\n", v.Match)
+		}
+	}
 }
 
 // severityMarker returns the glyph for a finding's severity.

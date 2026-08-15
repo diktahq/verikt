@@ -219,3 +219,62 @@ func TestReadableSourceFilesReportNothing(t *testing.T) {
 
 	assert.Empty(t, detectUnreadablePaths(dir, nil))
 }
+
+// A directory with its own go.mod is a different module and must not be
+// analysed as part of this one.
+//
+// 0.2.0 stopped verikt.yaml being inherited across a module boundary, but the
+// analysis still walked straight through it: a nested module was reported as an
+// orphan package, at error severity, under an import path derived from the
+// *parent* module — a path that does not exist. Found by dogfooding on a repo
+// with tooling modules vendored inside it, where it failed the build.
+func TestNestedModulesAreNotAnalysed(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/parent\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "app"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "internal", "app", "app.go"),
+		[]byte("package app\n"), 0o644))
+
+	nested := filepath.Join(dir, "tools", "gen")
+	require.NoError(t, os.MkdirAll(nested, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "go.mod"),
+		[]byte("module example.com/unrelated\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "main.go"),
+		[]byte("package gen\n"), 0o644))
+
+	cfg := &config.VeriktConfig{
+		Language:     "go",
+		Architecture: "layered",
+		Components:   []config.Component{{Name: "app", In: []string{"internal/app/**"}}},
+	}
+
+	for _, v := range detectOrphanPackagesFS(cfg, dir) {
+		assert.NotContains(t, v.File, "tools/gen",
+			"a nested module belongs to example.com/unrelated, not this project: %+v", v)
+	}
+}
+
+// The boundary must not swallow the project it protects.
+func TestParentModulePackagesAreStillAnalysed(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/parent\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "stray"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "internal", "stray", "x.go"),
+		[]byte("package stray\n"), 0o644))
+
+	cfg := &config.VeriktConfig{
+		Language:     "go",
+		Architecture: "layered",
+		Components:   []config.Component{{Name: "app", In: []string{"internal/app/**"}}},
+	}
+
+	var found bool
+	for _, v := range detectOrphanPackagesFS(cfg, dir) {
+		if v.Rule == "orphan_package" && v.File == "internal/stray" {
+			found = true
+		}
+	}
+	assert.True(t, found, "the parent module's own unclaimed package is still an orphan")
+}

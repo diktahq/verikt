@@ -283,6 +283,19 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 			return filepath.SkipDir
 		}
 
+		// A directory with its own go.mod is a different module, and its packages
+		// belong to that module's import path, not this one.
+		//
+		// Config lookup already stops at this boundary, but the analysis walked
+		// straight through it: a nested module was reported as an orphan package
+		// at error severity, under an import path derived from the *parent*
+		// module — a path that does not exist. Found by dogfooding on a repo with
+		// tooling modules inside it, where it failed the build with a finding
+		// that could not be acted on.
+		if path != projectPath && isModuleRoot(path) {
+			return filepath.SkipDir
+		}
+
 		rel, err := filepath.Rel(projectPath, path)
 		if err != nil {
 			return err
@@ -482,6 +495,12 @@ func unreadablePathViolation(projectPath, path string, cause error) Violation {
 		Rule:     "unreadable_path",
 		Severity: "error",
 	}
+}
+
+// isModuleRoot reports whether dir declares its own Go module.
+func isModuleRoot(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "go.mod"))
+	return err == nil && !info.IsDir()
 }
 
 // readModulePath reads the module path from go.mod in projectPath.

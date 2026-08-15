@@ -923,6 +923,22 @@ fn detect_context_background<'a>(
 
 /// Detect SQL string concatenation (injection risk).
 fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
+    // Concatenating a string that happens to contain an English word is not SQL
+    // injection. The keywords below are ordinary vocabulary — select, delete,
+    // from, where, update — so matching them alone fired on prose in a project
+    // with no database, no driver and no query anywhere, at error severity,
+    // which fails the build and cannot be fixed in the code because there is no
+    // query to parameterise.
+    //
+    // So the file has to give some reason to believe SQL is involved before any
+    // of this runs. A file that builds a query string and hands it to a helper
+    // in another file is missed as a result: a deliberate false negative,
+    // because an unfixable error-severity false positive costs more than an
+    // occasional miss.
+    if !file_involves_sql(root, source) {
+        return vec![];
+    }
+
     let mut bin_nodes: Vec<Node> = Vec::new();
     collect_nodes(root, "binary_expression", &mut bin_nodes);
 
@@ -1291,6 +1307,107 @@ fn is_init_call(fn_name: &str) -> bool {
         .any(|s| fn_name.ends_with(s) || fn_name.ends_with(&format!(".{}", s)))
 }
 
+/// True if the file gives evidence that it deals with SQL.
+///
+/// Either it imports a database package, or it calls something that executes a
+/// query — which covers a repository whose handle is injected and which
+/// therefore imports no driver itself.
+fn file_involves_sql(root: Node, source: &[u8]) -> bool {
+    // Import paths belonging to database access.
+    let mut imports: Vec<Node> = Vec::new();
+    collect_nodes(root, "import_spec", &mut imports);
+    for spec in &imports {
+        let path = node_text(*spec, source).to_lowercase();
+        const DB_MARKERS: &[&str] = &[
+            "database/sql",
+            "sqlx",
+            "pgx",
+            "pq",
+            "mysql",
+            "sqlite",
+            "gorm",
+            "squirrel",
+            "goqu",
+            "bun",
+            "ent",
+            "sqlc",
+            "postgres",
+            "clickhouse",
+            "mssql",
+            "oracle",
+        ];
+        if DB_MARKERS.iter().any(|m| path.contains(m)) {
+            return true;
+        }
+    }
+
+    // Or a call that executes a query, however the handle arrived.
+    const QUERY_CALLS: &[&str] = &[
+        "Query",
+        "QueryRow",
+        "QueryContext",
+        "QueryRowContext",
+        "Exec",
+        "ExecContext",
+        "Prepare",
+        "PrepareContext",
+        "Raw",
+        "Select",
+        "Get",
+    ];
+    let mut calls: Vec<Node> = Vec::new();
+    collect_nodes(root, "call_expression", &mut calls);
+    for call in &calls {
+        let Some(function) = call.child_by_field_name("function") else {
+            continue;
+        };
+        // Only method calls: `db.Query(...)`. A bare `Get(...)` is too common to
+        // treat as evidence of SQL.
+        if function.kind() != "selector_expression" {
+            continue;
+        }
+        let name = function
+            .child_by_field_name("field")
+            .map(|f| node_text(f, source))
+            .unwrap_or("");
+        if QUERY_CALLS.contains(&name) {
+            return true;
+        }
+    }
+
+    // Or a string literal written as SQL is conventionally written: keywords in
+    // upper case, in statement order. `"SELECT * FROM orders WHERE id="` is a
+    // query; `"select the rows from "` is a sentence. Case is the discriminator
+    // that separates them, and Go codebases write SQL keywords in upper case by
+    // convention — so this catches a repository that builds a query and hands it
+    // to a caller without importing a driver itself.
+    let mut literals: Vec<Node> = Vec::new();
+    collect_nodes(root, "interpreted_string_literal", &mut literals);
+    collect_nodes(root, "raw_string_literal", &mut literals);
+    for literal in &literals {
+        let text = node_text(*literal, source);
+        const STATEMENT_SHAPES: &[(&str, &str)] = &[
+            ("SELECT ", " FROM "),
+            ("DELETE ", " FROM "),
+            ("INSERT ", " INTO "),
+            ("UPDATE ", " SET "),
+        ];
+        for (head, tail) in STATEMENT_SHAPES {
+            if let Some(at) = text.find(head)
+                && text[at..].contains(tail)
+            {
+                return true;
+            }
+        }
+        // "DELETE FROM x" and "INSERT INTO x" have no gap between the words.
+        if text.contains("DELETE FROM ") || text.contains("INSERT INTO ") {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn binary_contains_sql_keyword(node: Node, source: &[u8], keywords: &[&str]) -> bool {
     match node.kind() {
         "interpreted_string_literal" | "raw_string_literal" => {
@@ -1352,6 +1469,68 @@ mod tests {
     /// Exported stays a finding whatever this file shows: another package can
     /// mutate it and this analysis cannot see other packages. Absence of
     /// mutation is only evidence when nobody else can reach the variable.
+    /// SQL concatenation needs evidence of SQL, not an English word.
+    ///
+    /// The check uppercased every concatenated string literal and looked for
+    /// "SELECT ", "DELETE ", "FROM " and friends as substrings, so ordinary prose
+    /// fired it. Found by a project with no database, no driver and no query
+    /// anywhere: a variable named `where` and a sentence containing "delete the
+    /// block" produced two error-severity findings, which fail the build and
+    /// cannot be fixed in the code — there is no query to parameterise. The only
+    /// escapes were a waiver or rewording English to avoid SQL keywords.
+    ///
+    /// A finding fires now when the file gives some reason to believe SQL is
+    /// involved: it imports a database package, or it calls something that
+    /// executes a query. That misses a file that builds a query string and hands
+    /// it to a helper elsewhere — a deliberate false negative, on the reasoning
+    /// that an unfixable error-severity false positive costs more.
+    #[test]
+    fn sql_concatenation_needs_evidence_of_sql() {
+        let cases: Vec<(&str, &str, usize)> = vec![
+            // The dogfood repro, verbatim in shape.
+            (
+                "prose containing delete, no database anywhere",
+                "package p\n\nfunc Check(where string, problems []string) []string {\n\treturn append(problems, where+\": names no capability, so it decides nothing - delete the block\")\n}\n",
+                0,
+            ),
+            (
+                "prose containing select and from",
+                "package p\n\nfunc Describe(table string) string {\n\treturn \"select the rows from \" + table + \" that changed\"\n}\n",
+                0,
+            ),
+            // Real SQL, in a file that clearly does SQL.
+            (
+                "concatenated query in a file importing database/sql",
+                "package p\n\nimport \"database/sql\"\n\nfunc Find(db *sql.DB, id string) (*sql.Rows, error) {\n\treturn db.Query(\"SELECT * FROM users WHERE id = '\" + id + \"'\")\n}\n",
+                1,
+            ),
+            // Injected handle, no direct database import, but it executes a query.
+            (
+                "concatenated query passed to Query on an injected handle",
+                "package p\n\ntype execer interface{ Query(string) error }\n\nfunc Find(db execer, id string) error {\n\treturn db.Query(\"SELECT * FROM users WHERE id = '\" + id + \"'\")\n}\n",
+                1,
+            ),
+            (
+                "concatenated query with Exec",
+                "package p\n\nimport \"database/sql\"\n\nfunc Del(db *sql.DB, id string) error {\n\t_, err := db.Exec(\"DELETE FROM users WHERE id = '\" + id + \"'\")\n\treturn err\n}\n",
+                1,
+            ),
+            // Parameterised: no concatenation, nothing to report.
+            (
+                "parameterised query",
+                "package p\n\nimport \"database/sql\"\n\nfunc Find(db *sql.DB, id string) (*sql.Rows, error) {\n\treturn db.Query(\"SELECT * FROM users WHERE id = ?\", id)\n}\n",
+                0,
+            ),
+        ];
+
+        for (name, src, want) in cases {
+            let tree = parse(src);
+            let findings = detect_sql_concatenation(tree.root_node(), src.as_bytes(), "test.go");
+            let msgs: Vec<u32> = findings.iter().map(|f| f.line).collect();
+            assert_eq!(findings.len(), want, "{name}: lines {msgs:?}\n{src}");
+        }
+    }
+
     #[test]
     fn global_mutable_state_ignores_unmutated_unexported_tables() {
         let cases: Vec<(&str, &str, usize)> = vec![
