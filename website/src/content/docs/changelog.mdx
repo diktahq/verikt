@@ -3,6 +3,40 @@ title: Changelog
 description: What shipped in each verikt release — features, fixes, and breaking changes.
 ---
 
+## v0.2.1 — 2026-08-15
+
+A false-positive fix. **No configuration change is required, and nothing that passed 0.2.0
+fails here** — `verikt check` reports strictly less.
+
+### Fixed
+
+**`global_mutable_state` no longer reports lookup tables.** An unexported package-level
+variable that nothing writes to is not global mutable state. Go has no const map or const
+slice, so `var x = map[K]V{...}` is the only way to express a table — reporting it named a
+construct the language requires, and prescribed dependency injection, which makes a static
+table worse.
+
+On verikt's own codebase the check fired 22 times and 21 were tables nothing ever wrote to.
+A detector wrong 21 times in 22 teaches you to skim the section it appears in.
+
+Still reported: **exported** variables, whatever a single file shows, because another
+package can write to them; and anything **mutated** — assignment, index assignment,
+`delete`, or `append` assigned back.
+
+The trade is deliberate. A table mutated from a sibling file in the same package is now
+missed. Occasional misses do less harm than routine false positives.
+
+### Added
+
+**A restraint fixture** — code written the way a careful engineer writes it, where every
+detector must stay silent. Any finding fails the build. Detection was already guarded, and
+restraint was not, so a detector could grow louder indefinitely with no test objecting.
+
+### Effect
+
+On verikt's own repository: 23 anti-pattern findings to 1, and the survivor is real. If you
+ratchet a finding count, re-measure — it will drop.
+
 ## v0.2.0 — 2026-08-15
 
 Fixes an external audit of 0.1.0 and the parity gaps found while fixing it — cases where two
