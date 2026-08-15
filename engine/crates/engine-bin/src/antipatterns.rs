@@ -270,6 +270,21 @@ fn detect_global_mutable_state<'a>(root: Node<'a>, source: &[u8], file: &str) ->
                     if name == "_" || name.starts_with("Err") || name.starts_with("err") {
                         continue;
                     }
+                    // An unexported table nothing writes to is not mutable state.
+                    //
+                    // Go has no const map or const slice, so `var x = map[K]V{...}`
+                    // is the only way to express a lookup table. Reporting it names
+                    // a construct the language requires and prescribes dependency
+                    // injection, which makes a static table worse. On this
+                    // repository the check fired 22 times and 21 were tables
+                    // nothing ever wrote to.
+                    //
+                    // Exported is different: another package can write to it and
+                    // this analysis sees one file, so absence of mutation here is
+                    // no evidence. Reported regardless.
+                    if !is_exported(&name) && !is_mutated_in_file(root, source, &name) {
+                        continue;
+                    }
                     findings.push(DetFinding {
                         detector: "global_mutable_state",
                         file: file.to_string(),
@@ -285,6 +300,65 @@ fn detect_global_mutable_state<'a>(root: Node<'a>, source: &[u8], file: &str) ->
     }
 
     findings
+}
+
+/// True if the file writes to `name` anywhere after its declaration.
+///
+/// Recognises the four ways a package-level table is mutated in practice:
+/// reassignment, index assignment, `delete`, and `append` assigned back. All
+/// four are syntactic, so this stays a cheap tree walk.
+///
+/// It sees one file. A table mutated from a sibling file in the same package is
+/// therefore missed — a deliberate false negative, because the alternative is
+/// reporting every lookup table in every package, and a detector that is wrong
+/// most of the time is worth less than one that occasionally misses. Exported
+/// names are exempt from this reasoning and always reported.
+fn is_mutated_in_file(root: Node, source: &[u8], name: &str) -> bool {
+    let mut assignments: Vec<Node> = Vec::new();
+    collect_nodes(root, "assignment_statement", &mut assignments);
+    for node in &assignments {
+        let Some(left) = node.child_by_field_name("left") else {
+            continue;
+        };
+        for i in 0..left.named_child_count() {
+            let Some(target) = left.named_child(i) else {
+                continue;
+            };
+            let written = match target.kind() {
+                // cache = ...
+                "identifier" => node_text(target, source) == name,
+                // cache[k] = ...
+                "index_expression" => target
+                    .child_by_field_name("operand")
+                    .is_some_and(|o| node_text(o, source) == name),
+                _ => false,
+            };
+            if written {
+                return true;
+            }
+        }
+    }
+
+    // delete(cache, k) — and any other builtin that mutates its first argument.
+    let mut calls: Vec<Node> = Vec::new();
+    collect_nodes(root, "call_expression", &mut calls);
+    for call in &calls {
+        let function = call
+            .child_by_field_name("function")
+            .map(|f| node_text(f, source))
+            .unwrap_or("");
+        if function != "delete" {
+            continue;
+        }
+        if let Some(args) = call.child_by_field_name("arguments")
+            && let Some(first) = args.named_child(0)
+            && node_text(first, source) == name
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Detect init() functions with > 5 statements or heavy side effects (I/O, network).
@@ -1265,6 +1339,72 @@ mod tests {
 
     /// Mirrors checker.TestDetectNilMapWrite: writing to a map that was declared
     /// but never allocated panics at runtime.
+    /// An unexported package-level table that is never mutated is not global
+    /// mutable state, and saying it is costs the whole report.
+    ///
+    /// Go has no const map or const slice, so `var x = map[K]V{...}` is the only
+    /// way to express a lookup table. Flagging it reports a construct the
+    /// language forces on you, and recommends dependency injection, which makes
+    /// a static table worse. On verikt's own codebase this fired 22 times and 21
+    /// were tables nothing ever wrote to — a detector wrong 21 times in 22
+    /// teaches people to skim the section it appears in.
+    ///
+    /// Exported stays a finding whatever this file shows: another package can
+    /// mutate it and this analysis cannot see other packages. Absence of
+    /// mutation is only evidence when nobody else can reach the variable.
+    #[test]
+    fn global_mutable_state_ignores_unmutated_unexported_tables() {
+        let cases: Vec<(&str, &str, usize)> = vec![
+            (
+                "unexported table, never written",
+                "package p\n\nvar lookup = map[string]string{\"a\": \"b\"}\n\nfunc Get(k string) string { return lookup[k] }\n",
+                0,
+            ),
+            (
+                "unexported slice, never written",
+                "package p\n\nvar order = []string{\"a\"}\n\nfunc All() []string { return order }\n",
+                0,
+            ),
+            (
+                "exported table",
+                "package p\n\nvar Lookup = map[string]string{\"a\": \"b\"}\n",
+                1,
+            ),
+            (
+                "exported slice",
+                "package p\n\nvar Order = []string{\"a\"}\n",
+                1,
+            ),
+            (
+                "unexported but index-assigned",
+                "package p\n\nvar cache = map[string]int{}\n\nfunc Put(k string, v int) { cache[k] = v }\n",
+                1,
+            ),
+            (
+                "unexported but reassigned",
+                "package p\n\nvar cache = map[string]int{}\n\nfunc Reset() { cache = map[string]int{} }\n",
+                1,
+            ),
+            (
+                "unexported but deleted from",
+                "package p\n\nvar cache = map[string]int{}\n\nfunc Drop(k string) { delete(cache, k) }\n",
+                1,
+            ),
+            (
+                "unexported but appended to",
+                "package p\n\nvar items = []string{}\n\nfunc Add(s string) { items = append(items, s) }\n",
+                1,
+            ),
+        ];
+
+        for (name, src, want) in cases {
+            let tree = parse(src);
+            let findings = detect_global_mutable_state(tree.root_node(), src.as_bytes(), "test.go");
+            let msgs: Vec<&str> = findings.iter().map(|f| f.message.as_str()).collect();
+            assert_eq!(findings.len(), want, "{name}: got {msgs:?}\n{src}");
+        }
+    }
+
     #[test]
     fn nil_map_write_cases() {
         let cases: Vec<(&str, &str, usize)> = vec![

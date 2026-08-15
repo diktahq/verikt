@@ -2,6 +2,46 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.1] — 2026-08-15
+
+A false-positive fix. No configuration change is required, and nothing that
+passed 0.2.0 fails here — `verikt check` reports strictly less.
+
+### Fixed
+
+- **`global_mutable_state` no longer reports lookup tables.** An unexported
+  package-level variable that nothing writes to is not global mutable state. Go
+  has no const map or const slice, so `var x = map[K]V{...}` is the only way to
+  express a table — reporting it named a construct the language requires and
+  prescribed dependency injection, which makes a static table worse. On this
+  repository the check fired 22 times and 21 were tables nothing ever wrote to.
+
+  An exported variable is still reported whatever the file shows: another package
+  can write to it and the analysis sees one file at a time. Mutation — assignment,
+  index assignment, `delete`, or `append` assigned back — is still reported.
+
+  The trade is deliberate. A table mutated from a sibling file in the same package
+  is now missed. A detector that is wrong most of the time is worth less than one
+  that occasionally misses, because the first teaches you to skim the section it
+  appears in.
+
+- **A dead exported `KnownDetectors` slice is removed** from `internal/rules`. It
+  duplicated the detector registry, was read by nothing, and being exported left
+  it writable by any importing package. It was the one true finding among that
+  detector's 22, and deleting it was the fix.
+
+### Added
+
+- **A restraint fixture** (`internal/engineclient/testdata/detector-restraint`):
+  code written the way a careful engineer writes it, where every detector must
+  stay silent. Any finding fails the build.
+
+  Detection was already guarded — a fixture asserts all 14 detectors fire — and
+  restraint was not, so a detector could grow louder indefinitely and no test
+  objected. That asymmetry is how a detector came to be wrong 21 times in 22.
+  Verified by reverting the fix above: the gate fails with the false positives
+  named.
+
 ## [0.2.0] — 2026-08-15
 
 Fixes an external audit of 0.1.0 (8 findings, all reproduced) and the parity gaps that
