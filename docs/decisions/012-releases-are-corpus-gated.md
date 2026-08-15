@@ -33,13 +33,24 @@ detector would stop firing on them.
 
 ## Decision
 
-**Detectors are validated against a pinned set of real repositories before a
-release.** `scripts/corpus-audit.sh` copies each repository to a scratch
-directory, analyses the copy, and reports every finding with the line that
-produced it, grouped by detector and by concentration.
+**Detectors are validated against real repositories before a release.**
+`scripts/corpus-audit.sh` copies each repository to a scratch directory, analyses
+the copy, and reports every finding with the line that produced it, grouped by
+detector and by concentration.
+
+**This is run by hand today, not in CI.** Saying otherwise would repeat the
+mistake this decision exists to correct: ADR-006 claimed a clean cut that the
+code had never implemented, and a record that describes an intention as a fact is
+worse than no record. A CI gate needs the corpus pinned by commit, which needs
+repositories that are public and permissively licensed; the most informative ones
+used so far are private. Until that exists, the obligation is a step in the
+release procedure and nothing stronger.
 
 Three rules follow:
 
+0. **Run it before tagging.** `scripts/corpus-audit.sh <repo>...` over whatever
+   real Go repositories are to hand, and read the suspected-false-positive
+   section. It takes about a minute over 1,900 files.
 1. **The corpus is real code, not written for the purpose.** Including code
    neither the author nor the project controls, because shared idioms produce
    shared blind spots.
