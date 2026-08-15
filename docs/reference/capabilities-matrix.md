@@ -168,7 +168,7 @@ Warnings are advisory — they don't block scaffolding.
 
 | Detector | Severity | What It Catches |
 |----------|----------|----------------|
-| `sql_concatenation` | error | String concatenation with SQL keywords |
+| `sql_concatenation` | warning | String concatenation with SQL keywords, in a file that shows evidence of SQL |
 | `context_background_in_handler` | warning | `context.Background()` in handler/adapter code |
 
 ## Design Patterns by Category

@@ -605,8 +605,23 @@ fn is_package_scope(spec: Node) -> bool {
     true
 }
 
-/// Identifiers that appear on the left of an assignment or short declaration —
-/// i.e. names given a value of their own, which for a map means allocated.
+/// Identifiers that may have been given a value: assigned, short-declared, or
+/// had their address taken.
+///
+/// The address case is what stops a false positive at error severity. In
+///
+///     var cfg map[string]any
+///     json.Unmarshal(data, &cfg)
+///     cfg["k"] = v
+///
+/// Unmarshal allocates the map, and the write is safe. Passing `&cfg` hands the
+/// variable to something this analysis cannot see, so it cannot claim the map is
+/// unallocated — the same reasoning that keeps exported variables reported: the
+/// absence of evidence is only evidence when nothing else can reach it (INV-005).
+///
+/// The cost is a genuine nil-map write missed when the address is taken for some
+/// unrelated reason. Against a finding that fails a build and whose remedy is a
+/// redundant make(), that is the better trade.
 fn assigned_identifiers(scope: Node, source: &[u8]) -> Vec<String> {
     let mut assignments: Vec<Node> = Vec::new();
     collect_nodes(scope, "assignment_statement", &mut assignments);
@@ -625,6 +640,25 @@ fn assigned_identifiers(scope: Node, source: &[u8]) -> Vec<String> {
             }
         }
     }
+
+    // `&cfg` — the address escapes, so something unseen may allocate it.
+    let mut unary: Vec<Node> = Vec::new();
+    collect_nodes(scope, "unary_expression", &mut unary);
+    for node in &unary {
+        let is_address = node
+            .child_by_field_name("operator")
+            .map(|op| node_text(op, source) == "&")
+            .unwrap_or(false);
+        if !is_address {
+            continue;
+        }
+        if let Some(operand) = node.child_by_field_name("operand")
+            && operand.kind() == "identifier"
+        {
+            names.push(node_text(operand, source).to_string());
+        }
+    }
+
     names
 }
 
@@ -677,7 +711,7 @@ fn nil_map_writes_in(
 /// genuinely known.
 fn detect_type_assertion_without_ok<'a>(
     root: Node<'a>,
-    _source: &[u8],
+    source: &[u8],
     file: &str,
 ) -> Vec<DetFinding> {
     let mut assertions: Vec<Node> = Vec::new();
@@ -686,6 +720,25 @@ fn detect_type_assertion_without_ok<'a>(
     let mut findings = Vec::new();
     for assertion in assertions {
         if assertion_has_ok_binding(assertion) {
+            continue;
+        }
+        // The programmer has already discriminated, in a form Go's type system
+        // does not carry to this expression. 51 findings across expert libraries
+        // were of this shape:
+        //
+        //     switch f.Type {
+        //     case ErrorType:
+        //         encodeError(f.Key, f.Interface.(error), enc)   // proven by the case
+        //     }
+        //
+        //     func (p *Pool[T]) Get() T { return p.pool.Get().(T) }  // only holds T
+        //
+        // The detector's own contract says a bare assertion is legitimate when
+        // the type is known; reporting these anyway states something the author
+        // has already established (INV-005).
+        if assertion_is_discriminated(assertion)
+            || assertion_targets_type_parameter(assertion, source)
+        {
             continue;
         }
         findings.push(DetFinding {
@@ -698,6 +751,54 @@ fn detect_type_assertion_without_ok<'a>(
         });
     }
     findings
+}
+
+/// True if the assertion sits inside a switch case, where the author has already
+/// discriminated on the value.
+///
+/// Covers both a type switch — where Go itself proves the type — and a switch on
+/// a tag field, where the invariant is the author's. The second cannot be proven
+/// by this analysis, which is the point: the author knows something the detector
+/// does not, and saying otherwise is noise.
+fn assertion_is_discriminated(assertion: Node) -> bool {
+    let mut node = assertion;
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            "expression_case" | "type_case" | "default_case" => return true,
+            // Stop at the function boundary: a switch elsewhere in the function
+            // says nothing about this expression.
+            "function_declaration" | "method_declaration" | "func_literal" => return false,
+            _ => node = parent,
+        }
+    }
+    false
+}
+
+/// True if the asserted type is one of the enclosing function's type parameters.
+///
+/// `p.pool.Get().(T)` in a `Pool[T]` can only yield a T; the container is typed.
+fn assertion_targets_type_parameter(assertion: Node, source: &[u8]) -> bool {
+    let Some(target) = assertion.child_by_field_name("type") else {
+        return false;
+    };
+    let target_name = node_text(target, source);
+
+    let mut node = assertion;
+    while let Some(parent) = node.parent() {
+        if matches!(parent.kind(), "function_declaration" | "method_declaration") {
+            // Type parameters of the function itself, and of its receiver.
+            for field in ["type_parameters", "receiver"] {
+                if let Some(params) = parent.child_by_field_name(field)
+                    && node_text(params, source).contains(target_name)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        node = parent;
+    }
+    false
 }
 
 /// True if the assertion is the whole right-hand side of a two-value assignment,
@@ -727,6 +828,51 @@ fn assertion_has_ok_binding(assertion: Node) -> bool {
         }
     }
     false
+}
+
+/// True if the enclosing function shows the goroutine's lifetime being managed.
+///
+/// Looks for the mechanisms Go actually uses: a done or quit channel, a context,
+/// a WaitGroup, or an errgroup. The signal is deliberately loose — this decides
+/// whether to stay quiet, so a false match costs a missed finding rather than a
+/// wrong one.
+fn goroutine_lifetime_is_managed(go_node: Node, source: &[u8]) -> bool {
+    // Walk out to the enclosing function and read its text.
+    let mut node = go_node;
+    let enclosing = loop {
+        match node.parent() {
+            Some(parent) => {
+                if matches!(
+                    parent.kind(),
+                    "function_declaration" | "method_declaration" | "func_literal"
+                ) {
+                    break parent;
+                }
+                node = parent;
+            }
+            None => return false,
+        }
+    };
+
+    let text = node_text(enclosing, source);
+    // Deliberately narrow. An earlier list included "context." and "ctx", which
+    // matched `context.Background()` — the opposite of a managed lifetime — and
+    // silenced a genuine finding in this repository's own fixture. A marker here
+    // must name a mechanism that actually stops a goroutine.
+    const MANAGED: &[&str] = &[
+        "errgroup",
+        "sync.WaitGroup",
+        "wg.Add",
+        "wg.Wait",
+        "ctx.Done()",
+        "<-done",
+        "done <-",
+        "close(done",
+        ".done",
+        "quit",
+        "cancel()",
+    ];
+    MANAGED.iter().any(|m| text.contains(m))
 }
 
 /// Remedy reported for a bare `go` statement.
@@ -776,7 +922,13 @@ fn detect_naked_goroutines<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec
         let inside_server = excluded_ranges
             .iter()
             .any(|(start, end)| row >= *start && row <= *end);
-        if !inside_server {
+        // A goroutine whose lifetime the surrounding code visibly manages is not
+        // "naked". `go s.flushLoop()` in a type that owns a done channel is tied
+        // to that channel — the advice to tie its lifetime is already taken, in a
+        // form this analysis cannot see. 91 findings across expert libraries were
+        // of that shape, and the remaining half of the advice — a recover in every
+        // goroutine — is one most Go teams decline (INV-005).
+        if !inside_server && !goroutine_lifetime_is_managed(go_node, source) {
             findings.push(DetFinding {
                 detector: "naked_goroutine",
                 file: file.to_string(),
@@ -923,12 +1075,21 @@ fn detect_context_background<'a>(
 
 /// Detect SQL string concatenation (injection risk).
 fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
+    // Concatenating a string that happens to contain an English word is not SQL
+    // injection. The keywords below are ordinary vocabulary — select, delete,
+    // from, where, update — so matching them alone fired on prose in a project
+    // with no database, no driver and no query anywhere, at error severity,
+    // which fails the build and cannot be fixed in the code because there is no
+    // query to parameterise.
+    //
+    // So the file has to give some reason to believe SQL is involved before any
+    // of this runs. A file that builds a query string and hands it to a helper
+    // in another file is missed as a result: a deliberate false negative,
+    // because an unfixable error-severity false positive costs more than an
+    // occasional miss.
     let mut bin_nodes: Vec<Node> = Vec::new();
     collect_nodes(root, "binary_expression", &mut bin_nodes);
 
-    let sql_keywords = [
-        "SELECT ", "INSERT ", "UPDATE ", "DELETE ", "FROM ", "WHERE ", "JOIN ",
-    ];
     let mut findings = Vec::new();
 
     for bin_node in bin_nodes {
@@ -950,7 +1111,7 @@ fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Ve
             continue;
         }
 
-        if binary_contains_sql_keyword(bin_node, source, &sql_keywords) {
+        if binary_contains_sql_statement(bin_node, source) {
             findings.push(DetFinding {
                 detector: "sql_concatenation",
                 file: file.to_string(),
@@ -1291,20 +1452,55 @@ fn is_init_call(fn_name: &str) -> bool {
         .any(|s| fn_name.ends_with(s) || fn_name.ends_with(&format!(".{}", s)))
 }
 
-fn binary_contains_sql_keyword(node: Node, source: &[u8], keywords: &[&str]) -> bool {
+/// True if the concatenation contains a literal written as a SQL statement.
+///
+/// The evidence belongs to the expression, not the file. A file-scoped check —
+/// "does this file import a driver, or mention SQL anywhere" — meant one genuine
+/// query literal made every unrelated concatenation in the same file suspect: an
+/// audit tool holding `"INSERT INTO ... VALUES"` as data reported
+/// `id + ": absent from canonical inventory"` as SQL injection.
+///
+/// The shape is matched case-sensitively, in the upper case Go codebases use for
+/// SQL keywords by convention. That is what separates a query from a sentence:
+/// `"SELECT * FROM orders WHERE id="` is one, `"select the rows from "` is the
+/// other, and no amount of surrounding context distinguishes them.
+///
+/// A codebase writing lower-case SQL is missed. That is the accepted cost —
+/// a missed finding against an unfixable false positive that fails a build
+/// (INV-005).
+fn binary_contains_sql_statement(node: Node, source: &[u8]) -> bool {
     match node.kind() {
         "interpreted_string_literal" | "raw_string_literal" => {
-            let text = node_text(node, source).to_uppercase();
-            keywords.iter().any(|kw| text.contains(kw))
+            is_sql_statement(node_text(node, source))
         }
         "binary_expression" => {
             let left = node.child_by_field_name("left");
             let right = node.child_by_field_name("right");
-            left.is_some_and(|n| binary_contains_sql_keyword(n, source, keywords))
-                || right.is_some_and(|n| binary_contains_sql_keyword(n, source, keywords))
+            left.is_some_and(|n| binary_contains_sql_statement(n, source))
+                || right.is_some_and(|n| binary_contains_sql_statement(n, source))
         }
         _ => false,
     }
+}
+
+/// True if the text reads as a SQL statement rather than prose.
+fn is_sql_statement(text: &str) -> bool {
+    // Paired keywords, in statement order.
+    const SHAPES: &[(&str, &str)] = &[
+        ("SELECT ", " FROM "),
+        ("DELETE ", " FROM "),
+        ("UPDATE ", " SET "),
+        ("INSERT ", " INTO "),
+    ];
+    for (head, tail) in SHAPES {
+        if let Some(at) = text.find(head)
+            && text[at..].contains(tail)
+        {
+            return true;
+        }
+    }
+    // And the forms with no gap between the words.
+    text.contains("DELETE FROM ") || text.contains("INSERT INTO ") || text.contains("SELECT * FROM")
 }
 
 fn is_exported(name: &str) -> bool {
@@ -1352,6 +1548,68 @@ mod tests {
     /// Exported stays a finding whatever this file shows: another package can
     /// mutate it and this analysis cannot see other packages. Absence of
     /// mutation is only evidence when nobody else can reach the variable.
+    /// SQL concatenation needs evidence of SQL, not an English word.
+    ///
+    /// The check uppercased every concatenated string literal and looked for
+    /// "SELECT ", "DELETE ", "FROM " and friends as substrings, so ordinary prose
+    /// fired it. Found by a project with no database, no driver and no query
+    /// anywhere: a variable named `where` and a sentence containing "delete the
+    /// block" produced two error-severity findings, which fail the build and
+    /// cannot be fixed in the code — there is no query to parameterise. The only
+    /// escapes were a waiver or rewording English to avoid SQL keywords.
+    ///
+    /// A finding fires now when the file gives some reason to believe SQL is
+    /// involved: it imports a database package, or it calls something that
+    /// executes a query. That misses a file that builds a query string and hands
+    /// it to a helper elsewhere — a deliberate false negative, on the reasoning
+    /// that an unfixable error-severity false positive costs more.
+    #[test]
+    fn sql_concatenation_needs_evidence_of_sql() {
+        let cases: Vec<(&str, &str, usize)> = vec![
+            // The dogfood repro, verbatim in shape.
+            (
+                "prose containing delete, no database anywhere",
+                "package p\n\nfunc Check(where string, problems []string) []string {\n\treturn append(problems, where+\": names no capability, so it decides nothing - delete the block\")\n}\n",
+                0,
+            ),
+            (
+                "prose containing select and from",
+                "package p\n\nfunc Describe(table string) string {\n\treturn \"select the rows from \" + table + \" that changed\"\n}\n",
+                0,
+            ),
+            // Real SQL, in a file that clearly does SQL.
+            (
+                "concatenated query in a file importing database/sql",
+                "package p\n\nimport \"database/sql\"\n\nfunc Find(db *sql.DB, id string) (*sql.Rows, error) {\n\treturn db.Query(\"SELECT * FROM users WHERE id = '\" + id + \"'\")\n}\n",
+                1,
+            ),
+            // Injected handle, no direct database import, but it executes a query.
+            (
+                "concatenated query passed to Query on an injected handle",
+                "package p\n\ntype execer interface{ Query(string) error }\n\nfunc Find(db execer, id string) error {\n\treturn db.Query(\"SELECT * FROM users WHERE id = '\" + id + \"'\")\n}\n",
+                1,
+            ),
+            (
+                "concatenated query with Exec",
+                "package p\n\nimport \"database/sql\"\n\nfunc Del(db *sql.DB, id string) error {\n\t_, err := db.Exec(\"DELETE FROM users WHERE id = '\" + id + \"'\")\n\treturn err\n}\n",
+                1,
+            ),
+            // Parameterised: no concatenation, nothing to report.
+            (
+                "parameterised query",
+                "package p\n\nimport \"database/sql\"\n\nfunc Find(db *sql.DB, id string) (*sql.Rows, error) {\n\treturn db.Query(\"SELECT * FROM users WHERE id = ?\", id)\n}\n",
+                0,
+            ),
+        ];
+
+        for (name, src, want) in cases {
+            let tree = parse(src);
+            let findings = detect_sql_concatenation(tree.root_node(), src.as_bytes(), "test.go");
+            let msgs: Vec<u32> = findings.iter().map(|f| f.line).collect();
+            assert_eq!(findings.len(), want, "{name}: lines {msgs:?}\n{src}");
+        }
+    }
+
     #[test]
     fn global_mutable_state_ignores_unmutated_unexported_tables() {
         let cases: Vec<(&str, &str, usize)> = vec![
@@ -1463,6 +1721,14 @@ mod tests {
                 "package foo\nfunc f() {\n\tvar a, b map[string]int\n\ta[\"x\"] = 1\n\tb[\"y\"] = 2\n}\n",
                 2,
             ),
+            // Found in a real project, at error severity: json.Unmarshal
+            // allocates the map through the pointer, so the write is safe and
+            // the suggested remedy would be a redundant make().
+            (
+                "address taken, so something unseen may allocate it",
+                "package foo\n\nimport \"encoding/json\"\n\nfunc Load(data []byte) error {\n\tvar cfg map[string]any\n\tif err := json.Unmarshal(data, &cfg); err != nil {\n\t\treturn err\n\t}\n\tcfg[\"k\"] = 1\n\treturn nil\n}\n",
+                0,
+            ),
             (
                 "a package-level map allocated in init is safe",
                 "package foo\nvar registry map[string]int\nfunc init() { registry = make(map[string]int) }\nfunc r() { registry[\"a\"] = 1 }\n",
@@ -1510,6 +1776,34 @@ mod tests {
             // value comes from g(), so the assertion is still single-valued and
             // still panics. Counting only the left-hand side treated every
             // multi-assignment as safe.
+            // Reduced from uber-go/zap. The author has discriminated; the
+            // detector cannot see it and said so anyway.
+            (
+                "assertion inside a switch case the author discriminated on",
+                "package foo\n\ntype Field struct{ Type int; Interface any }\n\nconst ErrorType = 1\n\nfunc enc(f Field) {\n\tswitch f.Type {\n\tcase ErrorType:\n\t\t_ = f.Interface.(error)\n\t}\n}\n",
+                0,
+            ),
+            (
+                "assertion inside a type switch case",
+                "package foo\n\nfunc f(v any) {\n\tswitch v.(type) {\n\tcase string:\n\t\t_ = v.(string)\n\t}\n}\n",
+                0,
+            ),
+            (
+                "assertion to a receiver type parameter",
+                "package foo\n\nimport \"sync\"\n\ntype Pool[T any] struct{ pool sync.Pool }\n\nfunc (p *Pool[T]) Get() T {\n\treturn p.pool.Get().(T)\n}\n",
+                0,
+            ),
+            (
+                "assertion to a function type parameter",
+                "package foo\n\nfunc Get[T any](v any) T {\n\treturn v.(T)\n}\n",
+                0,
+            ),
+            // Still reported: nothing has established the type.
+            (
+                "bare assertion outside any switch",
+                "package foo\n\nfunc f(v any) string {\n\treturn v.(string)\n}\n",
+                1,
+            ),
             (
                 "parallel assignment is not the comma-ok form",
                 "package foo\nfunc g() int { return 0 }\nfunc f(v any) {\n\tvar s string\n\tvar n int\n\ts, n = v.(string), g()\n\t_, _ = s, n\n}\n",

@@ -588,7 +588,10 @@ func TestCheckPrintProxyRuleSection_ZeroCounts(t *testing.T) {
 	out := captureStdout(t, func() { printProxyRuleSection(result) })
 
 	assert.Contains(t, out, "PROXY RULES (0 valid, 0 invalid, 0 stale)")
-	assert.Contains(t, out, "All proxy rules pass")
+	// No rules defined is not a pass. This asserted the green tick, which is why
+	// the vacuous "✓ All proxy rules pass" for checks that do not exist survived.
+	assert.NotContains(t, out, "All proxy rules pass")
+	assert.Contains(t, out, "no proxy rules defined")
 }
 
 // helpers

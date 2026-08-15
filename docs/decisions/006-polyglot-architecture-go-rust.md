@@ -13,7 +13,7 @@ PoC complete on `dev-0.2.0` branch. Phase 1 (ping + grep engine) is done:
 - Experiment E25 result: 2.2x grep speedup vs Go on real codebase (191ms → 86ms, 6 rules)
 - Scope walker bug found and fixed: Go was scanning `.claude/worktrees/` (24 copies), inflating violations 25x. Fix: skip all hidden directories in scope.go.
 
-`//go:embed` (Phase 2) and `verikt check` wiring (Phase 3) are next. See `docs/product/plans/PLAN-v0.2.0-rust-engine.md`.
+`//go:embed` (Phase 2) and `verikt check` wiring (Phase 3) are next.
 
 ## Context
 
@@ -138,6 +138,31 @@ The `.proto` file generates matching types on both sides. A field rename or type
 
 - **v1.x** — Pure Go. Ship with `go/ast`. No Rust yet.
 - **v2.0** — Introduce Rust engine. Protobuf protocol + tree-sitter + YAML rules. Clean replacement of `go/ast` analysis (no fallback — clean cut).
+
+## Scope of the clean cut (amended 2026-08-15)
+
+The clean cut applies to **code analysis**: dependency graphs, anti-patterns and
+function metrics. `verikt check` fails with `ErrEngineRequired` rather than
+analysing Go with a second implementation, because two implementations
+disagreed silently and which one ran depended on whether a binary resolved.
+
+**Proxy grep rules are excluded from it.** `internal/rules/grep.go` keeps a Go
+implementation, for one reason: a platform with no engine build — Windows today
+— must still be able to evaluate rules at all, and a literal clean cut would
+make `verikt check --proxy-rules` unusable there rather than degraded.
+
+Two conditions make that safe, and both are enforced:
+
+- **Which implementation ran is reported.** `RunResult.GrepEngine` records it and
+  the terminal output says so when it was the Go one. The original harm was not
+  that two implementations existed; it was that nothing said which had answered.
+- **They must agree.** `TestGrepFindingParityBetweenGoAndEngine` runs the same
+  rules through both and compares findings, not merely statuses. It failed when
+  their directory skip lists drifted apart, which is how that divergence was found.
+
+An engine that is present but *fails* is not a reason to run the other one:
+`RunRules` returns `ErrGrepEngineFailed`. The fallback exists for absence, not
+for failure.
 - **v3.0** — TypeScript provider via new tree-sitter grammar + queries in the Rust engine. Go CLI unchanged.
 
 ## Alternatives Considered

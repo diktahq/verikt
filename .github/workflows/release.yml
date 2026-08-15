@@ -9,8 +9,58 @@ permissions:
   contents: write
 
 jobs:
+  # Re-pushing a tag re-fires this workflow, and GoReleaser only discovers the
+  # problem after the four-way engine matrix has run: it rebuilds everything,
+  # then dies uploading assets that already exist. Six minutes to reach a 422.
+  #
+  # The failure is loud, so it is not the dangerous case. The dangerous case is
+  # the same run succeeding: if a release's assets had been deleted, re-pushing
+  # an *older* tag would upload cleanly and then push that tag's Formula over
+  # the tap, downgrading every "brew install verikt" to a previous version with
+  # nothing anywhere reporting a downgrade had happened.
+  #
+  # Both are decided here, before anything is built.
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      already-released: ${{ steps.check.outputs.already-released }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The newest-tag comparison needs every tag, not just this one.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # An already-published tag is a no-op, not a failure. Checked first, so
+          # that re-pushing any tag — including an old one — skips quietly rather
+          # than tripping the downgrade guard below.
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets|length' 2>/dev/null || echo none)
+          if [ "$assets" != "none" ] && [ "$assets" != "0" ]; then
+            echo "::notice::$TAG is already published with $assets assets. Skipping the release."
+            echo "already-released=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          newest=$(git tag --list 'v*' | sort -V | tail -1)
+          if [ "$TAG" != "$newest" ]; then
+            echo "::error::$TAG is older than $newest. Publishing it would overwrite the Homebrew formula with $TAG and downgrade every install."
+            exit 1
+          fi
+
+          echo "already-released=false" >> "$GITHUB_OUTPUT"
+
   build-engine:
     name: Build engine (${{ matrix.artifact }})
+    needs: preflight
+    if: needs.preflight.outputs.already-released != 'true'
     strategy:
       matrix:
         include:
@@ -145,7 +195,10 @@ jobs:
 
       - uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
         with:
-          version: ~> v2
+          # Pinned, not "~> v2": a floating major picks up a release that can
+          # deprecate config — the brews block among it — during a tag, which is
+          # the worst moment to discover it. 2.17.1 built 0.2.0 and 0.2.1.
+          version: 2.17.1
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

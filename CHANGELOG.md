@@ -2,6 +2,69 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Found by dogfooding on a real project. Three false positives, all at error
+severity, so each failed a build — and none could be fixed in the reporting
+project's code.
+
+### Changed
+
+- **`sql_concatenation` is warning severity, not error.** It reads string
+  literals, so it cannot know a match is SQL. Heuristic detectors now ship at
+  warning and earn error severity by demonstrating precision on real code
+  (INV-005); raise it with `severity_overrides` if you want it blocking.
+
+### Fixed
+
+- **`sql_concatenation` no longer fires on English prose.** It uppercased every
+  concatenated string and matched `"SELECT "`, `"DELETE "`, `"FROM "` as
+  substrings, so a variable named `where` and a sentence containing "delete the
+  block" produced two findings in a module with no database, no driver and no
+  query. A finding now requires evidence the file deals with SQL: a database
+  import, a query-executing call, or a literal written as SQL conventionally is
+  — upper-case keywords in statement order. `"SELECT * FROM orders WHERE id="`
+  is a query; `"select the rows from "` is a sentence.
+- **`nil_map_write` no longer fires when the map's address is taken.**
+  `json.Unmarshal(data, &cfg)` allocates the map, so the write that follows is
+  safe — it was reported at error severity, and the suggested remedy would have
+  been a redundant `make()`.
+- **`sql_concatenation` judges the expression, not the file.** The evidence check
+  was file-scoped, so one genuine query literal held as data made every unrelated
+  concatenation in that file suspect: an audit tool reported
+  `id + ": absent from canonical inventory"` as SQL injection. Findings across the
+  corpus fell from 17 to 2, and both survivors are in a real database file.
+- **Nested modules are no longer analysed as part of the parent.** A directory
+  with its own `go.mod` is a different project, and its packages belong to that
+  module's import path — but the walk went through the boundary and reported
+  them as orphan packages under a path derived from the parent module, which
+  does not exist. Config lookup already stopped there; the analysis did not.
+- **`PROXY RULES (0 valid, 0 invalid, 0 stale) ✓ All proxy rules pass`** printed
+  a green tick for checks that do not exist. A test asserted that tick.
+
+### Added
+
+- **Generated files are not analysed.** A file carrying Go's
+  `// Code generated ... DO NOT EDIT.` marker before its package clause is
+  skipped, as every Go analysis tool does. Across seven real repositories, 61% of
+  all findings — 76 of 126 — were in generated code, almost all mockery mocks,
+  and regenerating restores every one of them.
+- **`scripts/corpus-audit.sh`** runs the detectors across real repositories and
+  reports every finding with the line that produced it, flagging any detector
+  whose findings cluster in one directory. Repositories are copied and the copy
+  analysed; the originals are never written to (ADR-012).
+- **`verikt false-positive`** produces a bug report for a finding that should not
+  have fired, including the code it fired on. A false positive is a defect, not
+  something to waive: waiving hides it for you and leaves it for everyone with
+  the same shape of code. One project reworded English error messages to stop a
+  detector firing.
+- **INV-005 — a detector establishes evidence, not shape.** All three false
+  positives shared a structure: the detector matched a shape and never asked
+  whether the risk it names was reachable.
+- **The restraint fixture is seeded from real code.** The invented version caught
+  none of these three. A fixture written from imagination only covers the false
+  positives its author already pictured.
+
 ## [0.2.1] — 2026-08-15
 
 A false-positive fix. No configuration change is required, and nothing that

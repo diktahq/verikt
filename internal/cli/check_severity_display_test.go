@@ -75,3 +75,32 @@ func TestPrintProxyRuleSection_UnrunRulesUseFailureMarker(t *testing.T) {
 	assert.Contains(t, out, "✗ [broken.yaml] invalid:")
 	assert.NotContains(t, out, "⚠", "nothing here is advisory — every line shown fails the build")
 }
+
+// Zero rules is not zero failures.
+//
+// With no proxy rules defined at all, the section printed
+// "PROXY RULES (0 valid, 0 invalid, 0 stale) ✓ All proxy rules pass" — a green
+// tick for checks that do not exist. A reader scanning for green ticks counts it
+// as something verified. Reported from dogfooding.
+func TestPrintProxyRuleSection_NoRulesIsNotAPass(t *testing.T) {
+	out := captureStdout(t, func() {
+		printProxyRuleSection(&rules.RunResult{})
+	})
+
+	assert.NotContains(t, out, "All proxy rules pass",
+		"nothing ran, so nothing passed")
+	assert.Contains(t, out, "no proxy rules defined")
+}
+
+// With rules that ran and found nothing, the pass is real.
+func TestPrintProxyRuleSection_RulesThatRanAndPassed(t *testing.T) {
+	out := captureStdout(t, func() {
+		printProxyRuleSection(&rules.RunResult{
+			Statuses: []rules.RuleStatus{
+				{Rule: rules.Rule{ID: "r1"}, Status: "valid"},
+			},
+		})
+	})
+
+	assert.Contains(t, out, "All proxy rules pass")
+}

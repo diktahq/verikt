@@ -1,11 +1,11 @@
 package graph
 
 import (
-	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/diktahq/verikt/internal/config"
+	"github.com/diktahq/verikt/internal/pathglob"
 	"github.com/diktahq/verikt/internal/provider"
 	"golang.org/x/tools/go/packages"
 )
@@ -243,14 +243,18 @@ func matchesAnyRule(pkgPath string, patterns []string) bool {
 		if pattern == "" {
 			continue
 		}
-		if strings.HasSuffix(pattern, "/**") {
-			prefix := strings.TrimSuffix(pattern, "/**")
-			if strings.Contains(pkgPath, prefix) {
-				return true
-			}
-			continue
-		}
-		if ok, _ := path.Match(pattern, pkgPath); ok {
+		// Patterns are project-relative ("internal/domain/**") while pkgPath is a
+		// full import path ("example.com/app/internal/domain"), so the pattern is
+		// matched at any depth.
+		//
+		// This was `strings.Contains(pkgPath, prefix)` for "/**" patterns and
+		// path.Match for the rest — the fourth copy of the matcher this project
+		// had, and the one missed when the other three were consolidated. It
+		// carried both original defects: `in: ["**"]` matched nothing, because
+		// path.Match treats "*" as not crossing "/", so a catch-all component
+		// claimed no packages and every one of them was reported as an orphan.
+		// And "domain/**" claimed "subdomain/x" by substring.
+		if pathglob.Match(pattern, pkgPath) || pathglob.Match("**/"+pattern, pkgPath) {
 			return true
 		}
 	}
