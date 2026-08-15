@@ -148,7 +148,7 @@ func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient Anti
 func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *CheckResult, _ AntiPatternClient, depClient DependencyClient, _ MetricClient) (*CheckResult, error) {
 	// Structure and coverage checks are language-agnostic.
 	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
-	result.ComponentsCovered = countCoveredComponentsFS(projectPath, cfg.Components)
+	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
 	result.DependencyViolations = append(result.DependencyViolations,
 		detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
@@ -184,7 +184,7 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	}
 
 	// Component coverage via filesystem (no go/packages needed).
-	result.ComponentsCovered = countCoveredComponentsFS(projectPath, cfg.Components)
+	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 
 	// Architecture shape checks — both filesystem-based, no go/packages needed.
 	result.DependencyViolations = append(result.DependencyViolations,
@@ -222,17 +222,21 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 
 // detectMissingComponents finds components declared in verikt.yaml that have
 // no Go files in their declared paths. The architecture shape is not implemented.
+// detectMissingComponents finds components declared in verikt.yaml that no
+// source directory matches. The architecture shape is not implemented.
 func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Violation {
 	var violations []Violation
-	for _, comp := range cfg.Components {
-		if countCoveredComponentsFS(projectPath, []config.Component{comp}) == 0 {
-			violations = append(violations, Violation{
-				Category: "architecture",
-				Message:  fmt.Sprintf("component %q declared in verikt.yaml but no Go files found in %v", comp.Name, comp.In),
-				Rule:     "missing_component",
-				Severity: "error",
-			})
+	for i, covered := range componentCoverage(cfg, projectPath) {
+		if covered {
+			continue
 		}
+		comp := cfg.Components[i]
+		violations = append(violations, Violation{
+			Category: "architecture",
+			Message:  fmt.Sprintf("component %q declared in verikt.yaml but no source files found in %v", comp.Name, comp.In),
+			Rule:     "missing_component",
+			Severity: "error",
+		})
 	}
 	return violations
 }
@@ -241,6 +245,146 @@ func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Vio
 // detection — used when go/packages is not available (engine-only path).
 // It reads go.mod for the module path, walks directories containing .go files,
 // derives import paths, and checks them against declared components.
+// sourceDirs returns every project-relative directory holding at least one
+// non-test source file, honouring the walk rules the analysis depends on:
+// symlinks (INV-002), hidden directories, vendor, testdata, nested modules and
+// check.exclude are all skipped.
+//
+// Component coverage and orphan detection both need this set, and deriving it
+// separately is what let them disagree. Coverage used to os.Stat the pattern
+// with "/**" trimmed off, which is a directory-existence test rather than a
+// glob match: `in: ["**"]` became a stat for a directory literally named "**",
+// so a catch-all component was reported as missing_component at error severity
+// in the very same run where orphan detection saw it claim every package. Any
+// pattern that is not exactly "dir/**" or a bare directory failed the same way
+// — "internal/*/store", "**/adapter/**", "cmd/**/main". Found by corpus audit
+// on four repositories, where it failed the build with a finding whose only
+// remedy was to write a less expressive config.
+func sourceDirs(cfg *config.VeriktConfig, projectPath string) []string {
+	exts := sourceExtensions(cfg.Language)
+
+	var dirs []string
+	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
+		// Symlinks are never project-local code (INV-002). Tested before the
+		// directory filter, because WalkDir reports a symlink from Lstat: IsDir()
+		// is false even for a link to a directory.
+		//
+		// An unreadable path is skipped here and reported by detectUnreadablePaths.
+		// What matters is that it is not fatal: returning the error aborted the
+		// walk, and one unreadable directory anywhere under the root turned
+		// detection off entirely and reported a clean tree.
+		if err != nil {
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+
+		base := d.Name()
+		if base != "." && (strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata") {
+			return filepath.SkipDir
+		}
+
+		// A directory with its own go.mod is a different module, and its packages
+		// belong to that module's import path, not this one. Config lookup already
+		// stops at this boundary; the analysis walked straight through it and
+		// reported a nested module as an orphan under a path that does not exist.
+		if path != projectPath && isModuleRoot(path) {
+			return filepath.SkipDir
+		}
+
+		rel, err := filepath.Rel(projectPath, path)
+		if err != nil {
+			return nil
+		}
+		relSlash := filepath.ToSlash(rel)
+
+		// The patterns are project-relative, so the path is matched before any
+		// module prefix is added — matching a full import path meant the module
+		// name was searched too.
+		if relSlash != "." && isExcluded(relSlash, cfg.Check.Exclude) {
+			return filepath.SkipDir
+		}
+
+		// An unreadable directory is skipped for the same reason as above: not
+		// reading it is not the same as finding nothing in it.
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil // reported by detectUnreadablePaths
+		}
+		for _, e := range entries {
+			if e.IsDir() || isTestSourceFile(e.Name()) {
+				continue
+			}
+			if hasAnySuffix(e.Name(), exts) {
+				dirs = append(dirs, relSlash)
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// Per-entry errors are skipped inside the callback, so reaching here means
+		// the walk itself failed. detectUnreadablePaths reports it; what was
+		// gathered so far is still returned rather than discarded.
+		return dirs
+	}
+	return dirs
+}
+
+// sourceExtensions returns the file extensions that count as source for a
+// language. Test files are excluded separately (INV-004).
+func sourceExtensions(language string) []string {
+	switch strings.ToLower(language) {
+	case "typescript", "javascript":
+		return []string{".ts", ".tsx", ".js", ".jsx"}
+	default:
+		return []string{".go"}
+	}
+}
+
+// isTestSourceFile reports whether a file name is a test file in any of the
+// languages verikt analyses. Detectors never see test files (INV-004).
+func isTestSourceFile(name string) bool {
+	return strings.HasSuffix(name, "_test.go") ||
+		strings.Contains(name, ".test.") ||
+		strings.Contains(name, ".spec.")
+}
+
+func hasAnySuffix(name string, suffixes []string) bool {
+	for _, s := range suffixes {
+		if strings.HasSuffix(name, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// componentCoverage reports, for each declared component in order, whether any
+// source directory in the project matches it.
+//
+// It matches with graph.MatchesComponent — the same matcher orphan detection
+// uses — so a component that claims a package can never simultaneously be
+// reported as claiming nothing.
+func componentCoverage(cfg *config.VeriktConfig, projectPath string) []bool {
+	dirs := sourceDirs(cfg, projectPath)
+	covered := make([]bool, len(cfg.Components))
+	for i, comp := range cfg.Components {
+		for _, dir := range dirs {
+			if graph.MatchesComponent(dir, comp) {
+				covered[i] = true
+				break
+			}
+		}
+	}
+	return covered
+}
+
+// detectOrphanPackagesFS reports packages no declared component claims, using
+// the filesystem rather than go/packages (the engine-only path).
 func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Violation {
 	if len(cfg.Components) == 0 {
 		return nil
@@ -252,90 +396,12 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 	}
 
 	var violations []Violation
-	seen := map[string]bool{}
-
-	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
-		// Symlinks are never project-local code (INV-002). Tested before the
-		// directory filter, because WalkDir reports a symlink from Lstat: IsDir()
-		// is false even for a link to a directory, so the check that followed the
-		// `!d.IsDir()` return was unreachable and linked directories were skipped
-		// only because WalkDir does not follow them.
-		// An unreadable path is skipped here and reported by
-		// detectUnreadablePaths, which walks the whole tree for exactly this and
-		// runs for every language.
-		//
-		// What matters here is that it is not fatal. This returned the error,
-		// which aborted the walk, and the caller then discarded every violation
-		// found so far — so one unreadable directory anywhere under the project
-		// root turned orphan detection off entirely and reported a clean tree.
-		if err != nil {
-			return nil
-		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		// Skip hidden dirs, vendor, and testdata.
-		base := d.Name()
-		if base != "." && (strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata") {
-			return filepath.SkipDir
+	for _, dir := range sourceDirs(cfg, projectPath) {
+		importPath := modulePath
+		if dir != "." {
+			importPath = modulePath + "/" + dir
 		}
 
-		// A directory with its own go.mod is a different module, and its packages
-		// belong to that module's import path, not this one.
-		//
-		// Config lookup already stops at this boundary, but the analysis walked
-		// straight through it: a nested module was reported as an orphan package
-		// at error severity, under an import path derived from the *parent*
-		// module — a path that does not exist. Found by dogfooding on a repo with
-		// tooling modules inside it, where it failed the build with a finding
-		// that could not be acted on.
-		if path != projectPath && isModuleRoot(path) {
-			return filepath.SkipDir
-		}
-
-		rel, err := filepath.Rel(projectPath, path)
-		if err != nil {
-			return err
-		}
-
-		// Skip dirs in check.exclude. The patterns are project-relative, so the
-		// path is matched before the module prefix is added — matching the full
-		// import path meant the module name was searched too.
-		relSlash := filepath.ToSlash(rel)
-		if relSlash != "." && isExcluded(relSlash, cfg.Check.Exclude) {
-			return filepath.SkipDir
-		}
-
-		var importPath string
-		if rel == "." {
-			importPath = modulePath
-		} else {
-			importPath = modulePath + "/" + relSlash
-		}
-
-		// Check if this dir contains any .go files. An unreadable directory is
-		// reported for the same reason as above: not reading it is not the same
-		// as finding nothing in it.
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return nil // reported by detectUnreadablePaths
-		}
-		hasGo := false
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
-				hasGo = true
-				break
-			}
-		}
-		if !hasGo || seen[importPath] {
-			return nil
-		}
-		seen[importPath] = true
-
-		// Check if import path matches any declared component.
 		matched := false
 		for _, comp := range cfg.Components {
 			if graph.MatchesComponent(importPath, comp) {
@@ -343,28 +409,23 @@ func detectOrphanPackagesFS(cfg *config.VeriktConfig, projectPath string) []Viol
 				break
 			}
 		}
-		if !matched {
-			// File is the project-relative directory, not the import path. Every
-			// path-scoped feature — check.exclude, severity_overrides paths, the
-			// --diff and --staged filters — matches File against project-relative
-			// globs, so an import path here could never be matched by any of them:
-			// a waiver for "internal/stray/**" silently did nothing. The import
-			// path is still named in the message.
-			violations = append(violations, Violation{
-				Category: "architecture",
-				File:     relSlash,
-				Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", importPath, cfg.Architecture),
-				Rule:     "orphan_package",
-				Severity: "error",
-			})
+		if matched {
+			continue
 		}
-		return nil
-	})
-	if err != nil {
-		// Per-entry errors are skipped inside the callback, so reaching here means
-		// the walk itself failed. detectUnreadablePaths reports it; the findings
-		// gathered so far are still returned rather than discarded.
-		return violations
+
+		// File is the project-relative directory, not the import path. Every
+		// path-scoped feature — check.exclude, severity_overrides paths, the
+		// --diff and --staged filters — matches File against project-relative
+		// globs, so an import path here could never be matched by any of them:
+		// a waiver for "internal/stray/**" silently did nothing. The import
+		// path is still named in the message.
+		violations = append(violations, Violation{
+			Category: "architecture",
+			File:     dir,
+			Message:  fmt.Sprintf("package %q matches no declared component — does not conform to %s architecture", importPath, cfg.Architecture),
+			Rule:     "orphan_package",
+			Severity: "error",
+		})
 	}
 	return violations
 }
@@ -533,21 +594,16 @@ func isExcluded(relPath string, excludes []string) bool {
 // countCoveredComponentsFS checks component coverage using the filesystem —
 // no go/packages required. A component is covered if any directory matching
 // one of its In patterns exists under projectPath.
-func countCoveredComponentsFS(projectPath string, components []config.Component) int {
-	covered := 0
-	for _, comp := range components {
-		for _, pattern := range comp.In {
-			// Strip trailing /** for directory existence check.
-			dir := strings.TrimSuffix(pattern, "/**")
-			dir = strings.TrimSuffix(dir, "/**")
-			dirPath := filepath.Join(projectPath, filepath.FromSlash(dir))
-			if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
-				covered++
-				break
-			}
+// countCoveredComponents counts declared components that at least one source
+// directory matches.
+func countCoveredComponents(cfg *config.VeriktConfig, projectPath string) int {
+	count := 0
+	for _, covered := range componentCoverage(cfg, projectPath) {
+		if covered {
+			count++
 		}
 	}
-	return covered
+	return count
 }
 
 func computeMetrics(cfg *config.VeriktConfig, result *CheckResult) {
