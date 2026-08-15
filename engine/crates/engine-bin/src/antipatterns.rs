@@ -711,7 +711,7 @@ fn nil_map_writes_in(
 /// genuinely known.
 fn detect_type_assertion_without_ok<'a>(
     root: Node<'a>,
-    _source: &[u8],
+    source: &[u8],
     file: &str,
 ) -> Vec<DetFinding> {
     let mut assertions: Vec<Node> = Vec::new();
@@ -720,6 +720,25 @@ fn detect_type_assertion_without_ok<'a>(
     let mut findings = Vec::new();
     for assertion in assertions {
         if assertion_has_ok_binding(assertion) {
+            continue;
+        }
+        // The programmer has already discriminated, in a form Go's type system
+        // does not carry to this expression. 51 findings across expert libraries
+        // were of this shape:
+        //
+        //     switch f.Type {
+        //     case ErrorType:
+        //         encodeError(f.Key, f.Interface.(error), enc)   // proven by the case
+        //     }
+        //
+        //     func (p *Pool[T]) Get() T { return p.pool.Get().(T) }  // only holds T
+        //
+        // The detector's own contract says a bare assertion is legitimate when
+        // the type is known; reporting these anyway states something the author
+        // has already established (INV-005).
+        if assertion_is_discriminated(assertion)
+            || assertion_targets_type_parameter(assertion, source)
+        {
             continue;
         }
         findings.push(DetFinding {
@@ -732,6 +751,54 @@ fn detect_type_assertion_without_ok<'a>(
         });
     }
     findings
+}
+
+/// True if the assertion sits inside a switch case, where the author has already
+/// discriminated on the value.
+///
+/// Covers both a type switch — where Go itself proves the type — and a switch on
+/// a tag field, where the invariant is the author's. The second cannot be proven
+/// by this analysis, which is the point: the author knows something the detector
+/// does not, and saying otherwise is noise.
+fn assertion_is_discriminated(assertion: Node) -> bool {
+    let mut node = assertion;
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            "expression_case" | "type_case" | "default_case" => return true,
+            // Stop at the function boundary: a switch elsewhere in the function
+            // says nothing about this expression.
+            "function_declaration" | "method_declaration" | "func_literal" => return false,
+            _ => node = parent,
+        }
+    }
+    false
+}
+
+/// True if the asserted type is one of the enclosing function's type parameters.
+///
+/// `p.pool.Get().(T)` in a `Pool[T]` can only yield a T; the container is typed.
+fn assertion_targets_type_parameter(assertion: Node, source: &[u8]) -> bool {
+    let Some(target) = assertion.child_by_field_name("type") else {
+        return false;
+    };
+    let target_name = node_text(target, source);
+
+    let mut node = assertion;
+    while let Some(parent) = node.parent() {
+        if matches!(parent.kind(), "function_declaration" | "method_declaration") {
+            // Type parameters of the function itself, and of its receiver.
+            for field in ["type_parameters", "receiver"] {
+                if let Some(params) = parent.child_by_field_name(field)
+                    && node_text(params, source).contains(target_name)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        node = parent;
+    }
+    false
 }
 
 /// True if the assertion is the whole right-hand side of a two-value assignment,
@@ -761,6 +828,51 @@ fn assertion_has_ok_binding(assertion: Node) -> bool {
         }
     }
     false
+}
+
+/// True if the enclosing function shows the goroutine's lifetime being managed.
+///
+/// Looks for the mechanisms Go actually uses: a done or quit channel, a context,
+/// a WaitGroup, or an errgroup. The signal is deliberately loose — this decides
+/// whether to stay quiet, so a false match costs a missed finding rather than a
+/// wrong one.
+fn goroutine_lifetime_is_managed(go_node: Node, source: &[u8]) -> bool {
+    // Walk out to the enclosing function and read its text.
+    let mut node = go_node;
+    let enclosing = loop {
+        match node.parent() {
+            Some(parent) => {
+                if matches!(
+                    parent.kind(),
+                    "function_declaration" | "method_declaration" | "func_literal"
+                ) {
+                    break parent;
+                }
+                node = parent;
+            }
+            None => return false,
+        }
+    };
+
+    let text = node_text(enclosing, source);
+    // Deliberately narrow. An earlier list included "context." and "ctx", which
+    // matched `context.Background()` — the opposite of a managed lifetime — and
+    // silenced a genuine finding in this repository's own fixture. A marker here
+    // must name a mechanism that actually stops a goroutine.
+    const MANAGED: &[&str] = &[
+        "errgroup",
+        "sync.WaitGroup",
+        "wg.Add",
+        "wg.Wait",
+        "ctx.Done()",
+        "<-done",
+        "done <-",
+        "close(done",
+        ".done",
+        "quit",
+        "cancel()",
+    ];
+    MANAGED.iter().any(|m| text.contains(m))
 }
 
 /// Remedy reported for a bare `go` statement.
@@ -810,7 +922,13 @@ fn detect_naked_goroutines<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec
         let inside_server = excluded_ranges
             .iter()
             .any(|(start, end)| row >= *start && row <= *end);
-        if !inside_server {
+        // A goroutine whose lifetime the surrounding code visibly manages is not
+        // "naked". `go s.flushLoop()` in a type that owns a done channel is tied
+        // to that channel — the advice to tie its lifetime is already taken, in a
+        // form this analysis cannot see. 91 findings across expert libraries were
+        // of that shape, and the remaining half of the advice — a recover in every
+        // goroutine — is one most Go teams decline (INV-005).
+        if !inside_server && !goroutine_lifetime_is_managed(go_node, source) {
             findings.push(DetFinding {
                 detector: "naked_goroutine",
                 file: file.to_string(),
@@ -1658,6 +1776,34 @@ mod tests {
             // value comes from g(), so the assertion is still single-valued and
             // still panics. Counting only the left-hand side treated every
             // multi-assignment as safe.
+            // Reduced from uber-go/zap. The author has discriminated; the
+            // detector cannot see it and said so anyway.
+            (
+                "assertion inside a switch case the author discriminated on",
+                "package foo\n\ntype Field struct{ Type int; Interface any }\n\nconst ErrorType = 1\n\nfunc enc(f Field) {\n\tswitch f.Type {\n\tcase ErrorType:\n\t\t_ = f.Interface.(error)\n\t}\n}\n",
+                0,
+            ),
+            (
+                "assertion inside a type switch case",
+                "package foo\n\nfunc f(v any) {\n\tswitch v.(type) {\n\tcase string:\n\t\t_ = v.(string)\n\t}\n}\n",
+                0,
+            ),
+            (
+                "assertion to a receiver type parameter",
+                "package foo\n\nimport \"sync\"\n\ntype Pool[T any] struct{ pool sync.Pool }\n\nfunc (p *Pool[T]) Get() T {\n\treturn p.pool.Get().(T)\n}\n",
+                0,
+            ),
+            (
+                "assertion to a function type parameter",
+                "package foo\n\nfunc Get[T any](v any) T {\n\treturn v.(T)\n}\n",
+                0,
+            ),
+            // Still reported: nothing has established the type.
+            (
+                "bare assertion outside any switch",
+                "package foo\n\nfunc f(v any) string {\n\treturn v.(string)\n}\n",
+                1,
+            ),
             (
                 "parallel assignment is not the comma-ok form",
                 "package foo\nfunc g() int { return 0 }\nfunc f(v any) {\n\tvar s string\n\tvar n int\n\ts, n = v.(string), g()\n\t_, _ = s, n\n}\n",
