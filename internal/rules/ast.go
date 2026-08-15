@@ -9,22 +9,6 @@ import (
 	"strings"
 )
 
-// KnownDetectors lists all detector names supported by the AST engine.
-var KnownDetectors = []string{
-	"global-mutable-state",
-	"init-abuse",
-	"init-side-effects",
-	"naked-goroutine",
-	"swallowed-error",
-	"context-background-in-handler",
-	"sql-concatenation",
-	"uuid-v4-as-key",
-	"fat-handler",
-	"god-package",
-	"domain-imports-adapter",
-	"mvc-in-hexagonal",
-}
-
 // detectorFunc is a per-file AST detector that returns violations.
 type detectorFunc func(file *ast.File, fset *token.FileSet, relPath string) []RuleViolation
 
@@ -93,6 +77,12 @@ func unsupportedCrossPackage(_ *ast.File, _ *token.FileSet, _ string) []RuleViol
 }
 
 // IsKnownDetector returns true if the detector name is recognized.
+//
+// The registry is the single source of truth. A parallel exported slice of the
+// same names sat beside it, read by nothing — dead, and writable by any
+// importing package, which is why global_mutable_state reported it. It was the
+// one true finding among that detector's 22, and the fix is deletion rather than
+// a waiver.
 func IsKnownDetector(name string) bool {
 	_, ok := detectorRegistry[name]
 	return ok

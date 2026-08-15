@@ -17,4 +17,10 @@
 # 69 -> 68: max_lines counted one of the two brace rows as a line of code, so a function
 # with exactly 50 lines in its body was reported as 51 and flagged. One function here was
 # in that position. The finding was false, not paid down.
-68
+#
+# 68 -> 46: global_mutable_state reported unexported lookup tables that nothing writes to.
+# Go has no const map or slice, so those vars are the only way to express a table, and 21
+# of the 22 findings were false. Also false, also not paid down — see
+# internal/engineclient/testdata/detector-restraint, which now fails the build if a
+# detector fires on code a careful engineer would write.
+46
