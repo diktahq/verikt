@@ -100,7 +100,11 @@ jobs:
           cp engine-artifacts/verikt-engine-linux-arm64/verikt-engine  internal/engineclient/bin/verikt-engine-linux-arm64
           cp engine-artifacts/verikt-engine-darwin-amd64/verikt-engine internal/engineclient/bin/verikt-engine-darwin-amd64
           cp engine-artifacts/verikt-engine-darwin-arm64/verikt-engine internal/engineclient/bin/verikt-engine-darwin-arm64
-          chmod +x internal/engineclient/bin/*
+          # Only the engine binaries. `bin/*` also matched README.md — which is
+          # committed so `//go:embed bin` always has something to match — and
+          # flipping its mode to 755 left the tree dirty, which GoReleaser
+          # refuses to release from. The release failed before building anything.
+          chmod +x internal/engineclient/bin/verikt-engine-*
 
       # A release that ships without a real engine degrades silently to Go-native
       # analysis: findings change, severities change, and nothing reports why. Once
@@ -126,6 +130,18 @@ jobs:
             echo "  ok  $target  ${size} bytes"
           done
           [ "$missing" -eq 0 ]
+
+      # GoReleaser refuses to release from a dirty tree, and it discovers that
+      # after the four-way engine matrix has already run. Checking here names the
+      # offending file immediately and costs nothing.
+      - name: Verify the working tree is clean
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Placing the engine binaries modified tracked files; GoReleaser will refuse to release."
+            git status --porcelain
+            git diff --summary
+            exit 1
+          fi
 
       - uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
         with:
