@@ -8,9 +8,7 @@ mod metrics;
 mod typescript_imports;
 
 use pb::{
-    EngineRequest, EngineResponse, PingResult,
-    engine_request::Command,
-    engine_response::Payload,
+    EngineRequest, EngineResponse, PingResult, engine_request::Command, engine_response::Payload,
 };
 use prost::Message;
 use std::io::{self, Read, Write};
@@ -38,17 +36,28 @@ fn handle_request(request: EngineRequest) -> Vec<EngineResponse> {
         Some(Command::Ping(_)) => vec![EngineResponse {
             payload: Some(Payload::PingResult(PingResult {
                 version: VERSION.to_string(),
-                capabilities: vec!["ping".to_string(), "grep".to_string(), "import_graph".to_string(), "anti_pattern".to_string(), "metric".to_string()],
+                capabilities: vec![
+                    "ping".to_string(),
+                    "grep".to_string(),
+                    "import_graph".to_string(),
+                    "anti_pattern".to_string(),
+                    "metric".to_string(),
+                ],
             })),
         }],
         Some(Command::Check(req)) => handle_check(req),
-        None => vec![error_response("empty request: no command specified".to_string())],
+        None => vec![error_response(
+            "empty request: no command specified".to_string(),
+        )],
     }
 }
 
-/// Route a CheckRequest to the appropriate engine handlers and merge responses.
-/// Grep rules and import_graph rules run independently; each returns its own
-/// CheckComplete. The Go client merges them.
+/// Route a CheckRequest to every engine handler.
+///
+/// Each module runs independently and emits its own CheckComplete, so a single
+/// request produces several. The Go client combines them in
+/// `engineclient.mergeCheckComplete` — which for a long time it did not, despite
+/// this comment saying so, and every summary but the last was discarded.
 fn handle_check(req: pb::CheckRequest) -> Vec<EngineResponse> {
     let mut responses = Vec::new();
     responses.extend(grep::handle_check(req.clone()));
@@ -89,8 +98,7 @@ fn read_message() -> io::Result<EngineRequest> {
     let mut msg_buf = vec![0u8; len];
     stdin.read_exact(&mut msg_buf)?;
 
-    EngineRequest::decode(&msg_buf[..])
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    EngineRequest::decode(&msg_buf[..]).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Write a length-prefixed protobuf message to stdout.

@@ -236,7 +236,7 @@ func installSkills(cmd *cobra.Command, agents []AIAgent) error {
 
 	for name, content := range skills {
 		if installScope == "global" || installScope == "both" {
-			globalBase := filepath.Join(home, ".claude")
+			globalBase := claudeGlobalConfigDir(home)
 			if err := writeSkill(globalBase, name, content); err != nil {
 				return err
 			}

@@ -11,6 +11,14 @@ import (
 	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 )
 
+// ErrGrepEngineFailed reports that the Rust engine was available but could not
+// evaluate the grep rules.
+//
+// It is deliberately not recoverable by running the Go implementation instead:
+// two implementations that disagree, selected by whether a binary happened to
+// work, is the failure mode this package spent a release removing elsewhere.
+var ErrGrepEngineFailed = errors.New("grep engine failed")
+
 // RunRules loads rules from rulesDir, validates them, and runs valid rules.
 // If client is non-nil, all grep rules are batched into a single Rust engine
 // call (faster, single file walk). If client is nil, the Go grep engine is used.
@@ -45,18 +53,30 @@ func RunRules(rulesDir, projectRoot string, allowedFiles []string, client *engin
 		}
 	}
 
-	// Run grep rules — via Rust engine (single walk) or Go fallback.
+	// Run grep rules — via the Rust engine, or the Go implementation when no
+	// engine is available.
+	//
+	// An engine that *failed* is not a reason to run the other implementation.
+	// That fallback existed and was silent, so a broken engine produced findings
+	// from a second implementation the two had already been shown to disagree on,
+	// with nothing in the output, the JSON or the exit code to say which had run.
+	// checker.ErrEngineRequired exists to prevent exactly this, and its doc
+	// comment described this situation while proxy rules kept doing it.
+	//
+	// With no engine at all the Go implementation still runs — otherwise a
+	// platform with no engine build could not evaluate rules at all — but the
+	// result records which one it was.
 	if len(grepRules) > 0 {
 		if client != nil {
 			violations, engineStatuses, err := runGrepViaRust(client, grepRules, projectRoot, allowedFiles)
 			if err != nil {
-				// Engine unavailable — fall back to Go grep.
-				result.Violations = append(result.Violations, runGrepFallback(grepRules, projectRoot, allowedFiles, result)...)
-			} else {
-				result.Violations = append(result.Violations, violations...)
-				applyEngineStatuses(result, engineStatuses)
+				return nil, fmt.Errorf("%w: %w", ErrGrepEngineFailed, err)
 			}
+			result.GrepEngine = GrepEngineRust
+			result.Violations = append(result.Violations, violations...)
+			applyEngineStatuses(result, engineStatuses)
 		} else {
+			result.GrepEngine = GrepEngineGo
 			result.Violations = append(result.Violations, runGrepFallback(grepRules, projectRoot, allowedFiles, result)...)
 		}
 	}

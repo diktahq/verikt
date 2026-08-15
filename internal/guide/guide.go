@@ -30,7 +30,7 @@ type GenerateOptions struct {
 
 // Generate produces guide files for the specified target(s).
 func Generate(opts GenerateOptions) error {
-	targets, err := resolveTargets(opts.Target)
+	targets, err := resolveTargets(opts.Target, opts.ProjectDir)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,13 @@ func buildContent(opts GenerateOptions) string {
 	writeRuleSummaries(&b, opts.ProjectDir)
 	writeVerificationChecklist(&b, opts.Capabilities)
 
-	writeInterviewProtocol(&b)
+	// The scaffold interview only helps a project that has nothing scaffolded yet.
+	// Emitting it unconditionally spent 664 tokens — 23% of the file, its largest
+	// section — on onboarding instructions in a guide generated from an existing
+	// verikt.yaml. `verikt init --ai` and the /verikt:init skill still carry it.
+	if opts.CatalogOnly {
+		writeInterviewProtocol(&b)
+	}
 
 	if opts.GuideMode == "prompted" {
 		writeSuggestedPrompts(&b)
@@ -775,10 +781,12 @@ func writeAntiPatterns(b *strings.Builder, arch string) {
 	b.WriteString("- NEVER use init() for business logic — use explicit constructors (`NewService(deps)`) from `main()`\n")
 	b.WriteString("- NEVER ignore errors with `_` — handle, wrap, or return: `return fmt.Errorf(\"op: %w\", err)`\n")
 	b.WriteString("- NEVER use `uuid.New()` for entity IDs (B-tree fragmentation) — use UUIDv7: `uuid.Must(uuid.NewV7())`\n")
-	b.WriteString("- NEVER start a naked goroutine — use `errgroup.Go()` or `context.Context` + `sync.WaitGroup` for lifecycle control\n")
+	b.WriteString("- NEVER start a naked goroutine — an unrecovered panic in it crashes the process, and `errgroup` propagates panics rather than containing them: `defer` a `recover()` inside the goroutine and bound its lifetime with `context.Context`\n")
 	b.WriteString("- NEVER use `context.Background()` in handlers — propagate `r.Context()` through the call chain\n")
 	b.WriteString("- NEVER concatenate SQL strings (injection risk) — use parameterized queries: `db.QueryContext(ctx, \"SELECT ... WHERE id = $1\", id)`\n")
 	b.WriteString("- NEVER use package-level mutable `var` (data races) — inject state through struct constructors\n")
+	b.WriteString("- NEVER write to a map you only declared — `var m map[K]V` allocates nothing and the write panics: use `m := make(map[K]V)`\n")
+	b.WriteString("- NEVER assert a type without the comma-ok form — `v.(T)` panics on a mismatch: use `v, ok := x.(T)` or a type switch\n")
 
 	if arch == "hexagonal" {
 		b.WriteString("- NEVER import infrastructure from `domain/` — define interfaces in `port/`, implement in `adapter/`\n")

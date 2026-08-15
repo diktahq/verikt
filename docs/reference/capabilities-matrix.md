@@ -1,6 +1,9 @@
 # Capabilities Matrix
 
-> Everything verikt can compose into your Go service — **63 capabilities**.
+> Everything verikt can compose into your Go service — **65 capabilities**.
+>
+> Depth differs per language. See the [language support matrix](language-support.md) for what
+> each language gets per command.
 
 verikt scaffolds projects by combining an **architecture** with **capabilities**. Pick what you need — verikt wires it all together.
 
@@ -72,7 +75,7 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 
 | Capability | What You Get | Key Patterns |
 |-----------|-------------|--------------|
-| `platform` | Config, lifecycle, logging, OTel, PII redaction | `slog` structured logging, OTLP export, graceful shutdown |
+| `platform` | Config, lifecycle, logging, OTel, PII redaction | Layered config (defaults → file → env), `slog` structured logging, OTLP export, graceful shutdown |
 | `bootstrap` | Thin `main.go` + `internal/bootstrap/` wiring | Composition root, testable dependency injection |
 | `docker` | `docker-compose.yml`, `.env.example` | Local dev with service dependencies |
 | `worker` | Background job processor | Worker pool, graceful shutdown, error collection |
@@ -146,7 +149,9 @@ Warnings are advisory — they don't block scaffolding.
 |----------|----------|----------------|
 | `global_mutable_state` | warning | Package-level vars with mutable types (maps, slices, pointers) |
 | `init_abuse` | warning | `init()` with 5+ statements or heavy I/O |
-| `naked_goroutine` | warning | Bare `go` statements without errgroup/structured concurrency |
+| `naked_goroutine` | warning | Bare `go` statements — an unrecovered panic in the body crashes the process |
+| `nil_map_write` | error | Write to a map declared but never allocated — writing to a nil map panics |
+| `type_assertion_without_ok` | warning | `x.(T)` without the comma-ok form — panics if the type differs |
 | `swallowed_error` | error | `if err != nil {}` or `if err != nil { return nil }` |
 | `uuid_v4_as_key` | info | `uuid.New()` for DB keys — suggests UUIDv7 |
 
@@ -210,7 +215,7 @@ Warnings are advisory — they don't block scaffolding.
 | Logging | `log/slog` | Stdlib structured logging |
 | Tracing | OpenTelemetry | OTLP/gRPC export |
 | Metrics | Prometheus | `promhttp` handler |
-| Config | `gopkg.in/yaml.v3` | YAML file loading |
+| Config | `gopkg.in/yaml.v3` + stdlib | Defaults in code, then YAML file, then environment |
 | Lifecycle | `golang.org/x/sync/errgroup` | Concurrent component management |
 | PostgreSQL | pgx v5 | Native driver, connection pooling |
 | MySQL | `go-sql-driver/mysql` | Standard `database/sql` |
@@ -218,6 +223,35 @@ Warnings are advisory — they don't block scaffolding.
 | Validation | go-playground/validator | Struct tag validation |
 | Protobuf | `buf` | Modern protobuf tooling |
 | IDs | UUIDv7 (RFC 9562) | Time-sortable, zero-dependency |
+
+### Configuration
+
+The `platform` capability generates a loader with three sources, each overriding
+the last: defaults in `config.Default()`, then the YAML file, then the
+environment. Defaults are established in Go before the file is read, so a value
+the file sets is never overwritten by a default it did not ask for.
+
+Credentials have no YAML key at all. `MySQLConfig.DSN`, `PostgresConfig.URL` and
+`RedisConfig.Password` are tagged `yaml:"-"`, and the decoder runs with
+`KnownFields(true)`, so writing a secret into the committed config file is
+rejected with the offending line rather than accepted quietly:
+
+```
+$ my-service --config bad.yaml
+parse bad.yaml: yaml: unmarshal errors:
+  line 2: field url not found in type config.PostgresConfig
+```
+
+Set them through the environment instead — `MYSQL_DSN`, `POSTGRES_URL`,
+`REDIS_PASSWORD`. Every other field has an environment variable too
+(`APP_ENVIRONMENT`, `LOG_LEVEL`, `HTTP_PORT`, `KAFKA_BROKERS`, …), listed at the
+bottom of the generated `config.yaml.example`.
+
+No dependency is added for this: each variable is read explicitly with
+`os.LookupEnv`, so only variables that are actually set are applied. Struct-tag
+libraries that carry defaults apply them on *every* parse, which overwrites
+whatever the file legitimately set — silently ignoring the config file for any
+field with a default.
 
 ## Example Compositions
 

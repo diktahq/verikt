@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diktahq/verikt/internal/checker"
 	"github.com/diktahq/verikt/internal/config"
 	"github.com/diktahq/verikt/internal/guide"
 	"github.com/stretchr/testify/assert"
@@ -92,7 +91,7 @@ func TestE2E_ViolatingProject_Check(t *testing.T) {
 	projectPath := hexagonalProjectPath(t)
 
 	start := time.Now()
-	result, err := checker.Check(cfg, projectPath)
+	result, err := checkViaEngine(t, cfg, projectPath)
 	duration := time.Since(start)
 	require.NoError(t, err)
 
@@ -133,7 +132,7 @@ func TestE2E_ConformingProject_Check(t *testing.T) {
 	projectPath := conformingProjectPath(t)
 
 	start := time.Now()
-	result, err := checker.Check(cfg, projectPath)
+	result, err := checkViaEngine(t, cfg, projectPath)
 	duration := time.Since(start)
 	require.NoError(t, err)
 
@@ -172,13 +171,13 @@ func TestE2E_GuideToEnforce_Contrast(t *testing.T) {
 
 	// Without guide: violating project.
 	violatingStart := time.Now()
-	violatingResult, err := checker.Check(cfg, hexagonalProjectPath(t))
+	violatingResult, err := checkViaEngine(t, cfg, hexagonalProjectPath(t))
 	violatingDuration := time.Since(violatingStart)
 	require.NoError(t, err)
 
 	// With guide: conforming project.
 	conformingStart := time.Now()
-	conformingResult, err := checker.Check(cfg, conformingProjectPath(t))
+	conformingResult, err := checkViaEngine(t, cfg, conformingProjectPath(t))
 	conformingDuration := time.Since(conformingStart)
 	require.NoError(t, err)
 

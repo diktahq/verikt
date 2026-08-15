@@ -80,6 +80,10 @@ func runGuide(target string, catalogOnly bool) error {
 		return fmt.Errorf("load verikt.yaml: %w", err)
 	}
 
+	if err := validateConfigCapabilities(cfg); err != nil {
+		return err
+	}
+
 	// Look up the language provider to get the template FS for pattern extraction.
 	p, provErr := provider.Get(cfg.Language)
 	if provErr == nil {

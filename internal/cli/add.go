@@ -29,14 +29,19 @@ and transitive dependencies are auto-resolved. Existing files are never overwrit
   verikt add kafka-consumer observability
   verikt add grpc --dry-run`,
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return runAdd(args)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				return fmt.Errorf("read --dry-run flag: %w", err)
+			}
+			return runAdd(args, dryRun)
 		},
 	}
+	cmd.Flags().Bool("dry-run", false, "Show what would be added without writing any files")
 	return cmd
 }
 
-func runAdd(capabilities []string) error {
+func runAdd(capabilities []string, dryRun bool) error {
 	cfgPath, err := config.FindVeriktYAML(".")
 	if err != nil {
 		return fmt.Errorf("no verikt.yaml found — run `verikt new` first: %w", err)
@@ -53,6 +58,56 @@ func runAdd(capabilities []string) error {
 	}
 	tFS := providerImpl.GetTemplateFS()
 
+	toAdd, autoDeps, err := resolveCapabilitiesToAdd(tFS, cfg, capabilities)
+	if err != nil {
+		return err
+	}
+	if len(toAdd) == 0 {
+		fmt.Println("All requested capabilities are already installed.")
+		return nil
+	}
+
+	if dryRun {
+		fmt.Println("Dry run — no files will be written.")
+	}
+	autoDepSet := make(map[string]bool, len(autoDeps))
+	for _, c := range autoDeps {
+		autoDepSet[c] = true
+	}
+	fmt.Println("Adding capabilities:")
+	for _, c := range toAdd {
+		suffix := ""
+		if autoDepSet[c] {
+			suffix = " (auto-dependency)"
+		}
+		fmt.Printf("  + %s%s\n", c, suffix)
+	}
+
+	projectDir, vars, err := projectScaffoldVars(cfgPath)
+	if err != nil {
+		return err
+	}
+
+	// Use ComposeProject to get proper vars with Has* flags for all capabilities.
+	finalCaps := make([]string, 0, len(cfg.Capabilities)+len(toAdd))
+	finalCaps = append(finalCaps, cfg.Capabilities...)
+	finalCaps = append(finalCaps, toAdd...)
+
+	plan, err := scaffold.ComposeProject(tFS, cfg.Architecture, finalCaps, vars)
+	if err != nil {
+		return fmt.Errorf("compose project: %w", err)
+	}
+
+	if dryRun {
+		return previewAdd(tFS, toAdd, projectDir, plan.Vars, autoDeps)
+	}
+	return applyAdd(tFS, cfg, cfgPath, projectDir, toAdd, finalCaps, plan.Vars, autoDeps)
+}
+
+// resolveCapabilitiesToAdd validates the requested capabilities, rejects
+// conflicts, and resolves transitive dependencies. It returns the full set to
+// install (dependencies first) and the subset that was auto-resolved.
+func resolveCapabilitiesToAdd(tFS fs.FS, cfg *config.VeriktConfig, capabilities []string) (toAdd, autoDeps []string, err error) {
 	// Build set of already-installed capabilities.
 	installedSet := make(map[string]bool, len(cfg.Capabilities))
 	for _, c := range cfg.Capabilities {
@@ -60,7 +115,7 @@ func runAdd(capabilities []string) error {
 	}
 
 	// Filter out already-installed capabilities.
-	var newCaps []string
+	newCaps := make([]string, 0, len(capabilities))
 	for _, c := range capabilities {
 		c = strings.TrimSpace(c)
 		if c == "" {
@@ -73,14 +128,13 @@ func runAdd(capabilities []string) error {
 		newCaps = append(newCaps, c)
 	}
 	if len(newCaps) == 0 {
-		fmt.Println("All requested capabilities are already installed.")
-		return nil
+		return nil, nil, nil
 	}
 
 	// Validate each capability exists in the provider's template FS.
 	available, err := listAvailableCapabilities(tFS)
 	if err != nil {
-		return fmt.Errorf("list available capabilities: %w", err)
+		return nil, nil, fmt.Errorf("list available capabilities: %w", err)
 	}
 	availableSet := make(map[string]bool, len(available))
 	for _, a := range available {
@@ -88,7 +142,7 @@ func runAdd(capabilities []string) error {
 	}
 	for _, c := range newCaps {
 		if !availableSet[c] {
-			return fmt.Errorf("unknown capability %q — available: %s", c, strings.Join(available, ", "))
+			return nil, nil, fmt.Errorf("unknown capability %q — available: %s", c, strings.Join(available, ", "))
 		}
 	}
 
@@ -109,7 +163,7 @@ func runAdd(capabilities []string) error {
 		}
 		for _, conflict := range cm.Conflicts {
 			if installedSet[conflict] || slices.Contains(newCaps, conflict) {
-				return fmt.Errorf("capability %q conflicts with %q", c, conflict)
+				return nil, nil, fmt.Errorf("capability %q conflicts with %q", c, conflict)
 			}
 		}
 	}
@@ -126,7 +180,6 @@ func runAdd(capabilities []string) error {
 	for _, c := range newCaps {
 		newCapsSet[c] = true
 	}
-	var autoDeps []string
 	for _, c := range resolved {
 		if !newCapsSet[c] && !installedSet[c] {
 			autoDeps = append(autoDeps, c)
@@ -134,29 +187,23 @@ func runAdd(capabilities []string) error {
 	}
 
 	// Merge: auto-deps + explicitly requested (all that are truly new).
-	var toAdd []string
 	for _, c := range resolved {
 		if !installedSet[c] {
 			toAdd = append(toAdd, c)
 		}
 	}
 
-	// Show what will be added.
-	fmt.Println("Adding capabilities:")
-	for _, c := range toAdd {
-		suffix := ""
-		if !newCapsSet[c] {
-			suffix = " (auto-dependency)"
-		}
-		fmt.Printf("  + %s%s\n", c, suffix)
-	}
+	return toAdd, autoDeps, nil
+}
 
-	// Infer ServiceName from directory name, ModulePath from go.mod.
-	projectDir := strings.TrimSuffix(cfgPath, "/verikt.yaml")
+// projectScaffoldVars infers the template variables for an existing project:
+// ServiceName from the directory name, ModulePath from go.mod.
+func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]interface{}, err error) {
+	projectDir = strings.TrimSuffix(cfgPath, "/verikt.yaml")
 	projectDir = strings.TrimSuffix(projectDir, "\\verikt.yaml")
-	absDir, absErr := filepath.Abs(projectDir)
-	if absErr != nil {
-		return fmt.Errorf("resolve path: %w", absErr)
+	absDir, err := filepath.Abs(projectDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve path: %w", err)
 	}
 	serviceName := filepath.Base(absDir)
 	modulePath := fmt.Sprintf("example.com/%s", serviceName)
@@ -169,27 +216,53 @@ func runAdd(capabilities []string) error {
 		}
 	}
 
-	vars := map[string]interface{}{
+	return projectDir, map[string]interface{}{
 		"ServiceName": serviceName,
 		"ModulePath":  modulePath,
-	}
-	// Use ComposeProject to get proper vars with Has* flags for all capabilities.
-	finalCaps := make([]string, 0, len(cfg.Capabilities)+len(toAdd))
-	finalCaps = append(finalCaps, cfg.Capabilities...)
-	finalCaps = append(finalCaps, toAdd...)
+	}, nil
+}
 
-	plan, err := scaffold.ComposeProject(tFS, cfg.Architecture, finalCaps, vars)
-	if err != nil {
-		return fmt.Errorf("compose project: %w", err)
+// previewAdd reports what applyAdd would do without writing anything.
+func previewAdd(tFS fs.FS, toAdd []string, projectDir string, vars map[string]interface{}, autoDeps []string) error {
+	renderer := scaffold.NewRenderer(tFS)
+	var totalCreated, totalSkipped int
+
+	for _, c := range toAdd {
+		capDir := path.Join("templates", "capabilities", c)
+		created, skipped, previewErr := renderer.PreviewCapabilityFiles(capDir, projectDir, vars)
+		if previewErr != nil {
+			return fmt.Errorf("preview capability %q: %w", c, previewErr)
+		}
+		for _, f := range created {
+			fmt.Printf("  Would create: %s\n", f)
+			totalCreated++
+		}
+		for _, f := range skipped {
+			fmt.Printf("  Would skip (exists): %s\n", f)
+			totalSkipped++
+		}
 	}
 
+	fmt.Printf("\nDry run: %d files would be created, %d skipped, %d capabilities added\n",
+		totalCreated, totalSkipped, len(toAdd))
+	fmt.Println("verikt.yaml and the generated guides were not modified.")
+	if len(autoDeps) > 0 {
+		fmt.Printf("Auto-resolved dependencies: %s\n", strings.Join(autoDeps, ", "))
+	}
+
+	return nil
+}
+
+// applyAdd renders the new capabilities, records them in verikt.yaml, and
+// regenerates the guides.
+func applyAdd(tFS fs.FS, cfg *config.VeriktConfig, cfgPath, projectDir string, toAdd, finalCaps []string, vars map[string]interface{}, autoDeps []string) error {
 	renderer := scaffold.NewRenderer(tFS)
 	var totalCreated, totalSkipped int
 
 	// Only render files from newly-added capabilities.
 	for _, c := range toAdd {
 		capDir := path.Join("templates", "capabilities", c)
-		result, skipped, renderErr := renderer.RenderCapabilityFiles(capDir, projectDir, plan.Vars)
+		result, skipped, renderErr := renderer.RenderCapabilityFiles(capDir, projectDir, vars)
 		if renderErr != nil {
 			return fmt.Errorf("render capability %q: %w", c, renderErr)
 		}

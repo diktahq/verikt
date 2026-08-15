@@ -14,18 +14,17 @@ import (
 // not in the allowed list must be flagged.
 func TestDeps_AllowedOnly(t *testing.T) {
 	client := newEngineClient(t)
-	projectPath := findRepoRoot(t)
+	projectPath := engineHexagonalPath(t)
 
 	// Allow domain only. Service imports domain+port → port import is a violation.
-	p := "internal/engineclient/experiment/testdata/hexagonal"
 	rule := &pb.Rule{
 		Id:       "arch/service-allowed-only",
 		Severity: pb.Severity_ERROR,
 		Message:  "service may only import domain",
 		Engine:   pb.EngineType_IMPORT_GRAPH,
 		Spec: &pb.Rule_ImportGraph{ImportGraph: &pb.ImportGraphSpec{
-			PackagePattern: p + "/service/**",
-			AllowedOnly:    []string{p + "/domain/**"},
+			PackagePattern: "service/**",
+			AllowedOnly:    []string{"domain/**"},
 		}},
 	}
 
@@ -47,9 +46,7 @@ func TestDeps_AllowedOnly(t *testing.T) {
 // domain/ imports service/ but AllowedOnly contains only an empty set → violation.
 func TestDeps_AllowedOnly_Violation(t *testing.T) {
 	client := newEngineClient(t)
-	projectPath := findRepoRoot(t)
-
-	p := "internal/engineclient/experiment/testdata/hexagonal"
+	projectPath := engineHexagonalPath(t)
 
 	// domain/ is allowed to import nothing — it imports service/ so this must fire.
 	rule := &pb.Rule{
@@ -58,7 +55,7 @@ func TestDeps_AllowedOnly_Violation(t *testing.T) {
 		Message:  "domain may not import anything internal",
 		Engine:   pb.EngineType_IMPORT_GRAPH,
 		Spec: &pb.Rule_ImportGraph{ImportGraph: &pb.ImportGraphSpec{
-			PackagePattern: p + "/domain/**",
+			PackagePattern: "domain/**",
 			// AllowedOnly is empty — any internal import is a violation.
 			AllowedOnly: []string{"__nothing__"},
 		}},
@@ -82,9 +79,7 @@ func TestDeps_AllowedOnly_Violation(t *testing.T) {
 // forbidden takes precedence over the allowed list.
 func TestDeps_ForbiddenAndAllowed(t *testing.T) {
 	client := newEngineClient(t)
-	projectPath := findRepoRoot(t)
-
-	p := "internal/engineclient/experiment/testdata/hexagonal"
+	projectPath := engineHexagonalPath(t)
 
 	// Forbid service/**, also list it as allowed → forbidden wins, must still flag.
 	rule := &pb.Rule{
@@ -93,9 +88,9 @@ func TestDeps_ForbiddenAndAllowed(t *testing.T) {
 		Message:  "domain forbidden check",
 		Engine:   pb.EngineType_IMPORT_GRAPH,
 		Spec: &pb.Rule_ImportGraph{ImportGraph: &pb.ImportGraphSpec{
-			PackagePattern: p + "/domain/**",
-			Forbidden:      []string{p + "/service/**"},
-			AllowedOnly:    []string{p + "/service/**"}, // listed as allowed but also forbidden
+			PackagePattern: "domain/**",
+			Forbidden:      []string{"service/**"},
+			AllowedOnly:    []string{"service/**"}, // listed as allowed but also forbidden
 		}},
 	}
 
@@ -132,7 +127,7 @@ func TestDeps_EmptyProject(t *testing.T) {
 // TestDeps_MultipleRules verifies the engine correctly handles multiple import rules in one call.
 func TestDeps_MultipleRules(t *testing.T) {
 	client := newEngineClient(t)
-	projectPath := findRepoRoot(t)
+	projectPath := engineHexagonalPath(t)
 	components := engineHexagonalComponents()
 
 	start := time.Now()

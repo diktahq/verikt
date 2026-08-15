@@ -112,7 +112,7 @@ verikt check [flags]
 
 ### What It Checks
 
-verikt runs **11 AST-based detectors**:
+verikt runs **14 AST-based detectors**:
 
 - **Dependency violations** — imports that cross component boundaries
 - **Required directories** — components with missing directories
@@ -125,8 +125,83 @@ verikt runs **11 AST-based detectors**:
 
 | Code | Meaning |
 |------|---------|
-| 0 | All checks pass |
-| 1 | One or more violations found |
+| 0 | No error-severity violations. Warnings may be present. |
+| 1 | An error-severity violation was found, or a proxy rule could not run |
+
+Warnings never affect the exit code, so a finding you have chosen to live with
+cannot block a pipeline. The exit code is the same in every output format —
+`--output json` reports the same verdict it prints.
+
+A proxy rule whose scope matches no files is reported as **stale** and fails the
+check: a rule that did not run has not passed. A rule that ran and found nothing
+is passing, not stale.
+
+### Waiving a Finding
+
+Any finding can be waived with `severity_overrides`, anti-patterns included. A
+waiver requires a reason, so the justification lands in the diff where a reviewer
+sees it:
+
+```yaml
+severity_overrides:
+  god_package:
+    - severity: ignore
+      reason: "the shared domain vocabulary; 27 types + 15 constants, nothing to trim"
+      paths: ["internal/core/**"]
+```
+
+Waived findings are still reported, in a `WAIVED` section and in the `waived[]`
+array of the JSON output, and they do not affect the exit code. A finding that
+disappeared entirely would be indistinguishable from one the detector never
+found.
+
+### JSON Output
+
+`--output json` emits a `schema_version` field. Check it before parsing — key
+names are stable within a version, not across them.
+
+`violations[]`, `anti_patterns[]` and `waived[]` are always present and always
+arrays, so they are safe to iterate on a passing project.
+
+```json
+{
+  "schema_version": 2,
+  "result": "fail",
+  "violations": [
+    { "severity": "error", "file": "domain/order.go", "rule": "dependency", "message": "..." }
+  ],
+  "anti_patterns": [
+    { "severity": "error", "name": "sql_concatenation", "file": "repo/db.go", "message": "..." }
+  ],
+  "waived": [
+    { "category": "anti_pattern", "rule": "god_package", "file": "internal/core", "reason": "..." }
+  ]
+}
+```
+
+To gate a pipeline, read `result`:
+
+```bash
+verikt check --output json > verikt.json
+jq -e '.result == "pass"' verikt.json
+```
+
+`result` is the same verdict the exit code carries, so gating on either is
+equivalent — and it accounts for every category. Selecting on severity across
+`violations[]` and `anti_patterns[]` does **not**: those two arrays hold the
+built-in detector findings only. An error-severity proxy-rule violation lives in
+`proxy_rules.violations[]`, a rule that could not run appears only in
+`proxy_rules.statuses[]`, and decision-gate failures are in
+`decision_violations[]`. A gate built from the two top-level arrays passes on all
+three.
+
+To count findings by severity — for a debt report rather than a gate — include
+every source:
+
+```bash
+jq '[(.violations // [])[], (.anti_patterns // [])[], (.proxy_rules.violations // [])[]]
+    | group_by(.severity) | map({severity: .[0].severity, count: length})' verikt.json
+```
 
 ### Example Output
 
@@ -174,6 +249,15 @@ verikt add <capability> [capability...] [flags]
 ```
 
 Capabilities are validated against the provider's templates, conflicts are checked, and transitive dependencies are auto-resolved. **Existing files are never overwritten** — only new files are created.
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--dry-run` | Show what would be added without writing any files | `false` |
+
+`--dry-run` reports the files it would create and which capabilities it would
+resolve, and leaves `verikt.yaml` and the generated guides untouched.
 
 ### What It Does
 

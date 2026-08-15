@@ -1,3 +1,12 @@
+# Non-secret configuration for {{.ServiceName}}.
+#
+# Everything here is safe to commit. Credentials are not: they have no key in
+# this file, and writing one in anyway is rejected rather than accepted quietly
+# (see config.Config — the fields are tagged `yaml:"-"` and the decoder runs with
+# KnownFields). Supply them through the environment instead; the variables are
+# listed at the end of this file.
+#
+# Precedence: defaults in config.Default() < this file < the environment.
 app:
   name: {{.ServiceName}}
   environment: development
@@ -33,14 +42,14 @@ kafka:
 {{- if .HasMySQL}}
 
 mysql:
-  dsn: "root:password@tcp(localhost:3306)/{{.ServiceName}}?parseTime=true"
+  # dsn is a credential: set MYSQL_DSN in the environment.
   max_open_conns: 25
   max_idle_conns: 5
 {{- end}}
 {{- if .HasPostgreSQL}}
 
 postgres:
-  url: "postgres://postgres:password@localhost:5432/{{.ServiceName}}?sslmode=disable"
+  # url is a credential: set POSTGRES_URL in the environment.
   max_conns: 25
   min_conns: 5
 {{- end}}
@@ -48,7 +57,7 @@ postgres:
 
 redis:
   addr: localhost:6379
-  password: ""
+  # password is a credential: set REDIS_PASSWORD in the environment.
   db: 0
 {{- end}}
 {{- if .HasMailpit}}
@@ -57,4 +66,65 @@ mailpit:
   host: localhost
   port: 1025
   from: "noreply@{{.ServiceName}}.local"
+{{- end}}
+
+# Environment variables
+#
+# Every value above can also be set from the environment, which wins over this
+# file. A value that is set but malformed — HTTP_PORT=eighty-eighty — is an error
+# at startup, not a silently ignored setting.
+#
+# These have no other source, because they are credentials:
+#
+{{- if .HasMySQL}}
+#   MYSQL_DSN                 root:...@tcp(localhost:3306)/{{.ServiceName}}?parseTime=true
+{{- end}}
+{{- if .HasPostgreSQL}}
+#   POSTGRES_URL              postgres://postgres:...@localhost:5432/{{.ServiceName}}?sslmode=disable
+{{- end}}
+{{- if .HasRedis}}
+#   REDIS_PASSWORD            the Redis password, empty for a local instance without auth
+{{- end}}
+#
+# And the rest, each overriding the value above:
+#
+#   APP_NAME                  service name
+#   APP_VERSION               build version
+#   APP_ENVIRONMENT           development | staging | production
+{{- if .HasI18n}}
+#   APP_DEFAULT_LOCALE        default locale, e.g. en
+{{- end}}
+#   LOG_LEVEL                 debug | info | warn | error
+#   LOG_FORMAT                json | text
+{{- if .HasHTTP}}
+#   HTTP_PORT                 listen port
+#   HTTP_READ_TIMEOUT         seconds
+#   HTTP_WRITE_TIMEOUT        seconds
+{{- end}}
+{{- if .HasGRPC}}
+#   GRPC_PORT                 listen port
+#   GRPC_REFLECTION           true | false — exposes the service schema, development only
+{{- end}}
+{{- if .HasKafka}}
+#   KAFKA_BROKERS             comma-separated host:port list
+#   KAFKA_CONSUMER_GROUP      consumer group id
+#   KAFKA_TOPICS              comma-separated topic list
+{{- end}}
+{{- if .HasMySQL}}
+#   MYSQL_MAX_OPEN_CONNS      pool size
+#   MYSQL_MAX_IDLE_CONNS      idle pool size
+#   MYSQL_CONN_MAX_LIFETIME   seconds
+{{- end}}
+{{- if .HasPostgreSQL}}
+#   POSTGRES_MAX_CONNS        pool size
+#   POSTGRES_MIN_CONNS        minimum idle connections
+{{- end}}
+{{- if .HasRedis}}
+#   REDIS_ADDR                host:port
+#   REDIS_DB                  database number
+{{- end}}
+{{- if .HasMailpit}}
+#   MAILPIT_HOST              SMTP host
+#   MAILPIT_PORT              SMTP port
+#   MAILPIT_FROM              default From address
 {{- end}}

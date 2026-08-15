@@ -163,6 +163,58 @@ func TestRenderCapabilityFiles(t *testing.T) {
 	assert.Contains(t, string(configBytes), "service: orders")
 }
 
+// PreviewCapabilityFiles backs `verikt add --dry-run`: it must report exactly
+// what RenderCapabilityFiles would create without touching the filesystem.
+func TestPreviewCapabilityFiles_WritesNothing(t *testing.T) {
+	memFS := fstest.MapFS{
+		"cap/files/health.go.tmpl":   &fstest.MapFile{Data: []byte("package health\n")},
+		"cap/files/config.yaml.tmpl": &fstest.MapFile{Data: []byte("service: {{.ServiceName}}\n")},
+	}
+
+	renderer := NewRenderer(memFS)
+	out := t.TempDir()
+
+	created, skipped, err := renderer.PreviewCapabilityFiles("cap", out, map[string]interface{}{
+		"ServiceName": "orders",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, skipped)
+	assert.ElementsMatch(t, []string{
+		filepath.Join(out, "health.go"),
+		filepath.Join(out, "config.yaml"),
+	}, created)
+
+	entries, err := os.ReadDir(out)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "dry run must not create any files or directories")
+}
+
+// The preview must agree with the real render, including the rule that a
+// template rendering to empty content is not written at all.
+func TestPreviewCapabilityFiles_MatchesRenderAndReportsExisting(t *testing.T) {
+	memFS := fstest.MapFS{
+		"cap/files/keep.go.tmpl":   &fstest.MapFile{Data: []byte("package keep\n")},
+		"cap/files/exists.go.tmpl": &fstest.MapFile{Data: []byte("package exists\n")},
+		"cap/files/empty.go.tmpl":  &fstest.MapFile{Data: []byte("{{if .Never}}package never{{end}}\n")},
+	}
+
+	renderer := NewRenderer(memFS)
+	out := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(out, "exists.go"), []byte("package exists\n"), 0o644))
+
+	vars := map[string]interface{}{"Never": false}
+
+	created, skipped, err := renderer.PreviewCapabilityFiles("cap", out, vars)
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(out, "exists.go")}, skipped)
+	assert.Equal(t, []string{filepath.Join(out, "keep.go")}, created)
+
+	result, renderSkipped, err := renderer.RenderCapabilityFiles("cap", out, vars)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, created, result.FilesCreated, "preview must match render")
+	assert.ElementsMatch(t, skipped, renderSkipped, "preview must match render")
+}
+
 func TestComposeProject_Minimal(t *testing.T) {
 	memFS := fstest.MapFS{
 		"templates/architectures/flat/manifest.yaml": &fstest.MapFile{

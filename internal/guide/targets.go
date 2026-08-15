@@ -1,6 +1,7 @@
 package guide
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -88,7 +89,16 @@ type Target interface {
 }
 
 // resolveTargets returns the targets matching the given selector.
-func resolveTargets(selector string) ([]Target, error) {
+//
+// "all" means every agent the project actually uses, detected from the file each
+// one owns. Writing all four unconditionally left .cursorrules, .windsurfrules and
+// a copilot instructions file in repositories that use none of them, recreated on
+// every guide run.
+//
+// When no marker is present there is no signal to go on — a freshly scaffolded
+// project, which is the `verikt new` case — so every target is written. An
+// explicit selector always wins: the user asked for that agent.
+func resolveTargets(selector, projectDir string) ([]Target, error) {
 	all := []Target{
 		&claudeTarget{},
 		&sentinelTarget{name: "cursor", relPath: ".cursorrules"},
@@ -97,6 +107,15 @@ func resolveTargets(selector string) ([]Target, error) {
 	}
 
 	if selector == "" || selector == "all" {
+		inUse := make([]Target, 0, len(all))
+		for _, t := range all {
+			if targetInUse(t, projectDir) {
+				inUse = append(inUse, t)
+			}
+		}
+		if len(inUse) > 0 {
+			return inUse, nil
+		}
 		return all, nil
 	}
 
@@ -106,6 +125,22 @@ func resolveTargets(selector string) ([]Target, error) {
 		}
 	}
 	return nil, fmt.Errorf("unknown guide target %q (valid: all, claude, cursor, copilot, windsurf)", selector)
+}
+
+// targetInUse reports whether the project already carries the file or directory
+// that identifies this agent.
+func targetInUse(t Target, projectDir string) bool {
+	var rel string
+	switch target := t.(type) {
+	case *claudeTarget:
+		rel = ".claude"
+	case *sentinelTarget:
+		rel = target.relPath
+	default:
+		return false
+	}
+	_, err := os.Stat(filepath.Join(projectDir, rel))
+	return err == nil
 }
 
 // claudeTarget writes directly to .claude/rules/verikt.md.
@@ -170,6 +205,61 @@ func generateHooks(projectDir string) error {
 	return mergeClaudeSettingsJSON(projectDir, hooks)
 }
 
+// appendHookEntries adds verikt's entries to an event's existing list instead of
+// replacing it, skipping any whose command is already registered so repeated runs
+// stay idempotent.
+//
+// Assigning the event outright destroyed hooks the user already had: a project with
+// its own PostToolUse or SessionStart hook — a formatter, a linter, another tool's
+// integration — silently lost it on every `verikt guide` run.
+func appendHookEntries(existing, additions any) any {
+	existingList, _ := existing.([]any)
+	additionList, _ := additions.([]any)
+
+	registered := map[string]bool{}
+	for _, entry := range existingList {
+		for _, command := range hookCommands(entry) {
+			registered[command] = true
+		}
+	}
+
+	out := existingList
+	for _, addition := range additionList {
+		commands := hookCommands(addition)
+		alreadyPresent := len(commands) > 0
+		for _, command := range commands {
+			if !registered[command] {
+				alreadyPresent = false
+			}
+		}
+		if alreadyPresent {
+			continue
+		}
+		out = append(out, addition)
+	}
+	return out
+}
+
+// hookCommands extracts the command strings from one hook entry.
+func hookCommands(entry any) []string {
+	entryMap, ok := entry.(map[string]any)
+	if !ok {
+		return nil
+	}
+	inner, _ := entryMap["hooks"].([]any)
+	var commands []string
+	for _, h := range inner {
+		hookMap, ok := h.(map[string]any)
+		if !ok {
+			continue
+		}
+		if command, ok := hookMap["command"].(string); ok {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
 // mergeClaudeSettingsJSON reads .claude/settings.json, deep-merges the hooks key,
 // and writes the result back. Preserves any existing user settings.
 func mergeClaudeSettingsJSON(projectDir string, hooks map[string]any) error {
@@ -186,10 +276,21 @@ func mergeClaudeSettingsJSON(projectDir string, hooks map[string]any) error {
 		existingHooks = map[string]any{}
 	}
 
+	before, _ := json.Marshal(existing)
+
 	for event, value := range hooks {
-		existingHooks[event] = value
+		existingHooks[event] = appendHookEntries(existingHooks[event], value)
 	}
 	existing["hooks"] = existingHooks
+
+	// Re-marshalling reorders keys and reformats every field, so writing
+	// unconditionally produced a large diff on a file the run did not actually
+	// change — settings.json holds the user's own hooks, and churning it on every
+	// guide run makes real changes hard to spot. Compare semantically, since the
+	// byte form differs from a hand-written file even when nothing was added.
+	if after, err := json.Marshal(existing); err == nil && bytes.Equal(before, after) {
+		return nil
+	}
 
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {

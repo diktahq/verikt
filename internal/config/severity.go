@@ -1,8 +1,7 @@
 package config
 
 import (
-	"path/filepath"
-	"strings"
+	"github.com/diktahq/verikt/internal/pathglob"
 )
 
 // ResolveSeverity returns the effective severity for a violation given its override key and file path.
@@ -56,28 +55,14 @@ func MapSeverity(configSeverity string) string {
 
 // matchesPaths reports whether filePath matches any glob in paths.
 // An empty paths slice is a catch-all and always matches.
-// Uses the same glob strategy as checker.isExcluded: "/**" suffix triggers
-// prefix containment, everything else uses filepath.Match.
+//
+// The glob semantics live in one place (internal/pathglob). This function used
+// to carry its own copy alongside checker.isExcluded's, and the comment claiming
+// the two used "the same glob strategy" had stopped being true: one anchored the
+// prefix, the other matched anywhere in the path.
 func matchesPaths(filePath string, paths []string) bool {
 	if len(paths) == 0 {
 		return true
 	}
-	for _, pattern := range paths {
-		if prefix, ok := strings.CutSuffix(pattern, "/**"); ok {
-			if strings.HasPrefix(filePath, prefix+"/") || filePath == prefix {
-				return true
-			}
-			continue
-		}
-		if ok, _ := filepath.Match(pattern, filePath); ok {
-			return true
-		}
-		// Also try matching the base name for patterns like **/*_test.go.
-		if tail, ok := strings.CutPrefix(pattern, "**/"); ok {
-			if matched, _ := filepath.Match(tail, filepath.Base(filePath)); matched {
-				return true
-			}
-		}
-	}
-	return false
+	return pathglob.MatchAny(filePath, paths)
 }

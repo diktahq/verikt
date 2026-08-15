@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diktahq/verikt/internal/checker"
 	"github.com/diktahq/verikt/internal/config"
 	pb "github.com/diktahq/verikt/internal/engineclient/pb"
 	"github.com/stretchr/testify/require"
@@ -34,7 +33,7 @@ func TestScale_RuleCount(t *testing.T) {
 		Language: "go",
 		Rules:    config.RulesConfig{Functions: config.FunctionRules{MaxLines: 50}},
 	}
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	_ = goResult
 	goDuration := time.Since(goStart)
 	require.NoError(t, err)
@@ -75,7 +74,7 @@ func TestScale_ProjectSize(t *testing.T) {
 	}
 
 	goStart := time.Now()
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	goDuration := time.Since(goStart)
 	require.NoError(t, err)
 
@@ -132,7 +131,7 @@ func runOSSExperiment(t *testing.T, name, projectPath string) {
 	}
 
 	goStart := time.Now()
-	goResult, err := checker.Check(cfg, projectPath)
+	goResult, err := checkViaEngine(t, cfg, projectPath)
 	goDuration := time.Since(goStart)
 	require.NoError(t, err)
 

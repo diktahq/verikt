@@ -1,0 +1,20 @@
+# Ratchet for warning-level findings from `verikt check` on this repository.
+#
+# These are real findings, not false positives: functions over the 50-line limit in
+# code-quality.md, plus advisory anti-patterns. Generated code is excluded via
+# check.exclude in verikt.yaml, so everything counted here is hand-written. They do not
+# fail the build, because only error severity does — but without a ceiling they accumulate
+# unnoticed, and "warnings we live with" quietly becomes the baseline.
+#
+# The self-check CI job fails if the count rises above this number. Lower it when you pay
+# debt down; raising it should be a deliberate, reviewed decision with a reason in the
+# commit message.
+#
+# Measure with a freshly embedded engine — `mise run verify` does this — or the number
+# reflects whatever engine your binary happens to carry rather than the one CI builds.
+# A figure of 69 recorded earlier was measured against a stale engine and was four short.
+#
+# 69 -> 68: max_lines counted one of the two brace rows as a line of code, so a function
+# with exactly 50 lines in its body was reported as 51 and flagged. One function here was
+# in that position. The finding was false, not paid down.
+68

@@ -98,6 +98,41 @@ func TestNewHexagonalWithHTTPAPI(t *testing.T) {
 	if !strings.Contains(string(data), "architecture: hexagonal") {
 		t.Errorf("verikt.yaml should contain 'architecture: hexagonal', got:\n%s", string(data))
 	}
+
+	assertRecovererIsOutermost(t, filepath.Join(svcDir, "adapter", "httphandler", "router.go"))
+}
+
+// assertRecovererIsOutermost checks that the generated router registers
+// middleware.Recoverer before any other middleware.
+//
+// Chi applies middleware in registration order, so anything registered before
+// Recoverer runs outside its recover boundary: a panic there kills the process
+// instead of returning a 500. The template previously registered Recoverer
+// seventh, leaving tracing, logging and security headers unprotected — which the
+// project's own chi.md rule ("Recoverer first") forbids.
+func assertRecovererIsOutermost(t *testing.T, routerPath string) {
+	t.Helper()
+
+	source, err := os.ReadFile(routerPath)
+	if err != nil {
+		t.Fatalf("failed to read generated router: %v", err)
+	}
+
+	var registered []string
+	for _, line := range strings.Split(string(source), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "r.Use(") {
+			registered = append(registered, line)
+		}
+	}
+
+	if len(registered) == 0 {
+		t.Fatalf("no middleware registrations found in %s", routerPath)
+	}
+	if !strings.Contains(registered[0], "middleware.Recoverer") {
+		t.Errorf("middleware.Recoverer must be registered first (outermost), but the stack starts with %q.\nfull order: %v",
+			registered[0], registered)
+	}
 }
 
 func TestNewHexagonalWithBFF(t *testing.T) {

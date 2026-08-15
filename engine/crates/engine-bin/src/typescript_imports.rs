@@ -40,26 +40,25 @@ fn collect_import_specifiers(node: tree_sitter::Node, source: &str, out: &mut Ve
         // import X from '...' | import '...' | export X from '...'
         "import_statement" | "export_statement" => {
             for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    if child.kind() == "string" {
-                        push_string_value(child, source, out);
-                        return;
-                    }
+                if let Some(child) = node.child(i)
+                    && child.kind() == "string"
+                {
+                    push_string_value(child, source, out);
+                    return;
                 }
             }
         }
         // require('...') — CommonJS
         "call_expression" => {
-            if let Some(fn_node) = node.child_by_field_name("function") {
-                if &source[fn_node.byte_range()] == "require" {
-                    if let Some(args) = node.child_by_field_name("arguments") {
-                        for i in 0..args.child_count() {
-                            let Some(arg) = args.child(i) else { continue };
-                            if arg.kind() == "string" {
-                                push_string_value(arg, source, out);
-                                break;
-                            }
-                        }
+            if let Some(fn_node) = node.child_by_field_name("function")
+                && &source[fn_node.byte_range()] == "require"
+                && let Some(args) = node.child_by_field_name("arguments")
+            {
+                for i in 0..args.child_count() {
+                    let Some(arg) = args.child(i) else { continue };
+                    if arg.kind() == "string" {
+                        push_string_value(arg, source, out);
+                        break;
                     }
                 }
             }
@@ -133,11 +132,19 @@ pub fn is_internal_ts_import(to_pkg: &str) -> bool {
 
 /// Walk all `.ts` and `.tsx` files under the project, respecting target_files filter.
 /// Skips `node_modules`, `dist`, `build`, and hidden directories.
+///
+/// Test files are excluded, as they are for Go (INV-004). A test legitimately
+/// reaches across layers to assemble a fixture, so counting its imports produced
+/// dependency violations for code that is not part of the architecture — the same
+/// 14-findings failure INV-004 was written about, which was only ever fixed on
+/// the Go side.
 pub fn collect_ts_files(project: &Path, target_files: &[String]) -> Vec<PathBuf> {
     if !target_files.is_empty() {
+        // Both entry points must apply the same exclusions: `--staged` passes an
+        // explicit list, and this branch applied none of them.
         return target_files
             .iter()
-            .filter(|f| f.ends_with(".ts") || f.ends_with(".tsx"))
+            .filter(|f| is_ts_source(f) && !is_ts_test_path(f) && !is_in_testdata(f))
             .map(|f| project.join(f))
             .collect();
     }
@@ -145,6 +152,34 @@ pub fn collect_ts_files(project: &Path, target_files: &[String]) -> Vec<PathBuf>
     let mut files = Vec::new();
     collect_ts_files_recursive(project, &mut files);
     files
+}
+
+/// True if the path names a TypeScript source file.
+fn is_ts_source(path: &str) -> bool {
+    path.ends_with(".ts") || path.ends_with(".tsx")
+}
+
+/// True if the path is a TypeScript test file, by either of the two conventions:
+/// a `.test.`/`.spec.` infix, or a `__tests__` directory.
+fn is_ts_test_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    if normalized
+        .split('/')
+        .any(|segment| segment == "__tests__" || segment == "__mocks__")
+    {
+        return true;
+    }
+    let name = normalized.rsplit('/').next().unwrap_or(&normalized);
+    [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+/// True if a project-relative path lies under a `testdata` directory.
+fn is_in_testdata(path: &str) -> bool {
+    path.replace('\\', "/")
+        .split('/')
+        .any(|segment| segment == "testdata")
 }
 
 fn collect_ts_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -156,16 +191,29 @@ fn collect_ts_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
+        // Any symlink is outside the project boundary (INV-002); tested before the
+        // directory check because `is_dir()` follows symlinks.
+        if crate::grep::is_symlink(&entry) {
+            continue;
+        }
+
         if path.is_dir() {
             if matches!(
                 name_str.as_ref(),
-                "node_modules" | "dist" | "build" | "target" | ".git"
+                "node_modules"
+                    | "dist"
+                    | "build"
+                    | "target"
+                    | ".git"
+                    | "testdata"
+                    | "__tests__"
+                    | "__mocks__"
             ) || name_str.starts_with('.')
             {
                 continue;
             }
             collect_ts_files_recursive(&path, files);
-        } else if name_str.ends_with(".ts") || name_str.ends_with(".tsx") {
+        } else if is_ts_source(&name_str) && !is_ts_test_path(&name_str) {
             files.push(path);
         }
     }
@@ -185,6 +233,104 @@ mod tests {
         let mut imports = extract_ts_imports(&path, src, &root);
         imports.sort();
         imports
+    }
+
+    /// A symlinked directory is not project-local code (INV-002), and following
+    /// one can escape the project or loop forever on a cycle.
+    #[test]
+    #[cfg(unix)]
+    fn collect_ts_files_skips_symlinked_dirs() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join("verikt-ts-symlink-test");
+        let project = base.join("project");
+        let outside = base.join("outside");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        std::fs::write(project.join("src").join("real.ts"), "export const a = 1;\n").unwrap();
+        std::fs::write(outside.join("external.ts"), "export const b = 2;\n").unwrap();
+        symlink(&outside, project.join("linked")).unwrap();
+
+        let files = collect_ts_files(&project, &[]);
+
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.contains(&"real.ts".to_string()), "got {names:?}");
+        assert!(
+            !names.contains(&"external.ts".to_string()),
+            "symlinked directory was followed: {names:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// INV-004 applies to every language the engine parses, and TypeScript never
+    /// got the fix. A test importing across layers to build a fixture was read as
+    /// a dependency violation: `src/domain/user.test.ts` importing
+    /// `../infrastructure/db` failed the check.
+    #[test]
+    fn collect_ts_files_skips_test_files() {
+        let base = std::env::temp_dir().join("verikt-ts-testfiles");
+        let project = base.join("project");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(project.join("src").join("domain")).unwrap();
+        std::fs::create_dir_all(project.join("src").join("__tests__")).unwrap();
+
+        let domain = project.join("src").join("domain");
+        for name in [
+            "user.ts",
+            "user.test.ts",
+            "user.spec.ts",
+            "widget.test.tsx",
+            "widget.spec.tsx",
+        ] {
+            std::fs::write(domain.join(name), "export const a = 1;\n").unwrap();
+        }
+        std::fs::write(
+            project.join("src").join("__tests__").join("helpers.ts"),
+            "export const h = 1;\n",
+        )
+        .unwrap();
+
+        let names: Vec<String> = collect_ts_files(&project, &[])
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(
+            names,
+            vec!["user.ts".to_string()],
+            "only non-test sources are analysed, got {names:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// `--staged` supplies an explicit file list, and that branch applied none of
+    /// the exclusions the recursive walk applies.
+    #[test]
+    fn collect_ts_files_applies_exclusions_to_explicit_targets() {
+        let project = std::env::temp_dir().join("verikt-ts-explicit");
+        let names: Vec<String> = collect_ts_files(
+            &project,
+            &[
+                "src/domain/user.ts".to_string(),
+                "src/domain/user.test.ts".to_string(),
+                "src/domain/user.spec.tsx".to_string(),
+                "src/__tests__/helpers.ts".to_string(),
+                "testdata/fixture/bad.ts".to_string(),
+                "README.md".to_string(),
+            ],
+        )
+        .iter()
+        .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+
+        assert_eq!(names, vec!["user.ts".to_string()], "got {names:?}");
     }
 
     #[test]
@@ -222,10 +368,7 @@ mod tests {
 
     #[test]
     fn reexport_from() {
-        let imports = parse(
-            "src/domain/index.ts",
-            "export { User } from './user';\n",
-        );
+        let imports = parse("src/domain/index.ts", "export { User } from './user';\n");
         assert_eq!(imports, vec!["src/domain/user"]);
     }
 

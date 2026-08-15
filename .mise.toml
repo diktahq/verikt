@@ -1,0 +1,94 @@
+# Toolchains required to build verikt end to end. Run `mise install`.
+#
+# Versions match .github/workflows/ci.yml — if you change one, change both, or
+# contributors will hit failures CI cannot reproduce.
+#
+#   go             — the CLI, orchestrator and all analysis fallbacks
+#   rust           — the embedded engine under engine/ (needs >= 1.85 for edition 2024)
+#   bun            — the docs site under website/
+#   golangci-lint  — pinned to the version the lint job installs. Linters gain checks
+#                    between releases, so an older local binary reports a clean run on
+#                    code CI rejects.
+#
+# rust and bun are exact, and every workflow pins the same value. Floating selectors
+# ("stable", "latest") meant a green local run said nothing about CI, and a toolchain
+# release could break a build nobody had touched — which is exactly how a clippy lint
+# and a golangci-lint check both slipped past local runs.
+#
+# go floats on the patch version deliberately: Go patch releases are backward-compatible
+# security fixes, and pinning one would strand the build on a known-vulnerable toolchain.
+[tools]
+go = "1.26"
+rust = "1.97.1"
+bun = "1.3.11"
+golangci-lint = "2.11.3"
+
+# The engine binary is embedded via //go:embed from internal/engineclient/bin/.
+# It is gitignored, so a fresh clone has nothing to embed until you run:
+#   mise run build-engine
+[tasks.build-engine]
+description = "Build the Rust engine and place it for //go:embed"
+run = """
+set -euo pipefail
+cd engine
+cargo build --release
+cd ..
+mkdir -p internal/engineclient/bin
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) target=verikt-engine-darwin-arm64 ;;
+  Darwin-x86_64) target=verikt-engine-darwin-amd64 ;;
+  Linux-x86_64) target=verikt-engine-linux-amd64 ;;
+  Linux-aarch64) target=verikt-engine-linux-arm64 ;;
+  *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+cp engine/target/release/verikt-engine "internal/engineclient/bin/$target"
+chmod +x "internal/engineclient/bin/$target"
+echo "placed internal/engineclient/bin/$target"
+"""
+
+[tasks.check-engine]
+description = "Run the engine's own gates (matches the CI engine job)"
+dir = "engine"
+run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
+
+# One command that runs exactly what CI runs, in CI's order, against a freshly built
+# engine.
+#
+# Two defects on this branch came from local verification that did not match CI: a lint
+# run against an older golangci-lint reported no issues on code CI rejected, and a debt
+# baseline measured against a stale embedded engine was 4 findings short of what CI
+# computes. Both local runs succeeded, so nothing signalled the gap. Rebuilding the
+# engine first is the part that is easy to forget and impossible to notice.
+[tasks.verify]
+description = "Run every gate CI runs, against a freshly built engine"
+run = """
+set -euo pipefail
+
+echo '── engine ──'
+cd engine
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cd ..
+
+echo '── embed the engine just built ──'
+mise run build-engine
+
+echo '── go ──'
+go build ./...
+go vet ./...
+test -z "$(gofmt -l internal cmd providers | grep -v experiment/testdata || true)"
+go test ./...
+golangci-lint run
+
+echo '── verikt checks itself ──'
+go build -o "$TMPDIR/verikt-verify" ./cmd/verikt
+"$TMPDIR/verikt-verify" check
+"$TMPDIR/verikt-verify" check --output json > "$TMPDIR/verikt-verify.json"
+baseline=$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' .github/verikt-debt-baseline | head -1)
+current=$(jq '[.violations[], .anti_patterns[]] | map(select(.severity != "error")) | length' "$TMPDIR/verikt-verify.json")
+echo "non-error findings: $current (baseline $baseline)"
+[ "$current" -le "$baseline" ]
+
+echo '── all gates passed ──'
+"""

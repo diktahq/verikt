@@ -43,7 +43,21 @@ type RunResult struct {
 	Violations []RuleViolation `json:"violations"`
 	Statuses   []RuleStatus    `json:"statuses"`
 	Duration   time.Duration   `json:"duration"`
+
+	// GrepEngine names the implementation that ran the grep rules, or is empty
+	// when there were none.
+	//
+	// Two implementations exist and they have disagreed. Which one ran depended
+	// on whether the embedded binary resolved, and nothing said so — the same
+	// invisibility that ErrEngineRequired was introduced to end for the checker.
+	GrepEngine string `json:"grep_engine,omitempty"`
 }
+
+// The grep implementations RunResult.GrepEngine can name.
+const (
+	GrepEngineRust = "rust"
+	GrepEngineGo   = "go"
+)
 
 // ErrorCount returns the number of error-severity violations.
 func (r *RunResult) ErrorCount() int {
