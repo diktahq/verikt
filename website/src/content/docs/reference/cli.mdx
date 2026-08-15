@@ -110,6 +110,22 @@ verikt check [flags]
 | `--path` | Path to project | `.` |
 | `--output` | Output format (`terminal`, `json`) | `terminal` |
 
+### What It Does Not Analyse
+
+**Test files (`_test.go`) are excluded from every check, including dependency
+rules.** A test reaches across layers to assemble a fixture, so counting its
+imports reports violations for code that is not part of the architecture. The
+consequence is worth knowing before you design around it: an import that only
+exists in a test will not be flagged.
+
+**Generated files are excluded.** A file carrying Go's
+`// Code generated ... DO NOT EDIT.` marker before its package clause is skipped
+— regenerating it would restore any finding, so the finding is not actionable.
+
+**Nested modules are excluded.** A directory with its own `go.mod` is a different
+project; its packages belong to that module's import path. Point `--path` at it
+to analyse it on its own.
+
 ### What It Checks
 
 verikt runs **14 AST-based detectors**:

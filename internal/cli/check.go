@@ -47,7 +47,13 @@ func newCheckCommand(opts *globalOptions) *cobra.Command {
 Reports dependency violations, structure issues, and function complexity.
 Runs both built-in detectors and proxy rules by default.
 Exits with code 1 if any error-severity violations are found, or if a proxy rule
-could not run (stale or invalid). Warnings do not affect the exit code.`,
+could not run (stale or invalid). Warnings do not affect the exit code.
+
+Test files (_test.go) are not analysed, by any check — including dependency
+rules. A test legitimately reaches across layers to assemble a fixture, so its
+imports are not part of the architecture. Generated files carrying the
+"// Code generated ... DO NOT EDIT." marker are skipped for the same reason:
+they are not the author's to fix.`,
 		Example: `  verikt check
   verikt check --path ./my-service
   verikt check --proxy-rules

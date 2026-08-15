@@ -39,6 +39,20 @@ learns to skim the section it appears in. One false positive teaches a reader to
 teach them to ignore the tool. A detector's value is bounded by the trust of the person
 reading its output.
 
+## Concentration (added 2026-08-15)
+
+A detector whose findings cluster in one file or one directory is presumed wrong
+until shown otherwise.
+
+Both large false-positive classes found by the corpus announced themselves this
+way: 73 of 77 `type_assertion_without_ok` findings sat in one directory of
+generated mocks, and 15 of 17 `sql_concatenation` findings in a single file that
+happened to hold one real query literal as data. Neither needed judgement to
+spot — the ratio is mechanical, and `scripts/corpus-audit.sh` reports it.
+
+A codebase with a genuine problem spreads it around. A detector with a problem
+does not.
+
 ## Proven by
 
 - `internal/engineclient/detector_restraint_test.go` — `TestNoDetectorFiresOnCleanCode`,

@@ -605,8 +605,23 @@ fn is_package_scope(spec: Node) -> bool {
     true
 }
 
-/// Identifiers that appear on the left of an assignment or short declaration —
-/// i.e. names given a value of their own, which for a map means allocated.
+/// Identifiers that may have been given a value: assigned, short-declared, or
+/// had their address taken.
+///
+/// The address case is what stops a false positive at error severity. In
+///
+///     var cfg map[string]any
+///     json.Unmarshal(data, &cfg)
+///     cfg["k"] = v
+///
+/// Unmarshal allocates the map, and the write is safe. Passing `&cfg` hands the
+/// variable to something this analysis cannot see, so it cannot claim the map is
+/// unallocated — the same reasoning that keeps exported variables reported: the
+/// absence of evidence is only evidence when nothing else can reach it (INV-005).
+///
+/// The cost is a genuine nil-map write missed when the address is taken for some
+/// unrelated reason. Against a finding that fails a build and whose remedy is a
+/// redundant make(), that is the better trade.
 fn assigned_identifiers(scope: Node, source: &[u8]) -> Vec<String> {
     let mut assignments: Vec<Node> = Vec::new();
     collect_nodes(scope, "assignment_statement", &mut assignments);
@@ -625,6 +640,25 @@ fn assigned_identifiers(scope: Node, source: &[u8]) -> Vec<String> {
             }
         }
     }
+
+    // `&cfg` — the address escapes, so something unseen may allocate it.
+    let mut unary: Vec<Node> = Vec::new();
+    collect_nodes(scope, "unary_expression", &mut unary);
+    for node in &unary {
+        let is_address = node
+            .child_by_field_name("operator")
+            .map(|op| node_text(op, source) == "&")
+            .unwrap_or(false);
+        if !is_address {
+            continue;
+        }
+        if let Some(operand) = node.child_by_field_name("operand")
+            && operand.kind() == "identifier"
+        {
+            names.push(node_text(operand, source).to_string());
+        }
+    }
+
     names
 }
 
@@ -935,16 +969,9 @@ fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Ve
     // in another file is missed as a result: a deliberate false negative,
     // because an unfixable error-severity false positive costs more than an
     // occasional miss.
-    if !file_involves_sql(root, source) {
-        return vec![];
-    }
-
     let mut bin_nodes: Vec<Node> = Vec::new();
     collect_nodes(root, "binary_expression", &mut bin_nodes);
 
-    let sql_keywords = [
-        "SELECT ", "INSERT ", "UPDATE ", "DELETE ", "FROM ", "WHERE ", "JOIN ",
-    ];
     let mut findings = Vec::new();
 
     for bin_node in bin_nodes {
@@ -966,7 +993,7 @@ fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Ve
             continue;
         }
 
-        if binary_contains_sql_keyword(bin_node, source, &sql_keywords) {
+        if binary_contains_sql_statement(bin_node, source) {
             findings.push(DetFinding {
                 detector: "sql_concatenation",
                 file: file.to_string(),
@@ -1307,121 +1334,55 @@ fn is_init_call(fn_name: &str) -> bool {
         .any(|s| fn_name.ends_with(s) || fn_name.ends_with(&format!(".{}", s)))
 }
 
-/// True if the file gives evidence that it deals with SQL.
+/// True if the concatenation contains a literal written as a SQL statement.
 ///
-/// Either it imports a database package, or it calls something that executes a
-/// query — which covers a repository whose handle is injected and which
-/// therefore imports no driver itself.
-fn file_involves_sql(root: Node, source: &[u8]) -> bool {
-    // Import paths belonging to database access.
-    let mut imports: Vec<Node> = Vec::new();
-    collect_nodes(root, "import_spec", &mut imports);
-    for spec in &imports {
-        let path = node_text(*spec, source).to_lowercase();
-        const DB_MARKERS: &[&str] = &[
-            "database/sql",
-            "sqlx",
-            "pgx",
-            "pq",
-            "mysql",
-            "sqlite",
-            "gorm",
-            "squirrel",
-            "goqu",
-            "bun",
-            "ent",
-            "sqlc",
-            "postgres",
-            "clickhouse",
-            "mssql",
-            "oracle",
-        ];
-        if DB_MARKERS.iter().any(|m| path.contains(m)) {
-            return true;
-        }
-    }
-
-    // Or a call that executes a query, however the handle arrived.
-    const QUERY_CALLS: &[&str] = &[
-        "Query",
-        "QueryRow",
-        "QueryContext",
-        "QueryRowContext",
-        "Exec",
-        "ExecContext",
-        "Prepare",
-        "PrepareContext",
-        "Raw",
-        "Select",
-        "Get",
-    ];
-    let mut calls: Vec<Node> = Vec::new();
-    collect_nodes(root, "call_expression", &mut calls);
-    for call in &calls {
-        let Some(function) = call.child_by_field_name("function") else {
-            continue;
-        };
-        // Only method calls: `db.Query(...)`. A bare `Get(...)` is too common to
-        // treat as evidence of SQL.
-        if function.kind() != "selector_expression" {
-            continue;
-        }
-        let name = function
-            .child_by_field_name("field")
-            .map(|f| node_text(f, source))
-            .unwrap_or("");
-        if QUERY_CALLS.contains(&name) {
-            return true;
-        }
-    }
-
-    // Or a string literal written as SQL is conventionally written: keywords in
-    // upper case, in statement order. `"SELECT * FROM orders WHERE id="` is a
-    // query; `"select the rows from "` is a sentence. Case is the discriminator
-    // that separates them, and Go codebases write SQL keywords in upper case by
-    // convention — so this catches a repository that builds a query and hands it
-    // to a caller without importing a driver itself.
-    let mut literals: Vec<Node> = Vec::new();
-    collect_nodes(root, "interpreted_string_literal", &mut literals);
-    collect_nodes(root, "raw_string_literal", &mut literals);
-    for literal in &literals {
-        let text = node_text(*literal, source);
-        const STATEMENT_SHAPES: &[(&str, &str)] = &[
-            ("SELECT ", " FROM "),
-            ("DELETE ", " FROM "),
-            ("INSERT ", " INTO "),
-            ("UPDATE ", " SET "),
-        ];
-        for (head, tail) in STATEMENT_SHAPES {
-            if let Some(at) = text.find(head)
-                && text[at..].contains(tail)
-            {
-                return true;
-            }
-        }
-        // "DELETE FROM x" and "INSERT INTO x" have no gap between the words.
-        if text.contains("DELETE FROM ") || text.contains("INSERT INTO ") {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn binary_contains_sql_keyword(node: Node, source: &[u8], keywords: &[&str]) -> bool {
+/// The evidence belongs to the expression, not the file. A file-scoped check —
+/// "does this file import a driver, or mention SQL anywhere" — meant one genuine
+/// query literal made every unrelated concatenation in the same file suspect: an
+/// audit tool holding `"INSERT INTO ... VALUES"` as data reported
+/// `id + ": absent from canonical inventory"` as SQL injection.
+///
+/// The shape is matched case-sensitively, in the upper case Go codebases use for
+/// SQL keywords by convention. That is what separates a query from a sentence:
+/// `"SELECT * FROM orders WHERE id="` is one, `"select the rows from "` is the
+/// other, and no amount of surrounding context distinguishes them.
+///
+/// A codebase writing lower-case SQL is missed. That is the accepted cost —
+/// a missed finding against an unfixable false positive that fails a build
+/// (INV-005).
+fn binary_contains_sql_statement(node: Node, source: &[u8]) -> bool {
     match node.kind() {
         "interpreted_string_literal" | "raw_string_literal" => {
-            let text = node_text(node, source).to_uppercase();
-            keywords.iter().any(|kw| text.contains(kw))
+            is_sql_statement(node_text(node, source))
         }
         "binary_expression" => {
             let left = node.child_by_field_name("left");
             let right = node.child_by_field_name("right");
-            left.is_some_and(|n| binary_contains_sql_keyword(n, source, keywords))
-                || right.is_some_and(|n| binary_contains_sql_keyword(n, source, keywords))
+            left.is_some_and(|n| binary_contains_sql_statement(n, source))
+                || right.is_some_and(|n| binary_contains_sql_statement(n, source))
         }
         _ => false,
     }
+}
+
+/// True if the text reads as a SQL statement rather than prose.
+fn is_sql_statement(text: &str) -> bool {
+    // Paired keywords, in statement order.
+    const SHAPES: &[(&str, &str)] = &[
+        ("SELECT ", " FROM "),
+        ("DELETE ", " FROM "),
+        ("UPDATE ", " SET "),
+        ("INSERT ", " INTO "),
+    ];
+    for (head, tail) in SHAPES {
+        if let Some(at) = text.find(head)
+            && text[at..].contains(tail)
+        {
+            return true;
+        }
+    }
+    // And the forms with no gap between the words.
+    text.contains("DELETE FROM ") || text.contains("INSERT INTO ") || text.contains("SELECT * FROM")
 }
 
 fn is_exported(name: &str) -> bool {
@@ -1641,6 +1602,14 @@ mod tests {
                 "every name in a grouped declaration is tracked",
                 "package foo\nfunc f() {\n\tvar a, b map[string]int\n\ta[\"x\"] = 1\n\tb[\"y\"] = 2\n}\n",
                 2,
+            ),
+            // Found in a real project, at error severity: json.Unmarshal
+            // allocates the map through the pointer, so the write is safe and
+            // the suggested remedy would be a redundant make().
+            (
+                "address taken, so something unseen may allocate it",
+                "package foo\n\nimport \"encoding/json\"\n\nfunc Load(data []byte) error {\n\tvar cfg map[string]any\n\tif err := json.Unmarshal(data, &cfg); err != nil {\n\t\treturn err\n\t}\n\tcfg[\"k\"] = 1\n\treturn nil\n}\n",
+                0,
             ),
             (
                 "a package-level map allocated in init is safe",

@@ -68,3 +68,15 @@ Including test files there produced dependency violations for imports that exist
 only in tests: `verikt check` on this repository reported 14 such findings, every
 one of them a test crossing a layer boundary in order to exercise it. A test
 importing across a boundary is not an architecture violation.
+
+## Visibility (added 2026-08-15)
+
+The exclusion MUST be stated in `verikt check --help` and in the CLI reference.
+
+It applies to dependency rules as well as anti-pattern detectors, and that was
+undocumented. A project designing around verikt moved its integration tests into
+`cmd/` and wrote a stub collector specifically to avoid an import that verikt
+would never have flagged — design work paid for an unenforced rule. An
+enforcement gap the user cannot see is one they will build around, at their own
+cost, and be right to resent when they discover it.
+

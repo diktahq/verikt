@@ -25,6 +25,15 @@ project's code.
   import, a query-executing call, or a literal written as SQL conventionally is
   — upper-case keywords in statement order. `"SELECT * FROM orders WHERE id="`
   is a query; `"select the rows from "` is a sentence.
+- **`nil_map_write` no longer fires when the map's address is taken.**
+  `json.Unmarshal(data, &cfg)` allocates the map, so the write that follows is
+  safe — it was reported at error severity, and the suggested remedy would have
+  been a redundant `make()`.
+- **`sql_concatenation` judges the expression, not the file.** The evidence check
+  was file-scoped, so one genuine query literal held as data made every unrelated
+  concatenation in that file suspect: an audit tool reported
+  `id + ": absent from canonical inventory"` as SQL injection. Findings across the
+  corpus fell from 17 to 2, and both survivors are in a real database file.
 - **Nested modules are no longer analysed as part of the parent.** A directory
   with its own `go.mod` is a different project, and its packages belong to that
   module's import path — but the walk went through the boundary and reported
@@ -35,6 +44,15 @@ project's code.
 
 ### Added
 
+- **Generated files are not analysed.** A file carrying Go's
+  `// Code generated ... DO NOT EDIT.` marker before its package clause is
+  skipped, as every Go analysis tool does. Across seven real repositories, 61% of
+  all findings — 76 of 126 — were in generated code, almost all mockery mocks,
+  and regenerating restores every one of them.
+- **`scripts/corpus-audit.sh`** runs the detectors across real repositories and
+  reports every finding with the line that produced it, flagging any detector
+  whose findings cluster in one directory. Repositories are copied and the copy
+  analysed; the originals are never written to (ADR-012).
 - **`verikt false-positive`** produces a bug report for a finding that should not
   have fired, including the code it fired on. A false positive is a defect, not
   something to waive: waiving hides it for you and leaves it for everyone with
