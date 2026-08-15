@@ -2,7 +2,7 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.2.0] — 2026-08-14
+## [0.2.0] — 2026-08-15
 
 Fixes an external audit of 0.1.0 (8 findings, all reproduced) and the parity gaps that
 surfaced while fixing them — cases where the Go and Rust implementations disagreed and
@@ -34,6 +34,19 @@ pass or newly fail without any change to your code:
   reporting it as a pass hid broken rules. A rule that ran across its scope and found
   nothing is passing — that case was briefly reported as stale during development and is
   covered by a Go/Rust parity test.
+- **A path verikt cannot read now fails the check.** Unreadable directories and source
+  files are reported as `unreadable_path` at error severity: the tool cannot vouch for what
+  it did not read, and reporting nothing was indistinguishable from reading it and finding
+  nothing. If a path in your tree is legitimately unreadable, waive it with a reason in
+  `severity_overrides`, or exclude it with `check.exclude`.
+- **A failing engine no longer falls back to the Go grep implementation** for proxy rules.
+  Where the engine is present but errors, `verikt check` now fails instead of quietly
+  producing findings from a second implementation. Where no engine exists for your platform
+  at all, the Go implementation still runs and the output says so.
+- **`max_lines` counts differently, so which functions are flagged changes.** A function
+  with exactly `max_lines` lines in its body was previously reported as one line over and
+  failed; it now passes. Expect slightly *fewer* function-length findings, and if you
+  ratchet a debt count, re-measure before comparing.
 
 Three need a config or tooling change:
 
