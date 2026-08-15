@@ -119,7 +119,19 @@ func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient Anti
 		ComponentsTotal: len(cfg.Components),
 	}
 
+	// Required clients are checked before the language branch. TypeScript used to
+	// return above this point, so a TypeScript project with every client nil got a
+	// clean result — and TypeScript dependency analysis is engine-only, so nothing
+	// checked its imports at all. That is the failure ErrEngineRequired exists to
+	// prevent, reached by taking the other branch.
+	//
+	// The requirement differs by language: TypeScript uses only the dependency
+	// client, and demanding the Go-only ones would fail a check that could run
+	// correctly.
 	if cfg.Language == "typescript" {
+		if depClient == nil {
+			return nil, ErrEngineRequired
+		}
 		return checkTypeScript(cfg, projectPath, result, apClient, depClient, metricClient)
 	}
 
@@ -149,13 +161,11 @@ func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *Check
 	// language where the engine is optional, and therefore the one place
 	// ErrEngineRequired does not already cover.
 	var depErr error
-	if depClient != nil {
-		violations, err := depClient.CheckDependencies(projectPath, cfg.Components)
-		if err != nil {
-			depErr = fmt.Errorf("dependency check: %w", err)
-		} else {
-			result.DependencyViolations = append(result.DependencyViolations, violations...)
-		}
+	violations, err := depClient.CheckDependencies(projectPath, cfg.Components)
+	if err != nil {
+		depErr = fmt.Errorf("dependency check: %w", err)
+	} else {
+		result.DependencyViolations = append(result.DependencyViolations, violations...)
 	}
 
 	applyExcludes(result, cfg.Check.Exclude)

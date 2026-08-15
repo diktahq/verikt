@@ -326,11 +326,14 @@ func findEngineBinary(t *testing.T) string {
 		t.Skip("engine binary not found and cargo is not installed — run `mise run build-engine`")
 	}
 
+	// A build that *fails* is not the same as a toolchain that is absent. Skipping
+	// here hid a broken engine — the required implementation — behind a green test
+	// run, which is the failure this package spends its time preventing elsewhere.
 	t.Log("Engine binary not found, building...")
 	cmd := exec.Command("cargo", "build") //nolint:noctx
 	cmd.Dir = filepath.Join(repoRoot, "engine")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("engine binary not available and cargo build failed: %v\n%s", err, out)
+		t.Fatalf("cargo is installed but building the engine failed: %v\n%s", err, out)
 	}
 
 	return debugPath

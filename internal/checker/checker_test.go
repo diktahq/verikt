@@ -264,7 +264,9 @@ func TestCheckTypeScript_StructureChecks(t *testing.T) {
 		},
 	}
 
-	result, err := CheckWithEngine(cfg, dir, nil, nil, nil)
+	// TypeScript requires the dependency client — a check with no engine has
+	// verified nothing. The Go-only clients stay nil: TypeScript ignores them.
+	result, err := CheckWithEngine(cfg, dir, nil, dependencyClientReturning(nil), nil)
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
@@ -304,7 +306,9 @@ func TestCheckTypeScript_SkipsGoPackages(t *testing.T) {
 		},
 	}
 
-	result, err := CheckWithEngine(cfg, dir, nil, nil, nil)
+	// TypeScript requires the dependency client — a check with no engine has
+	// verified nothing. The Go-only clients stay nil: TypeScript ignores them.
+	result, err := CheckWithEngine(cfg, dir, nil, dependencyClientReturning(nil), nil)
 	if err != nil {
 		t.Fatalf("Check() must not error for TypeScript project: %v", err)
 	}
