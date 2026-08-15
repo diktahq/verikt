@@ -3,6 +3,64 @@ title: Changelog
 description: What shipped in each verikt release — features, fixes, and breaking changes.
 ---
 
+## v0.2.0 — 2026-08-15
+
+Fixes an external audit of 0.1.0 and the parity gaps found while fixing it — cases where two
+implementations of the same check disagreed and nothing detected it. **Read the breaking
+changes before upgrading:** a pipeline can newly pass or newly fail without any change to
+your code.
+
+### Breaking
+
+**`verikt check` requires the embedded engine for Go projects.** The Go duplicates of the
+engine's analysis are deleted. Released binaries embed the engine, so this affects builds
+from source that skipped the engine build.
+
+**Only error severity fails the check.** Warnings no longer do. Gate on `.result` in the
+JSON output rather than selecting on severity across `violations[]` and `anti_patterns[]` —
+those two arrays hold detector findings only, so a gate built from them misses proxy-rule
+violations, stale rules and decision gates:
+
+```bash
+verikt check --output json > verikt.json
+jq -e '.result == "pass"' verikt.json
+```
+
+**Error-severity anti-patterns fail again**, including `sql_concatenation` and
+`swallowed_error`. They were silently downgraded to warnings whenever the embedded engine
+resolved. Fix them, or waive them with a required reason — `severity_overrides` now covers
+anti-patterns, and waived findings stay visible in a `WAIVED` section without affecting the
+exit code.
+
+**A path verikt cannot read fails the check**, reported as `unreadable_path`. The tool
+cannot vouch for what it did not read.
+
+**`anti_patterns[]` uses lowercase JSON keys**, and the document carries `schema_version: 2`.
+`violations[]`, `anti_patterns[]` and `waived[]` are always present and always arrays.
+
+### Fixed
+
+`--diff <ref>` reported nothing at all — the ref was read as a pathspec, so every finding
+was filtered away and the check passed unconditionally. `--staged` now filters detector
+findings, not just proxy rules.
+
+Proxy rules ran against nothing under the default `--path .`. A rule that swept its scope
+and found nothing is no longer reported as stale. `check.exclude` matches whole path
+segments instead of substrings, so excluding `gen/**` no longer silences findings in
+`internal/agent/`. Glob patterns with `**` anywhere in them work, and rule scopes and
+`verikt.yaml` share one matcher.
+
+Test files no longer produce dependency violations in TypeScript, symlinks are skipped
+everywhere, `testdata/` is excluded, and the engine no longer reports findings against its
+own fixtures.
+
+The `platform` capability's config layer reads the environment: defaults, then the YAML
+file, then environment variables. Credentials have no YAML key at all, so a secret written
+into the committed config file is refused rather than quietly accepted.
+
+Full detail, including every finding and the reasoning behind each fix, is in
+[CHANGELOG.md](https://github.com/diktahq/verikt/blob/main/CHANGELOG.md).
+
 ## v0.1.0 — 2026-03-23
 
 First public release of verikt. Previously developed as "archway" — renamed to verikt as part of the dikta platform.
