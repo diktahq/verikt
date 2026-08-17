@@ -33,7 +33,10 @@ func TestCheckMergesEveryModuleSummary(t *testing.T) {
 		[]byte("module example.com/app\n"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "a"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "internal", "a", "a.go"),
-		[]byte("package a\n\nvar Global = map[string]int{}\n\nvar _ = Sprintf\n"), 0o644))
+		// The write is what makes Global mutable state rather than a lookup
+		// table, and it is what makes the anti-pattern module emit a finding —
+		// this test needs two modules to report, not one.
+		[]byte("package a\n\nvar Global = map[string]int{}\n\nfunc Put(k string, v int) { Global[k] = v }\n\nvar _ = Sprintf\n"), 0o644))
 
 	enginePath, err := EnginePath()
 	require.NoError(t, err)

@@ -226,16 +226,33 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 // source directory matches. The architecture shape is not implemented.
 func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Violation {
 	var violations []Violation
-	for i, covered := range componentCoverage(cfg, projectPath) {
-		if covered {
+	for i, state := range componentCoverage(cfg, projectPath) {
+		if state == componentCovered {
 			continue
 		}
 		comp := cfg.Components[i]
+
+		// A declared component whose directory does not exist is config drift:
+		// the shape is not implemented, and error severity is earned.
+		//
+		// A directory that exists but holds no source in this language is a
+		// different claim, and reporting it at error severity failed the build
+		// on a repository whose "web" component is a Vite frontend — accurate
+		// documentation of real structure, with no remedy available but to
+		// delete it and make the config less true. Warning says what verikt
+		// found without demanding the user degrade their own config (INV-005).
+		message := fmt.Sprintf("component %q declared in verikt.yaml but no directory matches %v", comp.Name, comp.In)
+		severity := "error"
+		if state == componentNoSource {
+			message = fmt.Sprintf("component %q matches a directory but holds no %s source — verikt cannot enforce rules for it", comp.Name, cfg.Language)
+			severity = "warning"
+		}
+
 		violations = append(violations, Violation{
 			Category: "architecture",
-			Message:  fmt.Sprintf("component %q declared in verikt.yaml but no source files found in %v", comp.Name, comp.In),
+			Message:  message,
 			Rule:     "missing_component",
-			Severity: "error",
+			Severity: severity,
 		})
 	}
 	return violations
@@ -261,6 +278,16 @@ func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Vio
 // on four repositories, where it failed the build with a finding whose only
 // remedy was to write a less expressive config.
 func sourceDirs(cfg *config.VeriktConfig, projectPath string) []string {
+	dirs, _ := scanDirs(cfg, projectPath)
+	return dirs
+}
+
+// scanDirs walks the project once and returns the directories holding source for
+// the project's language, and every directory it visited.
+//
+// Both are needed to tell a component that is absent from one that is present in
+// another language. See componentCoverage.
+func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []string) {
 	exts := sourceExtensions(cfg.Language)
 
 	var dirs []string
@@ -315,6 +342,7 @@ func sourceDirs(cfg *config.VeriktConfig, projectPath string) []string {
 		if err != nil {
 			return nil // reported by detectUnreadablePaths
 		}
+		all = append(all, relSlash)
 		for _, e := range entries {
 			if e.IsDir() || isTestSourceFile(e.Name()) {
 				continue
@@ -330,9 +358,9 @@ func sourceDirs(cfg *config.VeriktConfig, projectPath string) []string {
 		// Per-entry errors are skipped inside the callback, so reaching here means
 		// the walk itself failed. detectUnreadablePaths reports it; what was
 		// gathered so far is still returned rather than discarded.
-		return dirs
+		return dirs, all
 	}
-	return dirs
+	return dirs, all
 }
 
 // sourceExtensions returns the file extensions that count as source for a
@@ -369,19 +397,43 @@ func hasAnySuffix(name string, suffixes []string) bool {
 // It matches with graph.MatchesComponent — the same matcher orphan detection
 // uses — so a component that claims a package can never simultaneously be
 // reported as claiming nothing.
-func componentCoverage(cfg *config.VeriktConfig, projectPath string) []bool {
-	dirs := sourceDirs(cfg, projectPath)
-	covered := make([]bool, len(cfg.Components))
+func componentCoverage(cfg *config.VeriktConfig, projectPath string) []componentState {
+	source, all := scanDirs(cfg, projectPath)
+
+	states := make([]componentState, len(cfg.Components))
 	for i, comp := range cfg.Components {
-		for _, dir := range dirs {
+		states[i] = componentAbsent
+		for _, dir := range all {
 			if graph.MatchesComponent(dir, comp) {
-				covered[i] = true
+				states[i] = componentNoSource
+				break
+			}
+		}
+		for _, dir := range source {
+			if graph.MatchesComponent(dir, comp) {
+				states[i] = componentCovered
 				break
 			}
 		}
 	}
-	return covered
+	return states
 }
+
+// componentState is how much of a declared component the checker can find.
+type componentState int
+
+const (
+	// componentAbsent: no directory matches the component at all. The
+	// declaration names something that is not there.
+	componentAbsent componentState = iota
+	// componentNoSource: the directory is there, but holds no source in the
+	// project's language. A Go project with a TypeScript frontend under web/
+	// looks exactly like this, and the declaration is accurate — it is verikt
+	// that cannot enforce anything for it.
+	componentNoSource
+	// componentCovered: source found.
+	componentCovered
+)
 
 // detectOrphanPackagesFS reports packages no declared component claims, using
 // the filesystem rather than go/packages (the engine-only path).
@@ -598,8 +650,8 @@ func isExcluded(relPath string, excludes []string) bool {
 // directory matches.
 func countCoveredComponents(cfg *config.VeriktConfig, projectPath string) int {
 	count := 0
-	for _, covered := range componentCoverage(cfg, projectPath) {
-		if covered {
+	for _, state := range componentCoverage(cfg, projectPath) {
+		if state == componentCovered {
 			count++
 		}
 	}

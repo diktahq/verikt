@@ -72,7 +72,41 @@ func TestComponentMatchingNoSourceDirectoryIsReported(t *testing.T) {
 	violations := detectMissingComponents(cfg, root)
 	require.Len(t, violations, 1)
 	require.Equal(t, "missing_component", violations[0].Rule)
+	require.Equal(t, "error", violations[0].Severity,
+		"no directory matches the component at all — the shape is not implemented")
 	require.Equal(t, 0, countCoveredComponents(cfg, root))
+}
+
+// A Go project with a TypeScript frontend under web/ declares a "web" component
+// that is accurate: the directory is there, it simply holds no Go. Reported at
+// error severity this failed the build on a corpus repository, and the only
+// remedy was to delete a component that documents real structure — so the
+// finding demanded the config be made less true (INV-005).
+func TestComponentWithADirectoryButNoSourceIsAWarning(t *testing.T) {
+	root := projectWithPackages(t, "internal/domain")
+
+	web := filepath.Join(root, "web", "src")
+	require.NoError(t, os.MkdirAll(web, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(web, "main.ts"),
+		[]byte("export const x = 1\n"), 0o644))
+
+	cfg := &config.VeriktConfig{
+		Language: "go",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"internal/domain/**"}},
+			{Name: "web", In: []string{"web/**"}},
+		},
+	}
+
+	violations := detectMissingComponents(cfg, root)
+	require.Len(t, violations, 1)
+	require.Contains(t, violations[0].Message, `"web"`,
+		"the domain component has Go source, so web is the only one reported")
+	require.Equal(t, "warning", violations[0].Severity,
+		"the directory exists and the declaration is accurate; verikt just cannot enforce Go rules for it")
+	require.Contains(t, violations[0].Message, "holds no go source")
+	require.Equal(t, 1, countCoveredComponents(cfg, root),
+		"only the component with Go source counts as covered")
 }
 
 // The defect was not that one matcher was wrong, but that two disagreed: the

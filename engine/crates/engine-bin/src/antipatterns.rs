@@ -50,6 +50,15 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
     // Cross-package state for the layering detectors, which cannot be decided
     // from a single file: package → its direct imports, and every package seen.
     let mut pkg_imports: HashMap<String, Vec<String>> = HashMap::new();
+    // global_mutable_state is decided after every file has been read. A `var`
+    // holding a composite literal is only mutable state if something writes to
+    // it, and the write is routinely in another file — a sibling in the same
+    // package, or an importing package assigning through a selector. Deciding
+    // per file made the exported case undecidable, so it was reported
+    // unconditionally: across six real repositories that produced five findings
+    // and five were static lookup tables (INV-005).
+    let mut global_candidates: Vec<GlobalCandidate> = Vec::new();
+    let mut mutations = MutationIndex::default();
 
     for file_path in &go_files {
         let content = match fs::read_to_string(file_path) {
@@ -80,7 +89,10 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
         };
         let root = tree.root_node();
 
-        all_findings.extend(detect_global_mutable_state(root, source, &rel_file));
+        global_candidates.extend(collect_global_mutable_candidates(
+            root, source, &rel_file, &pkg_path,
+        ));
+        collect_mutation_targets(root, source, &pkg_path, &mut mutations);
         all_findings.extend(detect_init_abuse(root, source, &rel_file));
         all_findings.extend(detect_naked_goroutines(root, source, &rel_file));
         all_findings.extend(detect_swallowed_errors(root, source, &rel_file));
@@ -113,6 +125,28 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
     let mut packages: Vec<String> = pkg_imports.keys().cloned().collect();
     packages.sort();
     all_findings.extend(detect_mvc_in_hexagonal(&packages));
+
+    // global_mutable_state (post-pass: needs every write in the project).
+    //
+    // Go has no const map or const slice, so `var x = map[K]V{...}` is the only
+    // way to express a lookup table. Reporting one names a construct the
+    // language requires, and prescribing dependency injection for static data
+    // makes the code worse. Evidence of a write is what separates state from a
+    // table, so that is what this waits for.
+    for candidate in &global_candidates {
+        if !candidate.mutated_in_own_file && !mutations.mutates(&candidate.pkg, &candidate.name) {
+            continue;
+        }
+        all_findings.push(DetFinding {
+            detector: "global_mutable_state",
+            file: candidate.file.clone(),
+            line: candidate.line,
+            message: format!(
+                "global mutable variable {:?} — use dependency injection instead",
+                candidate.name
+            ),
+        });
+    }
 
     // god_package findings (cross-file, per directory).
     for (dir, count) in &pkg_exports {
@@ -213,8 +247,44 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
 
 /// Detect package-level mutable variables (maps, slices, channels, pointers,
 /// composite literals, make() calls). Skips error sentinels and blank identifiers.
-fn detect_global_mutable_state<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
-    let mut findings = Vec::new();
+/// A package-level `var` that holds mutable state, pending evidence that
+/// anything actually writes to it.
+struct GlobalCandidate {
+    name: String,
+    file: String,
+    line: u32,
+    pkg: String,
+    mutated_in_own_file: bool,
+}
+
+/// Every write the project performs, indexed two ways.
+///
+/// `qualified` holds (package, name) for writes through a bare identifier, which
+/// is how a package mutates its own variable. `by_field` holds just the name for
+/// writes through a selector — `cfg.Registry[k] = v` from an importing package —
+/// because the alias in front of the dot says nothing about which package it
+/// resolves to without full type resolution.
+#[derive(Default)]
+struct MutationIndex {
+    qualified: std::collections::HashSet<(String, String)>,
+    by_field: std::collections::HashSet<String>,
+}
+
+impl MutationIndex {
+    fn mutates(&self, pkg: &str, name: &str) -> bool {
+        self.qualified
+            .contains(&(pkg.to_string(), name.to_string()))
+            || self.by_field.contains(name)
+    }
+}
+
+fn collect_global_mutable_candidates<'a>(
+    root: Node<'a>,
+    source: &[u8],
+    file: &str,
+    pkg: &str,
+) -> Vec<GlobalCandidate> {
+    let mut candidates = Vec::new();
 
     for i in 0..root.named_child_count() {
         let node = match root.named_child(i) {
@@ -270,36 +340,87 @@ fn detect_global_mutable_state<'a>(root: Node<'a>, source: &[u8], file: &str) ->
                     if name == "_" || name.starts_with("Err") || name.starts_with("err") {
                         continue;
                     }
-                    // An unexported table nothing writes to is not mutable state.
-                    //
-                    // Go has no const map or const slice, so `var x = map[K]V{...}`
-                    // is the only way to express a lookup table. Reporting it names
-                    // a construct the language requires and prescribes dependency
-                    // injection, which makes a static table worse. On this
-                    // repository the check fired 22 times and 21 were tables
-                    // nothing ever wrote to.
-                    //
-                    // Exported is different: another package can write to it and
-                    // this analysis sees one file, so absence of mutation here is
-                    // no evidence. Reported regardless.
-                    if !is_exported(&name) && !is_mutated_in_file(root, source, &name) {
-                        continue;
-                    }
-                    findings.push(DetFinding {
-                        detector: "global_mutable_state",
+                    candidates.push(GlobalCandidate {
+                        mutated_in_own_file: is_mutated_in_file(root, source, &name),
+                        name,
                         file: file.to_string(),
                         line,
-                        message: format!(
-                            "global mutable variable {:?} — use dependency injection instead",
-                            name
-                        ),
+                        pkg: pkg.to_string(),
                     });
                 }
             }
         }
     }
 
-    findings
+    candidates
+}
+
+/// Record every package-level write in this file into the project-wide index.
+fn collect_mutation_targets(root: Node, source: &[u8], pkg: &str, index: &mut MutationIndex) {
+    let mut record = |target: Node, source: &[u8]| match target.kind() {
+        // registry = ...
+        "identifier" => {
+            index
+                .qualified
+                .insert((pkg.to_string(), node_text(target, source).to_string()));
+        }
+        // registry[k] = ...  /  cfg.Registry[k] = ...
+        "index_expression" => {
+            if let Some(operand) = target.child_by_field_name("operand") {
+                match operand.kind() {
+                    "identifier" => {
+                        index
+                            .qualified
+                            .insert((pkg.to_string(), node_text(operand, source).to_string()));
+                    }
+                    "selector_expression" => {
+                        if let Some(field) = operand.child_by_field_name("field") {
+                            index.by_field.insert(node_text(field, source).to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // cfg.Registry = ...
+        "selector_expression" => {
+            if let Some(field) = target.child_by_field_name("field") {
+                index.by_field.insert(node_text(field, source).to_string());
+            }
+        }
+        _ => {}
+    };
+
+    let mut assignments: Vec<Node> = Vec::new();
+    collect_nodes(root, "assignment_statement", &mut assignments);
+    for node in &assignments {
+        let Some(left) = node.child_by_field_name("left") else {
+            continue;
+        };
+        for i in 0..left.named_child_count() {
+            if let Some(target) = left.named_child(i) {
+                record(target, source);
+            }
+        }
+    }
+
+    // delete(registry, k) — and delete(cfg.Registry, k).
+    let mut calls: Vec<Node> = Vec::new();
+    collect_nodes(root, "call_expression", &mut calls);
+    for call in &calls {
+        let is_delete = call
+            .child_by_field_name("function")
+            .map(|f| node_text(f, source) == "delete")
+            .unwrap_or(false);
+        if !is_delete {
+            continue;
+        }
+        if let Some(args) = call.child_by_field_name("arguments")
+            && let Some(first) = args.named_child(0)
+        {
+            record(first, source);
+        }
+    }
 }
 
 /// True if the file writes to `name` anywhere after its declaration.
@@ -1126,6 +1247,73 @@ fn detect_sql_concatenation<'a>(root: Node<'a>, source: &[u8], file: &str) -> Ve
     findings
 }
 
+/// True if `call`'s result is bound to something that names a row identity.
+///
+/// Walks out to the first binding context and decides there, rather than
+/// scanning for things to exclude: a value composed into a larger expression or
+/// passed as an argument is not a key, and stopping at the binding is what keeps
+/// `fmt.Sprintf("%s/%s", dir, uuid.New())` from being read as one.
+fn uuid_is_bound_to_identity(call: Node, source: &[u8]) -> bool {
+    let mut node = call;
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            // ID: uuid.New() — a keyed field in a struct literal.
+            "keyed_element" => {
+                return parent
+                    .named_child(0)
+                    .is_some_and(|key| names_a_row_identity(node_text(key, source)));
+            }
+            // userID := uuid.New() / u.ID = uuid.New()
+            "short_var_declaration" | "assignment_statement" => {
+                let Some(left) = parent.child_by_field_name("left") else {
+                    return false;
+                };
+                for i in 0..left.named_child_count() {
+                    let Some(target) = left.named_child(i) else {
+                        continue;
+                    };
+                    let text = node_text(target, source);
+                    // u.ID -> ID: the field carries the meaning, not the receiver.
+                    let tail = text.rsplit('.').next().unwrap_or(text);
+                    if names_a_row_identity(tail) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            // An argument, or an operand of a wider expression: this is composing
+            // a value — a path, a file name, a log line — not keying a row.
+            "argument_list" | "binary_expression" => return false,
+            // Reached the top without a binding.
+            "function_declaration" | "method_declaration" | "source_file" => return false,
+            _ => node = parent,
+        }
+    }
+    false
+}
+
+/// True if an identifier names a database row identity.
+///
+/// Request, trace, correlation and span IDs are identifiers too, and UUIDv4 is
+/// the right choice for them: they are not indexed primary keys, so the
+/// fragmentation this detector warns about does not apply.
+fn names_a_row_identity(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    for transient in [
+        "request",
+        "trace",
+        "correlation",
+        "span",
+        "session",
+        "idempotency",
+    ] {
+        if lower.contains(transient) {
+            return false;
+        }
+    }
+    lower == "id" || lower.ends_with("id") || lower.ends_with("uuid") || lower.ends_with("key")
+}
+
 /// Detect `uuid.New()` / `uuid.NewString()` — suggests UUIDv7 for DB primary keys.
 fn detect_uuid_v4_as_key<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
     // UUIDv4 is fine for request IDs.
@@ -1144,6 +1332,16 @@ fn detect_uuid_v4_as_key<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<D
             .map(|f| node_text(f, source))
             .unwrap_or("");
         if fn_text == "uuid.New" || fn_text == "uuid.NewString" {
+            // The detector is named "as_key" and never established the value was
+            // one. Every `uuid.New()` was reported, including the two ways a UUID
+            // is routinely used as a *name*: composing a storage path with
+            // fmt.Sprintf, and building a filename by concatenation. Index
+            // fragmentation is the risk being named, and it is only reachable if
+            // the value reaches a key (INV-005). Corpus: 7 findings, 5 bound to
+            // an ID field and 2 building file names.
+            if !uuid_is_bound_to_identity(call, source) {
+                continue;
+            }
             findings.push(DetFinding {
                 detector: "uuid_v4_as_key",
                 file: file.to_string(),
@@ -1610,56 +1808,244 @@ mod tests {
         }
     }
 
+    /// Run the two-pass exactly as the driver does: collect candidates and every
+    /// write across all files, then gate one against the other.
+    ///
+    /// Files are given as (package, path, source) so the cross-package cases are
+    /// expressible — which is the whole point, since the write that proves a
+    /// table is state is usually not in the file that declares it.
+    /// (package, path, source) for one file in a multi-file case.
+    type SourceFile<'a> = (&'a str, &'a str, &'a str);
+    /// (case name, files, expected "file:name" findings).
+    type GlobalCase<'a> = (&'a str, Vec<SourceFile<'a>>, Vec<&'a str>);
+
+    fn global_mutable_findings(files: &[SourceFile<'_>]) -> Vec<String> {
+        let mut candidates: Vec<GlobalCandidate> = Vec::new();
+        let mut mutations = MutationIndex::default();
+
+        let trees: Vec<_> = files.iter().map(|(_, _, src)| parse(src)).collect();
+        for ((pkg, path, src), tree) in files.iter().zip(&trees) {
+            let bytes = src.as_bytes();
+            candidates.extend(collect_global_mutable_candidates(
+                tree.root_node(),
+                bytes,
+                path,
+                pkg,
+            ));
+            collect_mutation_targets(tree.root_node(), bytes, pkg, &mut mutations);
+        }
+
+        candidates
+            .iter()
+            .filter(|c| c.mutated_in_own_file || mutations.mutates(&c.pkg, &c.name))
+            .map(|c| format!("{}:{}", c.file, c.name))
+            .collect()
+    }
+
+    /// A `var` holding a composite literal is a lookup table until something
+    /// writes to it. Go has no const map or const slice, so the declaration is
+    /// forced on the author, and "use dependency injection" is bad advice for
+    /// static data (INV-005).
+    ///
+    /// Exportedness used to stand in for the write. That made every exported
+    /// table a finding: across six real repositories the detector produced five
+    /// and all five were static tables — DDDSectionOrder, BookRegistry,
+    /// PreservedCanarySemantics, KnownDetectors, AllPassageTypes. The evidence
+    /// the detector actually needs is a write, and a write is usually in another
+    /// file, which is why deciding this per file could not work.
     #[test]
-    fn global_mutable_state_ignores_unmutated_unexported_tables() {
-        let cases: Vec<(&str, &str, usize)> = vec![
+    fn global_mutable_state_requires_evidence_of_a_write() {
+        let cases: Vec<GlobalCase<'_>> = vec![
             (
                 "unexported table, never written",
-                "package p\n\nvar lookup = map[string]string{\"a\": \"b\"}\n\nfunc Get(k string) string { return lookup[k] }\n",
+                vec![(
+                    "p",
+                    "p.go",
+                    "package p\n\nvar lookup = map[string]string{\"a\": \"b\"}\n\nfunc Get(k string) string { return lookup[k] }\n",
+                )],
+                vec![],
+            ),
+            (
+                "exported table, never written anywhere",
+                vec![(
+                    "p",
+                    "p.go",
+                    "package p\n\nvar Lookup = map[string]string{\"a\": \"b\"}\n",
+                )],
+                vec![],
+            ),
+            (
+                "exported slice, never written anywhere",
+                vec![("p", "p.go", "package p\n\nvar Order = []string{\"a\"}\n")],
+                vec![],
+            ),
+            (
+                "unexported, index-assigned in the same file",
+                vec![(
+                    "p",
+                    "p.go",
+                    "package p\n\nvar cache = map[string]int{}\n\nfunc Put(k string, v int) { cache[k] = v }\n",
+                )],
+                vec!["p.go:cache"],
+            ),
+            (
+                "unexported, reassigned",
+                vec![(
+                    "p",
+                    "p.go",
+                    "package p\n\nvar cache = map[string]int{}\n\nfunc Reset() { cache = map[string]int{} }\n",
+                )],
+                vec!["p.go:cache"],
+            ),
+            (
+                "unexported, deleted from",
+                vec![(
+                    "p",
+                    "p.go",
+                    "package p\n\nvar cache = map[string]int{}\n\nfunc Drop(k string) { delete(cache, k) }\n",
+                )],
+                vec!["p.go:cache"],
+            ),
+            (
+                "unexported, appended to",
+                vec![(
+                    "p",
+                    "p.go",
+                    "package p\n\nvar items = []string{}\n\nfunc Add(s string) { items = append(items, s) }\n",
+                )],
+                vec!["p.go:items"],
+            ),
+            (
+                "exported, written by a sibling file in the same package",
+                vec![
+                    (
+                        "p",
+                        "decl.go",
+                        "package p\n\nvar Registry = map[string]int{}\n",
+                    ),
+                    (
+                        "p",
+                        "write.go",
+                        "package p\n\nfunc Put(k string, v int) { Registry[k] = v }\n",
+                    ),
+                ],
+                vec!["decl.go:Registry"],
+            ),
+            (
+                "exported, written by an importing package through a selector",
+                vec![
+                    (
+                        "p",
+                        "decl.go",
+                        "package p\n\nvar Registry = map[string]int{}\n",
+                    ),
+                    (
+                        "q",
+                        "use.go",
+                        "package q\n\nfunc Put(k string, v int) { p.Registry[k] = v }\n",
+                    ),
+                ],
+                vec!["decl.go:Registry"],
+            ),
+            (
+                "exported, reassigned wholesale by an importing package",
+                vec![
+                    (
+                        "p",
+                        "decl.go",
+                        "package p\n\nvar Config = map[string]string{}\n",
+                    ),
+                    (
+                        "q",
+                        "use.go",
+                        "package q\n\nfunc Init() { p.Config = map[string]string{\"a\": \"b\"} }\n",
+                    ),
+                ],
+                vec!["decl.go:Config"],
+            ),
+            (
+                "a same-named write in an unrelated package is not evidence",
+                vec![
+                    ("p", "decl.go", "package p\n\nvar Order = []string{\"a\"}\n"),
+                    (
+                        "q",
+                        "other.go",
+                        "package q\n\nvar Order = []string{}\n\nfunc Add(s string) { Order = append(Order, s) }\n",
+                    ),
+                ],
+                vec!["other.go:Order"],
+            ),
+        ];
+
+        for (name, files, want) in cases {
+            let mut got = global_mutable_findings(&files);
+            got.sort();
+            let mut want: Vec<String> = want.iter().map(|s| s.to_string()).collect();
+            want.sort();
+            assert_eq!(got, want, "{name}");
+        }
+    }
+
+    /// UUIDv4 fragments a B-tree index, so the risk is real — but only where the
+    /// value becomes a key. Every `uuid.New()` used to be reported, which caught
+    /// the two ways a UUID is legitimately used as a *name*: an object storage
+    /// path built with fmt.Sprintf, and a filename built by concatenation. Both
+    /// appeared in one corpus repository (INV-005).
+    #[test]
+    fn uuid_v4_reported_only_where_it_becomes_a_key() {
+        let cases: Vec<(&str, &str, usize)> = vec![
+            (
+                "struct literal ID field",
+                "package p\n\nfunc New() *User {\n\treturn &User{ID: uuid.New(), Email: \"a\"}\n}\n",
+                1,
+            ),
+            (
+                "assigned to an ID-suffixed variable",
+                "package p\n\nfunc h() {\n\tuserID := uuid.New()\n\t_ = userID\n}\n",
+                1,
+            ),
+            (
+                "assigned to a struct field named ID",
+                "package p\n\nfunc h(u *User) {\n\tu.ID = uuid.New()\n}\n",
+                1,
+            ),
+            (
+                "object storage path built with Sprintf",
+                "package p\n\nfunc up() {\n\tobjectPath := fmt.Sprintf(\"%s/%s%s\", dir, uuid.New().String(), ext)\n\t_ = objectPath\n}\n",
                 0,
             ),
             (
-                "unexported slice, never written",
-                "package p\n\nvar order = []string{\"a\"}\n\nfunc All() []string { return order }\n",
+                "filename built by concatenation",
+                "package p\n\nfunc up() {\n\tfilename := uuid.New().String() + ext\n\t_ = filename\n}\n",
                 0,
             ),
             (
-                "exported table",
-                "package p\n\nvar Lookup = map[string]string{\"a\": \"b\"}\n",
-                1,
+                "passed straight to a function",
+                "package p\n\nfunc h() {\n\tlog.Println(uuid.New())\n}\n",
+                0,
             ),
             (
-                "exported slice",
-                "package p\n\nvar Order = []string{\"a\"}\n",
-                1,
+                "a request ID is not a row key",
+                "package p\n\nfunc h() {\n\trequestID := uuid.New()\n\t_ = requestID\n}\n",
+                0,
             ),
             (
-                "unexported but index-assigned",
-                "package p\n\nvar cache = map[string]int{}\n\nfunc Put(k string, v int) { cache[k] = v }\n",
-                1,
+                "a correlation ID is not a row key",
+                "package p\n\nfunc h() {\n\tcorrelationID := uuid.New()\n\t_ = correlationID\n}\n",
+                0,
             ),
             (
-                "unexported but reassigned",
-                "package p\n\nvar cache = map[string]int{}\n\nfunc Reset() { cache = map[string]int{} }\n",
-                1,
-            ),
-            (
-                "unexported but deleted from",
-                "package p\n\nvar cache = map[string]int{}\n\nfunc Drop(k string) { delete(cache, k) }\n",
-                1,
-            ),
-            (
-                "unexported but appended to",
-                "package p\n\nvar items = []string{}\n\nfunc Add(s string) { items = append(items, s) }\n",
+                "NewString bound to a key",
+                "package p\n\nfunc h() {\n\ttenantKey := uuid.NewString()\n\t_ = tenantKey\n}\n",
                 1,
             ),
         ];
 
         for (name, src, want) in cases {
             let tree = parse(src);
-            let findings = detect_global_mutable_state(tree.root_node(), src.as_bytes(), "test.go");
-            let msgs: Vec<&str> = findings.iter().map(|f| f.message.as_str()).collect();
-            assert_eq!(findings.len(), want, "{name}: got {msgs:?}\n{src}");
+            let findings = detect_uuid_v4_as_key(tree.root_node(), src.as_bytes(), "entity.go");
+            let lines: Vec<u32> = findings.iter().map(|f| f.line).collect();
+            assert_eq!(findings.len(), want, "{name}: lines {lines:?}\n{src}");
         }
     }
 

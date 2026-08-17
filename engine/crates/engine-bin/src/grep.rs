@@ -1,8 +1,8 @@
+use crate::globs::build_globset;
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
     engine_response::Payload, rule::Spec, rule_status::Status,
 };
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -185,19 +185,6 @@ fn compile_optional(pattern: &str) -> Option<Regex> {
         return None;
     }
     Regex::new(pattern).ok()
-}
-
-fn build_globset(patterns: &[String]) -> Option<GlobSet> {
-    if patterns.is_empty() {
-        return None;
-    }
-    let mut builder = GlobSetBuilder::new();
-    for p in patterns {
-        if let Ok(g) = Glob::new(p) {
-            builder.add(g);
-        }
-    }
-    builder.build().ok()
 }
 
 /// True if the entry is itself a symbolic link, without following it.
