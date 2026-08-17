@@ -1,0 +1,69 @@
+# Component and scope glob cases, shared by the Go matcher (internal/pathglob)
+# and the Rust one (engine build_globset). Both sides read this file, so a
+# divergence fails a test instead of being discovered on a user's repository.
+#
+# pathglob's doc comment has always claimed its semantics match "what globset
+# does on the Rust side". Nothing checked it. That is the same shape as the
+# defect where five Go matchers disagreed about `in: ["**"]` — one pattern
+# string, several implementations, agreement asserted only in prose.
+#
+# Format: <pattern> <TAB> <path> <TAB> match|no-match
+# Lines starting with # and blank lines are ignored.
+
+# The catch-all. globset matches "**" against any path; the Go side needed a
+# segment-wise walk to do the same, and one copy used path.Match, which treats
+# "*" as not crossing "/" and so matched nothing.
+**	main.go	match
+**	internal/domain/user.go	match
+**	a/b/c/d/e.go	match
+**	internal	match
+
+# dir/** covers the directory itself as well as everything under it. globset
+# alone does not — "src/domain/**" requires at least one further segment — which
+# is why build_globset also adds the bare pattern.
+internal/**	internal	match
+internal/**	internal/domain	match
+internal/**	internal/domain/user.go	match
+internal/**	cmd/main.go	no-match
+internal/**	other/internal/domain	no-match
+
+# A trailing slash names a directory.
+internal/	internal	match
+internal/	internal/domain	match
+internal/	cmd	no-match
+
+# A bare name with no metacharacters covers the tree below it, and must not
+# match a sibling that merely shares a prefix. `strings.Contains` was the
+# original implementation here: "domain" also claimed "subdomain".
+internal	internal	match
+internal	internal/domain	match
+internal	internalx	no-match
+internal	x/internal	no-match
+
+# Anchoring: a pattern matches from the start of the path. A pattern that
+# matched anywhere would silence findings the author never named.
+gen/**	gen/a.go	match
+gen/**	internal/gen/a.go	no-match
+**/gen/**	internal/gen/a.go	match
+**/gen/**	gen/a.go	match
+
+# Single-segment wildcards do not cross a separator.
+internal/*/store	internal/user/store	match
+internal/*/store	internal/store	no-match
+internal/*/store	internal/a/b/store	no-match
+*.go	main.go	match
+*.go	internal/main.go	no-match
+**/*.go	internal/main.go	match
+**/*.go	main.go	match
+
+# Deeper mixes of ** and named segments.
+**/adapter/**	internal/adapter	match
+**/adapter/**	internal/adapter/postgres/db.go	match
+**/adapter/**	internal/adapters/postgres	no-match
+cmd/**/main.go	cmd/api/main.go	match
+cmd/**/main.go	cmd/main.go	match
+cmd/**/main.go	internal/cmd/api/main.go	no-match
+
+# Single-character wildcard.
+v?/**	v1/handler.go	match
+v?/**	v10/handler.go	no-match

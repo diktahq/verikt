@@ -1,9 +1,10 @@
+use crate::globs::build_globset;
 use crate::pb::{
     self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
     engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use crate::typescript_imports;
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 use std::fs;
@@ -503,24 +504,6 @@ pub(crate) fn extract_module_root(project_path: &str) -> String {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default()
-}
-
-fn build_globset(patterns: &[String]) -> Option<GlobSet> {
-    if patterns.is_empty() {
-        return None;
-    }
-    let mut builder = GlobSetBuilder::new();
-    for p in patterns {
-        if let Ok(g) = Glob::new(p) {
-            builder.add(g);
-        }
-        if let Some(bare) = p.strip_suffix("/**")
-            && let Ok(g) = Glob::new(bare)
-        {
-            builder.add(g);
-        }
-    }
-    builder.build().ok()
 }
 
 // Keep petgraph in scope — used for future cycle detection.

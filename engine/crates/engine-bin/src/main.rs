@@ -2,6 +2,7 @@ mod pb {
     include!(concat!(env!("OUT_DIR"), "/engine.rs"));
 }
 mod antipatterns;
+mod globs;
 mod grep;
 mod import_graph;
 mod metrics;
