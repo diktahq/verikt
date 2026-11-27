@@ -99,7 +99,13 @@ func NewRouter(logger *slog.Logger, timeouts Timeouts, registerAPI func(chi.Rout
 	{{- else}}
 	r.Use(middleware.RequestID)
 	{{- end}}
-	r.Use(middleware.RealIP)
+	// No forwarding-header middleware: r.RemoteAddr stays the TCP peer, which a
+	// client cannot forge. chi's old RealIP rewrote it from X-Forwarded-For,
+	// X-Real-IP or True-Client-IP for any caller, so a spoofed header defeated
+	// per-IP rate limits and poisoned access logs. Behind a reverse proxy, add
+	// middleware.ClientIPFromXFF with your proxy's CIDR prefixes and read the
+	// result with middleware.GetClientIP; trust forwarding headers only from a
+	// proxy you name.
 	r.Use(otelhttp.NewMiddleware("{{.ServiceName}}"))
 	r.Use(NewRequestLogger(logger))
 	r.Use(SecurityHeaders)

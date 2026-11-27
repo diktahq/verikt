@@ -29,6 +29,11 @@ const (
 // ErrResponseTooLarge is returned when an upstream body exceeds the client's limit.
 var ErrResponseTooLarge = errors.New("upstream response exceeds size limit")
 
+// ErrInvalidPath is returned for a path that does not start with exactly one
+// "/". The path is appended to the base URL, so "@host/x" or "//host/x" would
+// change the host the request goes to.
+var ErrInvalidPath = errors.New("backend path must start with a single /")
+
 // StatusError reports a backend that answered with an HTTP error status. It
 // keeps the status code so callers can map it instead of parsing a string.
 type StatusError struct {
@@ -85,7 +90,14 @@ func WithTransport(rt http.RoundTripper) Option {
 func NewHTTPClient(baseURL string, opts ...Option) *HTTPClient {
 	c := &HTTPClient{
 		baseURL:          strings.TrimRight(baseURL, "/"),
-		client:           &http.Client{Timeout: DefaultTimeout, Transport: http.DefaultTransport},
+		client: &http.Client{
+			Timeout:   DefaultTimeout,
+			Transport: http.DefaultTransport,
+			// A redirect is returned to the caller as a StatusError, not
+			// followed: following it would send the request, and the caller's
+			// data, to whatever host the backend names.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 		maxResponseBytes: DefaultMaxResponseBytes,
 	}
 	for _, opt := range opts {
@@ -102,6 +114,9 @@ func NewHTTPClient(baseURL string, opts ...Option) *HTTPClient {
 // Call performs an HTTP request to the backend service. A response with no
 // body decodes to nil.
 func (c *HTTPClient) Call(ctx context.Context, method, path string, body any) (any, error) {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return nil, fmt.Errorf("call %s %q: %w", method, path, ErrInvalidPath)
+	}
 	url := c.baseURL + path
 
 	var bodyReader io.Reader
@@ -133,7 +148,8 @@ func (c *HTTPClient) Call(ctx context.Context, method, path string, body any) (a
 		_ = resp.Body.Close()
 	}()
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	// A 3xx is an error too: redirects are not followed (see NewHTTPClient).
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, &StatusError{Method: method, Path: path, StatusCode: resp.StatusCode}
 	}
 

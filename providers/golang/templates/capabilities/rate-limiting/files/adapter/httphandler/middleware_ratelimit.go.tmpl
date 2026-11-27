@@ -1,18 +1,27 @@
 package {{index .ArchPaths "HTTPHandlerPkg"}}
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/time/rate"
 )
 
 const (
 	rateLimitCleanupInterval = 3 * time.Minute
 	rateLimitStaleAfter      = 5 * time.Minute
+
+	// maxRateLimitVisitors caps how many client addresses are tracked at once.
+	// Each distinct address costs a limiter; without a cap, a client with many
+	// addresses (an IPv6 /64 holds 2^64) grows the map until memory runs out.
+	// At the cap, requests from addresses not yet tracked are refused with 429
+	// until stale entries are swept: the limiter fails closed, not open.
+	maxRateLimitVisitors = 100_000
 )
 
 type visitor struct {
@@ -20,52 +29,31 @@ type visitor struct {
 	lastSeen time.Time
 }
 
-// RateLimiter returns middleware that limits requests per IP using a token bucket algorithm.
-func RateLimiter(rps int, burst int, logger *slog.Logger) func(http.Handler) http.Handler {
-	var (
-		mu       sync.Mutex
-		visitors = make(map[string]*visitor)
-	)
+type ipRateLimiter struct {
+	mu       sync.Mutex
+	visitors map[string]*visitor
+	rps      rate.Limit
+	burst    int
+}
 
-	// Cleanup stale entries periodically.
-	go func() {
-		ticker := time.NewTicker(rateLimitCleanupInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			mu.Lock()
-			for ip, v := range visitors {
-				if time.Since(v.lastSeen) > rateLimitStaleAfter {
-					delete(visitors, ip)
-				}
-			}
-			mu.Unlock()
-		}
-	}()
-
-	getVisitor := func(ip string) *rate.Limiter {
-		mu.Lock()
-		defer mu.Unlock()
-
-		v, exists := visitors[ip]
-		if !exists {
-			limiter := rate.NewLimiter(rate.Limit(rps), burst)
-			visitors[ip] = &visitor{limiter: limiter, lastSeen: time.Now()}
-			return limiter
-		}
-
-		v.lastSeen = time.Now()
-		return v.limiter
+// RateLimiter returns middleware that limits requests per client IP using a
+// token bucket. The client IP is r.RemoteAddr unless a trusted
+// middleware.ClientIPFrom* middleware runs earlier and records one.
+//
+// It starts a goroutine that sweeps idle clients; the goroutine stops when ctx
+// is cancelled, so pass the application's lifetime context.
+func RateLimiter(ctx context.Context, rps int, burst int, logger *slog.Logger) func(http.Handler) http.Handler {
+	l := &ipRateLimiter{
+		visitors: make(map[string]*visitor),
+		rps:      rate.Limit(rps),
+		burst:    burst,
 	}
+	go l.sweepUntilDone(ctx)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				ip = r.RemoteAddr
-			}
-
-			limiter := getVisitor(ip)
-			if !limiter.Allow() {
+			ip := clientIP(r)
+			if !l.allow(ip) {
 				logger.WarnContext(r.Context(), "rate limited", "ip", ip)
 				w.Header().Set("Retry-After", "1")
 				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
@@ -74,5 +62,60 @@ func RateLimiter(rps int, burst int, logger *slog.Logger) func(http.Handler) htt
 
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+// clientIP returns the IP a trusted ClientIPFrom* middleware recorded, or the
+// TCP peer address. It never reads forwarding headers itself.
+func clientIP(r *http.Request) string {
+	if ip := middleware.GetClientIP(r.Context()); ip != "" {
+		return ip
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+// allow reports whether ip may make a request now.
+func (l *ipRateLimiter) allow(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	v, exists := l.visitors[ip]
+	if !exists {
+		if len(l.visitors) >= maxRateLimitVisitors {
+			return false
+		}
+		v = &visitor{limiter: rate.NewLimiter(l.rps, l.burst)}
+		l.visitors[ip] = v
+	}
+	v.lastSeen = time.Now()
+	return v.limiter.Allow()
+}
+
+// sweepUntilDone removes idle clients every rateLimitCleanupInterval until ctx
+// is cancelled.
+func (l *ipRateLimiter) sweepUntilDone(ctx context.Context) {
+	ticker := time.NewTicker(rateLimitCleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			l.sweep()
+		}
+	}
+}
+
+func (l *ipRateLimiter) sweep() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for ip, v := range l.visitors {
+		if time.Since(v.lastSeen) > rateLimitStaleAfter {
+			delete(l.visitors, ip)
+		}
 	}
 }

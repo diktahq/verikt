@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 {{- if .HasObservability}}
 
@@ -80,6 +81,48 @@ func TestCallTreatsEmptyBodyAsNil(t *testing.T) {
 	got, err := NewHTTPClient(srv.URL).Call(context.Background(), http.MethodDelete, "/users/1", nil)
 	if err != nil || got != nil {
 		t.Fatalf("Call = %#v, %v; want nil, nil", got, err)
+	}
+}
+// A backend redirect is not followed: the gateway would otherwise send its
+// request, and the caller's data, to whatever host the backend names.
+func TestCallDoesNotFollowRedirects(t *testing.T) {
+	var followed atomic.Int32
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		followed.Add(1)
+	}))
+	defer elsewhere.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/steal", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	_, err := NewHTTPClient(srv.URL).Call(context.Background(), http.MethodGet, "/users/1", nil)
+	if followed.Load() != 0 {
+		t.Fatal("Call followed a backend redirect to another host")
+	}
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusFound {
+		t.Fatalf("Call err = %v, want *StatusError with 302", err)
+	}
+}
+
+// The path is appended to the configured base URL. Without exactly one leading
+// slash it can change the host ("@evil.example/x") or become
+// protocol-relative ("//evil.example/x").
+func TestCallRejectsPathWithoutSingleLeadingSlash(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits.Add(1)
+	}))
+	defer srv.Close()
+
+	for _, path := range []string{"", "users/1", "@evil.example/x", "//evil.example/x"} {
+		if _, err := NewHTTPClient(srv.URL).Call(context.Background(), http.MethodGet, path, nil); !errors.Is(err, ErrInvalidPath) {
+			t.Errorf("Call(%q) err = %v, want ErrInvalidPath", path, err)
+		}
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("an invalid path reached the backend %d times", hits.Load())
 	}
 }
 {{- if .HasObservability}}

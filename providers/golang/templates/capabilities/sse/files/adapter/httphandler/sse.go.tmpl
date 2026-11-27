@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -41,9 +42,29 @@ func NewEventWriter(w http.ResponseWriter) (*EventWriter, error) {
 	return ew, nil
 }
 
+// ErrInvalidEventName is returned by Send for an event name containing a line
+// break, which would end the event field early and let the rest of the name
+// inject fields of its own.
+var ErrInvalidEventName = errors.New("sse event name must not contain CR or LF")
+
+// sseLineBreaks matches the three line endings the event-stream format
+// recognises: CRLF, LF and CR.
+var sseLineBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n")
+
 // Send writes a named SSE event with the given data and flushes immediately.
+// Multi-line data is sent as one data: line per line, as the WHATWG
+// event-stream format requires; the client rejoins them with newlines.
 func (ew *EventWriter) Send(event, data string) error {
-	return ew.write("event: %s\ndata: %s\n\n", event, data)
+	if strings.ContainsAny(event, "\r\n") {
+		return ErrInvalidEventName
+	}
+	var b strings.Builder
+	b.WriteString("event: " + event + "\n")
+	for _, line := range strings.Split(sseLineBreaks.Replace(data), "\n") {
+		b.WriteString("data: " + line + "\n")
+	}
+	b.WriteString("\n")
+	return ew.write("%s", b.String())
 }
 
 // KeepAlive writes an SSE comment, which clients ignore, to hold the

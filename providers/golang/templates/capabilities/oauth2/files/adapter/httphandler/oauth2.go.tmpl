@@ -3,8 +3,10 @@ package {{index .ArchPaths "HTTPHandlerPkg"}}
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -111,66 +113,174 @@ func introspectToken(ctx context.Context, client *http.Client, cfg OAuth2Config,
 	return result.Active, nil
 }
 
-// stateStore is a simple in-memory CSRF state store.
-// Replace with Redis or a database-backed store in production.
-var (
-	stateStore   = make(map[string]time.Time)
-	stateStoreMu sync.Mutex
+const (
+	// oauth2StateCookie binds a pending authorization to the browser that
+	// started it. The __Host- prefix makes the browser refuse the cookie unless
+	// it is Secure, host-only and scoped to "/".
+	oauth2StateCookie = "__Host-oauth2_state"
+	oauth2StateTTL    = 10 * time.Minute
+
+	// maxPendingOAuth2States caps unfinished logins held in memory. Login is
+	// reachable without authentication, so without a cap anyone could grow
+	// the store without bound.
+	maxPendingOAuth2States = 10_000
 )
 
-func generateState() (string, error) {
-	b := make([]byte, 16)
+var errTooManyPendingStates = errors.New("too many pending oauth2 logins")
+
+// oauth2StateStore holds issued state values until they are used once or
+// expire. Replace it with Redis or a database when running more than one
+// instance, since the callback may reach a different instance than Login.
+type oauth2StateStore struct {
+	mu      sync.Mutex
+	entries map[string]time.Time
+}
+
+// issue creates a random state value and records it.
+func (s *oauth2StateStore) issue(now time.Time) (string, error) {
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generating state: %w", err)
 	}
 	state := hex.EncodeToString(b)
 
-	stateStoreMu.Lock()
-	stateStore[state] = time.Now().Add(10 * time.Minute)
-	stateStoreMu.Unlock()
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, expiry := range s.entries {
+		if now.After(expiry) {
+			delete(s.entries, k)
+		}
+	}
+	if len(s.entries) >= maxPendingOAuth2States {
+		return "", errTooManyPendingStates
+	}
+	s.entries[state] = now.Add(oauth2StateTTL)
 	return state, nil
 }
 
-func validateState(state string) bool {
-	stateStoreMu.Lock()
-	defer stateStoreMu.Unlock()
-
-	expiry, ok := stateStore[state]
+// consume reports whether state was issued and has not expired, and removes
+// it so it can never be used again.
+func (s *oauth2StateStore) consume(state string, now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	expiry, ok := s.entries[state]
 	if !ok {
 		return false
 	}
-	delete(stateStore, state)
-	return time.Now().Before(expiry)
+	delete(s.entries, state)
+	return now.Before(expiry)
 }
 
-// HandleOAuth2Callback handles the OAuth2 redirect callback.
-func HandleOAuth2Callback(cfg OAuth2Config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Validate CSRF state parameter.
-		state := r.URL.Query().Get("state")
-		if state == "" || !validateState(state) {
-			http.Error(w, "invalid or missing state parameter", http.StatusBadRequest)
-			return
-		}
+// OAuth2Flow runs the authorization code flow: Login sends the browser to the
+// provider, Callback completes it. Mount both on the router, e.g.:
+//
+//	flow := NewOAuth2Flow(cfg)
+//	r.Get("/auth/login", flow.Login)
+//	r.Get("/auth/callback", flow.Callback) // must match cfg.RedirectURL
+//
+// Login binds a single-use state value to the browser with an HttpOnly,
+// Secure, SameSite=Lax cookie, and Callback accepts the provider's redirect
+// only when the returned state matches that cookie. This stops login CSRF: an
+// attacker cannot finish their own login in a victim's browser.
+type OAuth2Flow struct {
+	cfg    OAuth2Config
+	states *oauth2StateStore
+}
 
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "missing authorization code", http.StatusBadRequest)
-			return
-		}
+// NewOAuth2Flow creates the login and callback handlers for cfg.
+func NewOAuth2Flow(cfg OAuth2Config) *OAuth2Flow {
+	return &OAuth2Flow{cfg: cfg, states: &oauth2StateStore{entries: make(map[string]time.Time)}}
+}
 
-		tokenResp, err := ExchangeToken(r.Context(), cfg, code)
-		if err != nil {
-			http.Error(w, "token exchange failed", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(tokenResp); err != nil {
-			http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		}
+// Login starts the authorization code flow.
+func (f *OAuth2Flow) Login(w http.ResponseWriter, r *http.Request) {
+	authURL, err := url.Parse(f.cfg.AuthURL)
+	if err != nil || authURL.Scheme == "" {
+		http.Error(w, "oauth2 is not configured", http.StatusInternalServerError)
+		return
 	}
+	state, err := f.states.issue(time.Now())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauth2StateCookie,
+		Value:    state,
+		Path:     "/",
+		MaxAge:   int(oauth2StateTTL / time.Second),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	q := authURL.Query()
+	q.Set("response_type", "code")
+	q.Set("client_id", f.cfg.ClientID)
+	q.Set("redirect_uri", f.cfg.RedirectURL)
+	q.Set("state", state)
+	if f.cfg.Scopes != "" {
+		q.Set("scope", f.cfg.Scopes)
+	}
+	authURL.RawQuery = q.Encode()
+	http.Redirect(w, r, authURL.String(), http.StatusFound)
+}
+
+// Callback handles the provider's redirect back to cfg.RedirectURL.
+//
+// It writes the token response as JSON with Cache-Control: no-store. In a
+// browser login you will usually create your own session here instead of
+// handing the provider's tokens to the browser.
+func (f *OAuth2Flow) Callback(w http.ResponseWriter, r *http.Request) {
+	if !f.validCallbackState(w, r) {
+		http.Error(w, "invalid or missing state parameter", http.StatusBadRequest)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing authorization code", http.StatusBadRequest)
+		return
+	}
+
+	tokenResp, err := ExchangeToken(r.Context(), f.cfg, code)
+	if err != nil {
+		http.Error(w, "token exchange failed", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(tokenResp); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+// validCallbackState checks the returned state against the browser's state
+// cookie in constant time, then consumes it server-side so it is single use.
+// The cookie is cleared either way.
+func (f *OAuth2Flow) validCallbackState(w http.ResponseWriter, r *http.Request) bool {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauth2StateCookie,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	state := r.URL.Query().Get("state")
+	cookie, err := r.Cookie(oauth2StateCookie)
+	if err != nil || state == "" {
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
+		return false
+	}
+	return f.states.consume(state, time.Now())
 }
 
 // ExchangeToken exchanges an authorization code for an access token.

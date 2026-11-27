@@ -14,6 +14,7 @@ package mailpit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/smtp"
@@ -54,8 +55,21 @@ func NewProvider(cfg ProviderConfig, logger *slog.Logger) *Provider {
 	}
 }
 
+// ErrHeaderInjection is returned when a header value contains a line break,
+// which would end the header and let the rest of the value add headers of its
+// own (Bcc, for one).
+var ErrHeaderInjection = errors.New("email header must not contain CR or LF")
+
 // Send sends an email via Mailpit's SMTP server.
 func (p *Provider) Send(ctx context.Context, to string, subject string, htmlBody string) error {
+	// net/smtp refuses a line break in the envelope from and to, but the subject
+	// goes into the message unchecked. All three are checked here so the error
+	// is the same whichever one is wrong.
+	for _, v := range []string{p.from, to, subject} {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("mailpit send: %w", ErrHeaderInjection)
+		}
+	}
 	msg := buildMessage(p.from, to, subject, htmlBody)
 
 	if err := smtp.SendMail(p.addr, nil, p.from, []string{to}, []byte(msg)); err != nil {

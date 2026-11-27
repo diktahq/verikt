@@ -33,6 +33,23 @@ var denyPatterns = []struct {
 		reason:  "unpinned Docker image tag — builds are not reproducible",
 	},
 	{
+		// INV-003 item 3: an image must be pinned to a version. No tag, or a tag
+		// that doesn't start with a version (dind, alpine), floats. A templated
+		// tag ({{...}}) is resolved at scaffold time and allowed.
+		pattern:  regexp.MustCompile(`(?m)image:\s*[\w./-]+(?::(?:[^\d{v\s]\S*|v\D\S*))?\s*$`),
+		reason:   "Docker image without a version tag — it floats to whatever is published next",
+		fileGlob: "*.yml.tmpl",
+	},
+	{
+		// The same rule for images listed as YAML items (GitLab CI services).
+		// A bare item with no tag (`- docker`) is a runner tag, not an image, so
+		// only items that carry a non-version tag are reported. A tag never
+		// contains "/", which keeps volume mounts (`- pg_data:/var/lib/...`) out.
+		pattern:  regexp.MustCompile(`(?m)^\s*-\s*[\w./-]+:(?:[^\d{v\s"'/][^\s/]*|v[^\d\s/][^\s/]*)\s*$`),
+		reason:   "Docker service image without a version tag — it floats to whatever is published next",
+		fileGlob: "*.yml.tmpl",
+	},
+	{
 		pattern:  regexp.MustCompile(`AllowedOrigins:\s*\[\]string\{"\*"\}`),
 		reason:   "CORS wildcard origin in Go templates",
 		fileGlob: "*cors*",
@@ -55,6 +72,25 @@ var denyPatterns = []struct {
 	{
 		pattern: regexp.MustCompile(`CheckOrigin:\s*func\s*\([^)]*\)\s*bool\s*\{(?:\s*//[^\n]*)*\s*return\s+true\s*\}`),
 		reason:  "WebSocket CheckOrigin accepts every origin — enables cross-site WebSocket hijacking; leave it unset (same-origin) or check an allow-list",
+	},
+	{
+		pattern: regexp.MustCompile(`middleware\.RealIP\b`),
+		reason:  "chi middleware.RealIP trusts client-supplied X-Forwarded-For/X-Real-IP/True-Client-IP (deprecated in chi v5.5.0, GHSA-3fxj-6jh8-hvhx) — spoofed client IPs bypass rate limits",
+	},
+	{
+		pattern:  regexp.MustCompile(`Header\.Get\([^)]*[Tt]enant`),
+		reason:   "tenant identity read from a request header — any caller can impersonate any tenant; resolve it from verified auth",
+		fileGlob: "*tenant*",
+	},
+	{
+		pattern:  regexp.MustCompile(`strings\.Join\(cfg\.AllowedOrigins`),
+		reason:   "CORS Access-Control-Allow-Origin built from the whole allow-list — echo only the matched request Origin",
+		fileGlob: "*cors*",
+	},
+	{
+		pattern:  regexp.MustCompile(`sha256\.Sum256\(\[\]byte\(key\)\)`),
+		reason:   "idempotency cache keyed by the Idempotency-Key alone — another caller with the same key receives this caller's response",
+		fileGlob: "*idempotency*",
 	},
 }
 
@@ -81,6 +117,41 @@ var insecureFixtures = []struct {
 		name:    "websocket CheckOrigin accepting every origin behind a comment",
 		file:    "websocket.go.tmpl",
 		content: "var upgrader = websocket.Upgrader{\n\tCheckOrigin: func(r *http.Request) bool {\n\t\t// Override with proper origin checking in production.\n\t\treturn true\n\t},\n}\n",
+	},
+	{
+		// The http-api router shipped this before 0.3.0.
+		name:    "router trusting forwarding headers via chi RealIP",
+		file:    "router.go.tmpl",
+		content: "\tr.Use(middleware.Recoverer)\n\tr.Use(middleware.RealIP)\n",
+	},
+	{
+		// The multi-tenancy middleware shipped this before 0.3.0.
+		name:    "tenant taken from a raw request header",
+		file:    "tenant.go.tmpl",
+		content: "\t\tid := r.Header.Get(tenantIDHeader)\n\t\tctx := tenant.WithTenant(r.Context(), id)\n",
+	},
+	{
+		// The cors middleware shipped this before 0.3.0.
+		name:    "CORS allow-list joined into one header",
+		file:    "middleware_cors.go.tmpl",
+		content: "\torigins := strings.Join(cfg.AllowedOrigins, \", \")\n",
+	},
+	{
+		// The idempotency middleware shipped this before 0.3.0.
+		name:    "idempotency cache keyed by the raw key only",
+		file:    "middleware_idempotency.go.tmpl",
+		content: "\t\t\thash := sha256.Sum256([]byte(key))\n",
+	},
+	{
+		// The ci-gitlab template shipped this before 0.3.0.
+		name:    "CI service image listed without a version tag",
+		file:    ".gitlab-ci.yml.tmpl",
+		content: "  image: docker:27\n  services:\n    - docker:dind\n",
+	},
+	{
+		name:    "compose image with no tag at all",
+		file:    "docker-compose.yml.tmpl",
+		content: "  redis:\n    image: redis\n",
 	},
 }
 
@@ -211,4 +282,99 @@ func mustGetProvider(t *testing.T, lang string) provider.LanguageProvider {
 		t.Fatalf("failed to get %s provider: %v", lang, err)
 	}
 	return p
+}
+
+// requiredControls are security controls specific templates must keep. A deny
+// pattern catches a known-bad line coming back; these catch the control itself
+// being deleted, which no deny pattern can see.
+var requiredControls = []struct {
+	file    string
+	pattern *regexp.Regexp
+	reason  string
+}{
+	{
+		file:    "templates/capabilities/http-api/files/adapter/httphandler/handler.go.tmpl",
+		pattern: regexp.MustCompile(`http\.MaxBytesReader\(`),
+		reason:  "decodeJSON must bound the request body, or one request can allocate without limit",
+	},
+	{
+		file:    "templates/capabilities/rate-limiting/files/adapter/httphandler/middleware_ratelimit.go.tmpl",
+		pattern: regexp.MustCompile(`<-ctx\.Done\(\)`),
+		reason:  "the visitor cleanup goroutine must stop when its context ends",
+	},
+	{
+		file:    "templates/capabilities/rate-limiting/files/adapter/httphandler/middleware_ratelimit.go.tmpl",
+		pattern: regexp.MustCompile(`len\(l\.visitors\) >= maxRateLimitVisitors`),
+		reason:  "the visitors map must be capped, or distinct client addresses grow it without bound",
+	},
+	{
+		file:    "templates/capabilities/idempotency/files/adapter/httphandler/middleware_idempotency.go.tmpl",
+		pattern: regexp.MustCompile(`idempotencyStorageKey\(\w+, r\.Method, r\.URL\.Path, key\)`),
+		reason:  "the idempotency cache key must include the caller's scope, the method and the path",
+	},
+	{
+		file:    "templates/capabilities/idempotency/files/adapter/httphandler/middleware_idempotency.go.tmpl",
+		pattern: regexp.MustCompile(`maxIdempotentResponseBytes`),
+		reason:  "buffered responses must be capped",
+	},
+	{
+		file:    "templates/capabilities/idempotency/files/adapter/httphandler/middleware_idempotency.go.tmpl",
+		pattern: regexp.MustCompile(`delete\(s\.entries, k\)`),
+		reason:  "the memory store must evict expired entries",
+	},
+	{
+		file:    "templates/capabilities/oauth2/files/adapter/httphandler/oauth2.go.tmpl",
+		pattern: regexp.MustCompile(`subtle\.ConstantTimeCompare\(`),
+		reason:  "the callback must compare state with the initiating browser's cookie in constant time",
+	},
+	{
+		file:    "templates/capabilities/oauth2/files/adapter/httphandler/oauth2.go.tmpl",
+		pattern: regexp.MustCompile(`HttpOnly:\s+true,\s+Secure:\s+true,\s+SameSite:\s+http\.SameSiteLaxMode`),
+		reason:  "the state cookie must be HttpOnly, Secure and SameSite=Lax",
+	},
+	{
+		file:    "templates/capabilities/oauth2/files/adapter/httphandler/oauth2.go.tmpl",
+		pattern: regexp.MustCompile(`"Cache-Control", "no-store"`),
+		reason:  "a response carrying tokens must not be cached",
+	},
+	{
+		file:    "templates/capabilities/oauth2/files/adapter/httphandler/oauth2.go.tmpl",
+		pattern: regexp.MustCompile(`func \(f \*OAuth2Flow\) Login\(`),
+		reason:  "the flow needs a start handler that issues state, or the callback can never succeed",
+	},
+	{
+		file:    "templates/capabilities/cors/files/adapter/httphandler/middleware_cors.go.tmpl",
+		pattern: regexp.MustCompile(`\.Add\("Vary", "Origin"\)`),
+		reason:  "responses that depend on Origin must say so, or a shared cache serves one origin's headers to another",
+	},
+	{
+		file:    "templates/capabilities/cors/files/adapter/httphandler/middleware_cors.go.tmpl",
+		pattern: regexp.MustCompile(`AllowCredentials cannot be combined with a wildcard origin`),
+		reason:  "credentials with a wildcard origin must be refused",
+	},
+	{
+		file:    "templates/capabilities/multi-tenancy/files/adapter/httphandler/middleware/tenant.go.tmpl",
+		pattern: regexp.MustCompile(`resolver\.Resolve\(r\.Context\(\), r\)`),
+		reason:  "the tenant middleware must resolve the tenant through the TenantResolver",
+	},
+	{
+		file:    "templates/capabilities/multi-tenancy/files/platform/tenant/resolver.go.tmpl",
+		pattern: regexp.MustCompile(`ErrResolverNotConfigured`),
+		reason:  "the default resolver must fail closed until it is implemented",
+	},
+}
+
+func TestTemplates_KeepRequiredSecurityControls(t *testing.T) {
+	tmplFS := mustGetProvider(t, "go").GetTemplateFS()
+	for _, rc := range requiredControls {
+		t.Run(strings.Split(rc.file, "/")[2]+"/"+rc.pattern.String(), func(t *testing.T) {
+			data, err := fs.ReadFile(tmplFS, rc.file)
+			if err != nil {
+				t.Fatalf("reading %s: %v", rc.file, err)
+			}
+			if !rc.pattern.Match(data) {
+				t.Errorf("[SECURITY] %s lacks %s: %s", rc.file, rc.pattern, rc.reason)
+			}
+		})
+	}
 }

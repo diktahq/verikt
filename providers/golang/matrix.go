@@ -191,10 +191,11 @@ func generateProjectMatrix(outputDir, architecture string, capabilities []string
 		b.WriteString("Applied in order (outermost first):\n\n")
 		b.WriteString("| # | Middleware | Source |\n")
 		b.WriteString("|---|-----------|--------|\n")
+		// Same order as the http-api router template. RealIP is deliberately
+		// absent: it trusted client-supplied forwarding headers.
 		middlewares := []struct{ name, source string }{
-			{"RequestID", "chi/middleware"},
-			{"RealIP", "chi/middleware"},
 			{"Recoverer", "chi/middleware"},
+			{"RequestID", "chi/middleware"},
 			{"otelhttp", "OpenTelemetry"},
 		}
 		if capSet["rate-limiting"] {

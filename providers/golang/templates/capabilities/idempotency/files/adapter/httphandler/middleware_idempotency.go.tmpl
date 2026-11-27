@@ -3,7 +3,11 @@ package {{index .ArchPaths "HTTPHandlerPkg"}}
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"hash"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -12,7 +16,21 @@ import (
 const (
 	idempotencyHeader = "Idempotency-Key"
 	defaultTTL        = 24 * time.Hour
+
+	// maxIdempotentResponseBytes caps how much of one response is buffered for
+	// replay. A larger response is still sent to the client, but not stored.
+	maxIdempotentResponseBytes = 1 << 20 // 1 MiB
+
+	// maxIdempotencyEntries caps the in-memory store. Expired entries are swept
+	// at most every idempotencySweepInterval; when the store is still full the
+	// response is not cached.
+	maxIdempotencyEntries    = 100_000
+	idempotencySweepInterval = time.Minute
 )
+
+// ErrIdempotencyStoreFull is returned by the memory store when it holds
+// maxIdempotencyEntries live entries.
+var ErrIdempotencyStoreFull = errors.New("idempotency store is full")
 
 // IdempotencyStore persists idempotency results.
 type IdempotencyStore interface {
@@ -20,10 +38,28 @@ type IdempotencyStore interface {
 	Set(ctx context.Context, key string, response []byte, ttl time.Duration) error
 }
 
+// IdempotencyScope returns the verified principal a request acts for: a user
+// ID, a tenant ID, or both. It must come from authentication, never from a
+// header the client sets. An empty scope means the caller is not identified.
+type IdempotencyScope func(r *http.Request) string
+{{- if .HasAuthJWT}}
+
+// IdempotencyScopeFromClaims scopes idempotency keys to the subject JWTAuth
+// verified. Mount Idempotency after JWTAuth.
+func IdempotencyScopeFromClaims(r *http.Request) string {
+	claims, ok := GetUserClaims(r.Context())
+	if !ok || claims == nil {
+		return ""
+	}
+	return claims.Subject
+}
+{{- end}}
+
 // memoryStore is a simple in-memory idempotency store.
 type memoryStore struct {
-	mu      sync.RWMutex
-	entries map[string]memoryEntry
+	mu        sync.Mutex
+	entries   map[string]memoryEntry
+	lastSweep time.Time
 }
 
 type memoryEntry struct {
@@ -37,10 +73,14 @@ func NewMemoryIdempotencyStore() IdempotencyStore {
 }
 
 func (s *memoryStore) Get(_ context.Context, key string) ([]byte, bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	entry, ok := s.entries[key]
-	if !ok || time.Now().After(entry.expiresAt) {
+	if !ok {
+		return nil, false, nil
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(s.entries, key)
 		return nil, false, nil
 	}
 	return entry.response, true, nil
@@ -49,15 +89,40 @@ func (s *memoryStore) Get(_ context.Context, key string) ([]byte, bool, error) {
 func (s *memoryStore) Set(_ context.Context, key string, response []byte, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := time.Now()
+	if now.Sub(s.lastSweep) >= idempotencySweepInterval || len(s.entries) >= maxIdempotencyEntries {
+		s.evictExpired(now)
+	}
+	if _, exists := s.entries[key]; !exists && len(s.entries) >= maxIdempotencyEntries {
+		return ErrIdempotencyStoreFull
+	}
 	s.entries[key] = memoryEntry{
 		response:  response,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
 	}
 	return nil
 }
 
+// evictExpired removes expired entries. The caller holds s.mu.
+func (s *memoryStore) evictExpired(now time.Time) {
+	for k, entry := range s.entries {
+		if now.After(entry.expiresAt) {
+			delete(s.entries, k)
+		}
+	}
+	s.lastSweep = now
+}
+
 // Idempotency returns middleware that deduplicates requests by idempotency key.
-func Idempotency(store IdempotencyStore) func(http.Handler) http.Handler {
+//
+// A cached response is replayed only for the same scope, method, path and
+// key, so one caller can never receive another caller's response. A request
+// that carries a key but has no scope is rejected with 401: mount this after
+// the authentication middleware.
+func Idempotency(store IdempotencyStore, scope IdempotencyScope, logger *slog.Logger) func(http.Handler) http.Handler {
+	if store == nil || scope == nil {
+		panic("Idempotency: store and scope are required")
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := r.Header.Get(idempotencyHeader)
@@ -65,34 +130,69 @@ func Idempotency(store IdempotencyStore) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			// Hash the key for storage safety.
-			hash := sha256.Sum256([]byte(key))
-			storageKey := hex.EncodeToString(hash[:])
-
-			// Check for existing response.
-			if cached, found, err := store.Get(r.Context(), storageKey); err == nil && found {
-				w.Header().Set("X-Idempotent-Replayed", "true")
-				w.Write(cached)
+			principal := scope(r)
+			if principal == "" {
+				http.Error(w, "idempotency key requires an authenticated caller", http.StatusUnauthorized)
+				return
+			}
+			storageKey := idempotencyStorageKey(principal, r.Method, r.URL.Path, key)
+			if replayIdempotent(w, r, store, storageKey, logger) {
 				return
 			}
 
-			// Capture response.
 			rec := &responseRecorder{ResponseWriter: w}
 			next.ServeHTTP(rec, r)
-
-			// Store for deduplication.
-			if rec.statusCode >= 200 && rec.statusCode < 300 {
-				store.Set(r.Context(), storageKey, rec.body, defaultTTL)
+			if rec.statusCode < 200 || rec.statusCode >= 300 || rec.overflow {
+				return
+			}
+			if err := store.Set(r.Context(), storageKey, rec.body, defaultTTL); err != nil {
+				logger.WarnContext(r.Context(), "idempotency: response not cached", "error", err)
 			}
 		})
 	}
+}
+
+// replayIdempotent writes a cached response and reports whether it did. A
+// store error is logged and the request proceeds uncached.
+func replayIdempotent(w http.ResponseWriter, r *http.Request, store IdempotencyStore, storageKey string, logger *slog.Logger) bool {
+	cached, found, err := store.Get(r.Context(), storageKey)
+	if err != nil {
+		logger.WarnContext(r.Context(), "idempotency: store lookup failed", "error", err)
+		return false
+	}
+	if !found {
+		return false
+	}
+	w.Header().Set("X-Idempotent-Replayed", "true")
+	if _, err := w.Write(cached); err != nil {
+		logger.WarnContext(r.Context(), "idempotency: writing replayed response", "error", err)
+	}
+	return true
+}
+
+// idempotencyStorageKey hashes every part with its length, so no two distinct
+// (scope, method, path, key) tuples can produce the same input.
+func idempotencyStorageKey(scope, method, path, key string) string {
+	h := sha256.New()
+	for _, part := range []string{scope, method, path, key} {
+		writeLengthPrefixed(h, part)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeLengthPrefixed(h hash.Hash, s string) {
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(s)))
+	// hash.Hash.Write never returns an error.
+	h.Write(n[:])
+	h.Write([]byte(s))
 }
 
 type responseRecorder struct {
 	http.ResponseWriter
 	statusCode int
 	body       []byte
+	overflow   bool
 }
 
 func (r *responseRecorder) WriteHeader(code int) {
@@ -101,6 +201,16 @@ func (r *responseRecorder) WriteHeader(code int) {
 }
 
 func (r *responseRecorder) Write(b []byte) (int, error) {
-	r.body = append(r.body, b...)
+	if r.statusCode == 0 {
+		r.statusCode = http.StatusOK
+	}
+	if !r.overflow {
+		if len(r.body)+len(b) > maxIdempotentResponseBytes {
+			r.overflow = true
+			r.body = nil
+		} else {
+			r.body = append(r.body, b...)
+		}
+	}
 	return r.ResponseWriter.Write(b)
 }
