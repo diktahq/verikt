@@ -133,6 +133,10 @@ func ComposeProject(templateFS fs.FS, architecture string, capabilities []string
 		}
 	}
 
+	if err := EnforceRequiredFeatures(templateFS, archManifest, capManifests, vars); err != nil {
+		return nil, err
+	}
+
 	// Apply capability variable defaults.
 	for _, cm := range capManifests {
 		for _, v := range cm.Variables {
@@ -383,4 +387,106 @@ func Suggestions(templateFS fs.FS, capabilities []string) []string {
 		}
 	}
 	return suggestions
+}
+
+// MissingFeature is one requires_features entry the target language version
+// does not provide.
+type MissingFeature struct {
+	Requirer string // e.g. `capability "iter"` or `architecture "hexagonal"`
+	Feature  string
+	Since    string // version that introduced the feature; "" if the matrix does not define it
+}
+
+// MissingFeaturesError reports requires_features entries the target language
+// version lacks (ADR-007). Callers that know the version and how it was chosen
+// add that context; the error itself names each requirer, feature and the
+// version that provides it.
+type MissingFeaturesError struct {
+	Missing []MissingFeature
+}
+
+func (e *MissingFeaturesError) Error() string {
+	parts := make([]string, 0, len(e.Missing))
+	for _, m := range e.Missing {
+		if m.Since == "" {
+			parts = append(parts, fmt.Sprintf("%s requires feature %q, which the feature matrix does not define", m.Requirer, m.Feature))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s requires feature %q, available from version %s", m.Requirer, m.Feature, m.Since))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// MinimumVersion returns the lowest version that provides every missing
+// feature the matrix defines, or "" when none is defined.
+func (e *MissingFeaturesError) MinimumVersion() string {
+	best := ""
+	var bestParts []int
+	for _, m := range e.Missing {
+		parts, err := parseVersion(m.Since)
+		if err != nil {
+			continue
+		}
+		if best == "" || !versionGTE(bestParts, parts) {
+			best, bestParts = m.Since, parts
+		}
+	}
+	return best
+}
+
+// EnforceRequiredFeatures fails when the architecture or any capability
+// declares a requires_features entry that vars["Features"] does not enable.
+// With no Features in vars, nothing can be shown to satisfy a requirement, so
+// every requirement is reported missing rather than rendering code that may
+// not compile. The feature matrix is read from templates/features.yaml in
+// templateFS, only to name the version that provides each feature.
+func EnforceRequiredFeatures(templateFS fs.FS, arch *Manifest, caps []CapabilityManifest, vars map[string]interface{}) error {
+	type requirement struct{ requirer, feature string }
+	var reqs []requirement
+	if arch != nil {
+		for _, f := range arch.RequiresFeatures {
+			reqs = append(reqs, requirement{fmt.Sprintf("architecture %q", arch.Name), f})
+		}
+	}
+	for _, cm := range caps {
+		for _, f := range cm.RequiresFeatures {
+			reqs = append(reqs, requirement{fmt.Sprintf("capability %q", cm.Name), f})
+		}
+	}
+	if len(reqs) == 0 {
+		return nil
+	}
+
+	features, _ := vars["Features"].(map[string]bool) // absent: every requirement is missing
+	since := featureSinceVersions(templateFS)
+	var missing []MissingFeature
+	for _, r := range reqs {
+		if !features[r.feature] {
+			missing = append(missing, MissingFeature{Requirer: r.requirer, Feature: r.feature, Since: since[r.feature]})
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return &MissingFeaturesError{Missing: missing}
+}
+
+// featureSinceVersions maps feature name to the version that introduced it,
+// from templates/features.yaml. A missing or malformed matrix yields an empty
+// map: the caller still fails the requirement and reports the feature as
+// undefined, which is the accurate description of that state.
+func featureSinceVersions(templateFS fs.FS) map[string]string {
+	out := map[string]string{}
+	data, err := fs.ReadFile(templateFS, "templates/features.yaml")
+	if err != nil {
+		return out
+	}
+	matrix, err := ParseFeatureMatrix(data)
+	if err != nil {
+		return out
+	}
+	for _, f := range matrix.Features {
+		out[f.Name] = f.Since
+	}
+	return out
 }

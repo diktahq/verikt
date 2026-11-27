@@ -1,6 +1,7 @@
 # Go Language Feature Matrix
 # Maps Go version features to flags used in templates.
-# See ADR-008 for the design rationale.
+# See ADR-007 (docs/decisions/007-feature-flag-template-versioning.md) for the
+# design rationale. Templates check these flags, never version numbers.
 features:
   - name: slices_package
     description: "stdlib slices package (slices.SortFunc, slices.Contains)"

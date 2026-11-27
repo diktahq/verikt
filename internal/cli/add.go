@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -34,14 +36,14 @@ and transitive dependencies are auto-resolved. Existing files are never overwrit
 			if err != nil {
 				return fmt.Errorf("read --dry-run flag: %w", err)
 			}
-			return runAdd(args, dryRun)
+			return runAdd(cmd.Context(), args, dryRun)
 		},
 	}
 	cmd.Flags().Bool("dry-run", false, "Show what would be added without writing any files")
 	return cmd
 }
 
-func runAdd(capabilities []string, dryRun bool) error {
+func runAdd(ctx context.Context, capabilities []string, dryRun bool) error {
 	cfgPath, err := config.FindVeriktYAML(".")
 	if err != nil {
 		return fmt.Errorf("no verikt.yaml found — run `verikt new` first: %w", err)
@@ -93,6 +95,10 @@ func runAdd(capabilities []string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+	target, err := resolveProjectTarget(ctx, providerImpl, vars)
+	if err != nil {
+		return err
+	}
 
 	// Use ComposeProject to get proper vars with Has* flags for all capabilities.
 	finalCaps := make([]string, 0, len(cfg.Capabilities)+len(toAdd))
@@ -100,6 +106,10 @@ func runAdd(capabilities []string, dryRun bool) error {
 	finalCaps = append(finalCaps, toAdd...)
 
 	plan, err := scaffold.ComposeProject(tFS, cfg.Architecture, finalCaps, vars)
+	var missing *scaffold.MissingFeaturesError
+	if errors.As(err, &missing) {
+		return explainProjectMissingFeatures(missing, target)
+	}
 	if err != nil {
 		return fmt.Errorf("compose project: %w", err)
 	}
@@ -203,7 +213,7 @@ func resolveCapabilitiesToAdd(tFS fs.FS, cfg *config.VeriktConfig, capabilities 
 }
 
 // projectScaffoldVars infers the template variables for an existing project:
-// ServiceName from the directory name, ModulePath from go.mod.
+// ServiceName from the directory name, ModulePath and GoVersion from go.mod.
 func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]interface{}, err error) {
 	projectDir = strings.TrimSuffix(cfgPath, "/verikt.yaml")
 	projectDir = strings.TrimSuffix(projectDir, "\\verikt.yaml")
@@ -213,6 +223,7 @@ func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]int
 	}
 	serviceName := filepath.Base(absDir)
 	modulePath := fmt.Sprintf("example.com/%s", serviceName)
+	goVersion := ""
 	if goModData, readErr := os.ReadFile(filepath.Join(projectDir, "go.mod")); readErr == nil {
 		for _, line := range strings.Split(string(goModData), "\n") {
 			if strings.HasPrefix(line, "module ") {
@@ -220,12 +231,65 @@ func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]int
 				break
 			}
 		}
+		goVersion = goModGoDirective(string(goModData))
 	}
 
-	return projectDir, map[string]interface{}{
+	vars = map[string]interface{}{
 		"ServiceName": serviceName,
 		"ModulePath":  modulePath,
-	}, nil
+	}
+	if goVersion != "" {
+		vars["GoVersion"] = goVersion
+	}
+	return projectDir, vars, nil
+}
+
+// goModGoDirective returns the version in go.mod's go directive, or "" when
+// there is none. The directive is the project's declared minimum Go version,
+// so it, not the installed toolchain, is what added code must compile under.
+func goModGoDirective(goMod string) string {
+	for _, line := range strings.Split(goMod, "\n") {
+		line, _, _ = strings.Cut(line, "//") // a trailing comment is not part of the version
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "go" {
+			return fields[1]
+		}
+	}
+	return ""
+}
+
+// resolveProjectTarget resolves the language version an existing project
+// targets and stores its features in vars (ADR-007). A go.mod go directive
+// (already in vars as GoVersion) wins; otherwise the installed toolchain.
+// There is no fallback default: for an existing project a guessed version
+// would be less accurate than reporting it as unknown.
+func resolveProjectTarget(ctx context.Context, p provider.LanguageProvider, vars map[string]interface{}) (*scaffold.Target, error) {
+	pinned := scaffold.VersionCandidate{Source: scaffold.VersionProject}
+	if v, ok := vars["GoVersion"].(string); ok {
+		pinned.Version = v
+	}
+	target, err := (&scaffold.FeatureResolver{}).ResolveTarget(ctx, p, pinned, "")
+	if err != nil {
+		return nil, fmt.Errorf("go.mod go directive: %w", err)
+	}
+	vars["Features"] = target.Features
+	return target, nil
+}
+
+// explainProjectMissingFeatures adds the project's target version, where it
+// came from, and how to raise it to a requires_features failure.
+func explainProjectMissingFeatures(missing *scaffold.MissingFeaturesError, target *scaffold.Target) error {
+	minimum := missing.MinimumVersion()
+	switch {
+	case target.Version == "":
+		return fmt.Errorf("%w\n  the project's language version could not be determined (no go directive in go.mod and no toolchain detected)", missing)
+	case minimum == "":
+		return fmt.Errorf("%w\n  target version is %s; no version provides that feature, so the capability declares one the feature matrix does not define", missing, target.Version)
+	case target.Source == scaffold.VersionProject:
+		return fmt.Errorf("%w\n  target Go version is %s (the go directive in go.mod)\n  fix: raise the go directive in go.mod to %s or newer (go get go@%s), then rerun verikt add", missing, target.Version, minimum, minimum)
+	default:
+		return fmt.Errorf("%w\n  target version is %s (%s toolchain)\n  fix: upgrade the toolchain to %s or newer, then rerun verikt add", missing, target.Version, target.Source, minimum)
+	}
 }
 
 // previewAdd reports what applyAdd would do without writing anything.
