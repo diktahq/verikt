@@ -33,3 +33,15 @@ func TestReadMessage_AcceptsReasonablePayload(t *testing.T) {
 	assert.Error(t, err)
 	assert.NotContains(t, err.Error(), "too large")
 }
+
+func TestFrameLength_RejectsPayloadAboveMaxMsgSize(t *testing.T) {
+	_, err := frameLength(maxMsgSize + 1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "too large")
+}
+
+func TestFrameLength_EncodesPayloadAtMaxMsgSize(t *testing.T) {
+	n, err := frameLength(maxMsgSize)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(maxMsgSize), n)
+}

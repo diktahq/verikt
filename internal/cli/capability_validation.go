@@ -25,11 +25,11 @@ func validateConfigCapabilities(cfg *config.VeriktConfig) error {
 
 	p, err := provider.Get(cfg.Language)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // capability set unknowable; see the doc comment
 	}
 	known, err := listAvailableCapabilities(p.GetTemplateFS())
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // capability set unknowable; see the doc comment
 	}
 
 	errs := config.ValidateCapabilities(cfg, known)

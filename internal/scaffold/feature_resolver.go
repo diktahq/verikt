@@ -20,7 +20,10 @@ func (r *FeatureResolver) Resolve(ctx context.Context, p provider.LanguageProvid
 	}
 
 	matrixData, err := fmp.GetFeatureMatrix()
-	if err != nil || matrixData == nil {
+	if err != nil {
+		return nil, fmt.Errorf("load feature matrix: %w", err)
+	}
+	if matrixData == nil {
 		return map[string]bool{}, nil
 	}
 
@@ -35,7 +38,10 @@ func (r *FeatureResolver) Resolve(ctx context.Context, p provider.LanguageProvid
 	}
 
 	version, err := vd.DetectVersion(ctx)
-	if err != nil || version == "" {
+	if err != nil {
+		return nil, fmt.Errorf("detect language version: %w", err)
+	}
+	if version == "" {
 		return map[string]bool{}, nil
 	}
 

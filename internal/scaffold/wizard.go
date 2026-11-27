@@ -3,7 +3,7 @@ package scaffold
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // FlexOption supports both plain strings and labeled {label, value} in YAML.

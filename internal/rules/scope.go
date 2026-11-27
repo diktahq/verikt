@@ -39,7 +39,9 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 
 	err := filepath.WalkDir(projectRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip unreadable entries
+			// WalkDir reports errors only for the root and for directories it
+			// cannot read: skip that subtree and keep matching the rest.
+			return filepath.SkipDir
 		}
 
 		// A symlink of any kind points outside the project boundary and is never
@@ -74,7 +76,7 @@ func ExpandScope(scope, exclude []string, projectRoot string, allowedFiles []str
 
 		rel, err := filepath.Rel(projectRoot, path)
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // path is under projectRoot; Rel cannot fail
 		}
 		// Normalize to forward slashes for glob matching.
 		rel = filepath.ToSlash(rel)

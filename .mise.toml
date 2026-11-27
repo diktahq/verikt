@@ -9,6 +9,9 @@
 #   golangci-lint  — pinned to the version the lint job installs. Linters gain checks
 #                    between releases, so an older local binary reports a clean run on
 #                    code CI rejects.
+#   lefthook       — the git hooks in lefthook.yml. Install them once per clone with
+#                    `mise exec -- lefthook install`.
+#   shellcheck     — lints scripts/*.sh in `mise run verify`.
 #
 # rust and bun are exact, and every workflow pins the same value. Floating selectors
 # ("stable", "latest") meant a green local run said nothing about CI, and a toolchain
@@ -21,7 +24,9 @@
 go = "1.26"
 rust = "1.97.1"
 bun = "1.3.11"
-golangci-lint = "2.11.3"
+golangci-lint = "2.15.0"
+lefthook = "2.2.1"
+shellcheck = "0.11.0"
 
 # The engine binary is embedded via //go:embed from internal/engineclient/bin/.
 # It is gitignored, so a fresh clone has nothing to embed until you run:
@@ -51,18 +56,24 @@ description = "Run the engine's own gates (matches the CI engine job)"
 dir = "engine"
 run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
 
-# One command that runs exactly what CI runs, in CI's order, against a freshly built
-# engine.
+# One command that runs every gate the CI workflow defines, in its order, plus the
+# ones listed below, against a freshly built engine.
 #
 # Two defects on this branch came from local verification that did not match CI: a lint
 # run against an older golangci-lint reported no issues on code CI rejected, and a debt
 # baseline measured against a stale embedded engine was 4 findings short of what CI
 # computes. Both local runs succeeded, so nothing signalled the gap. Rebuilding the
 # engine first is the part that is easy to forget and impossible to notice.
+#
+# GitHub Actions does not run for this repository, so this task is the only gate a
+# change passes through. It is the single source of truth: the lefthook pre-push hook
+# and `make check` both call it, and it runs gates the workflows never had (the race
+# detector, go mod tidy, the installer tests, shellcheck).
 [tasks.verify]
-description = "Run every gate CI runs, against a freshly built engine"
+description = "Run every gate, against a freshly built engine"
 run = """
 set -euo pipefail
+: "${TMPDIR:=/tmp}"
 
 echo '── engine ──'
 cd engine
@@ -78,8 +89,13 @@ echo '── go ──'
 go build ./...
 go vet ./...
 test -z "$(gofmt -l internal cmd providers | grep -v experiment/testdata || true)"
-go test ./...
+go mod tidy -diff
+go test -race ./...
 golangci-lint run
+
+echo '── installer ──'
+shellcheck scripts/*.sh
+bash scripts/install_test.sh
 
 echo '── verikt checks itself ──'
 go build -o "$TMPDIR/verikt-verify" ./cmd/verikt

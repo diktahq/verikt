@@ -322,7 +322,7 @@ func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []strin
 		// walk, and one unreadable directory anywhere under the root turned
 		// detection off entirely and reported a clean tree.
 		if err != nil {
-			return nil
+			return filepath.SkipDir
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
@@ -346,7 +346,7 @@ func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []strin
 
 		rel, err := filepath.Rel(projectPath, path)
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // path is under projectPath; Rel cannot fail
 		}
 		relSlash := filepath.ToSlash(rel)
 
@@ -361,7 +361,7 @@ func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []strin
 		// reading it is not the same as finding nothing in it.
 		entries, err := os.ReadDir(path)
 		if err != nil {
-			return nil // reported by detectUnreadablePaths
+			return filepath.SkipDir // reported by detectUnreadablePaths
 		}
 		all = append(all, relSlash)
 		for _, e := range entries {

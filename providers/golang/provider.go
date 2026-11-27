@@ -186,7 +186,8 @@ func (p *GoProvider) DetectVersion(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, goPath, "env", "GOVERSION")
+	// goPath is the go binary found on PATH, run with fixed arguments and no shell.
+	cmd := exec.CommandContext(ctx, goPath, "env", "GOVERSION") //nolint:gosec // G204: fixed arguments
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {

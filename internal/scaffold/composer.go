@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // CapabilityManifest describes a composable capability module.

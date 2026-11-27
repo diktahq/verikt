@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"testing"
 
@@ -129,4 +130,27 @@ func TestFeatureResolver_ResolveWithVersion_OlderVersion(t *testing.T) {
 	assert.False(t, features["generics"])
 	assert.False(t, features["range_over_func"])
 	assert.False(t, features["modules"], "1.10 < 1.11")
+}
+
+// The matrix is embedded in the binary, so failing to read it is a defect, not
+// a reason to scaffold silently with every feature flag off.
+func TestFeatureResolver_Resolve_PropagatesMatrixError(t *testing.T) {
+	r := &FeatureResolver{}
+	p := &fullProvider{version: "1.21", matrixErr: errors.New("matrix unavailable")}
+
+	_, err := r.Resolve(context.Background(), p)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "matrix unavailable")
+}
+
+// A toolchain that is installed but cannot report its version is broken; the
+// post-scaffold hooks would fail on it anyway. A missing toolchain is reported
+// as an empty version with no error and still falls back to no features.
+func TestFeatureResolver_Resolve_PropagatesVersionDetectionError(t *testing.T) {
+	r := &FeatureResolver{}
+	p := &fullProvider{matrix: testMatrix, versionErr: errors.New("go env failed")}
+
+	_, err := r.Resolve(context.Background(), p)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "go env failed")
 }

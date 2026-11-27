@@ -102,12 +102,14 @@ func TestBenchmarkGoVsRust(t *testing.T) {
 	}
 
 	for _, s := range result.Summary.RuleStatuses {
-		status := "VALID"
+		var status string
 		switch s.Status {
 		case pb.RuleStatus_STALE:
 			status = "STALE"
 		case pb.RuleStatus_INVALID:
 			status = "INVALID"
+		default:
+			status = "VALID"
 		}
 		t.Logf("  Rule %s: %s", s.RuleId, status)
 	}

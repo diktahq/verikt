@@ -513,9 +513,12 @@ func writeJSONAtomic(path string, v any) error {
 func writeGuideHash(projectDir string) error {
 	yamlPath := filepath.Join(projectDir, "verikt.yaml")
 	data, err := os.ReadFile(yamlPath)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		// No verikt.yaml — skip without error.
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", yamlPath, err)
 	}
 
 	sum := sha256.Sum256(data)

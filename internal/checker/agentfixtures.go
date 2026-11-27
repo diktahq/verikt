@@ -53,7 +53,7 @@ func detectLiveAgentFixtures(projectPath string, excludes []string) []Violation 
 	// reported by detectUnreadablePaths, and a failed walk has found nothing.
 	_ = filepath.WalkDir(projectPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return filepath.SkipDir
 		}
 		// Before the directory filter: WalkDir reports a symlink from Lstat, so
 		// IsDir() is false even for a link to a directory (INV-002).
@@ -62,7 +62,7 @@ func detectLiveAgentFixtures(projectPath string, excludes []string) []Violation 
 		}
 		rel, relErr := filepath.Rel(projectPath, p)
 		if relErr != nil || rel == "." {
-			return nil
+			return nil //nolint:nilerr // p is under projectPath; Rel cannot fail
 		}
 		rel = filepath.ToSlash(rel)
 		if agentFixtureSkipDirs[d.Name()] || isExcluded(rel, excludes) {

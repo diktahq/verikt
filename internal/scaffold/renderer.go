@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -424,8 +425,12 @@ func (r *Renderer) RenderCapabilityFiles(capDir, outputDir string, vars map[stri
 // content is not written — the preview would otherwise overreport.
 func (r *Renderer) PreviewCapabilityFiles(capDir, outputDir string, vars map[string]interface{}) (created, skipped []string, err error) {
 	filesRoot := path.Join(capDir, "files")
-	if _, statErr := fs.Stat(r.fs, filesRoot); statErr != nil {
+	_, statErr := fs.Stat(r.fs, filesRoot)
+	if errors.Is(statErr, fs.ErrNotExist) {
 		return nil, nil, nil
+	}
+	if statErr != nil {
+		return nil, nil, fmt.Errorf("stat %s: %w", filesRoot, statErr)
 	}
 
 	absOutputDir, err := filepath.Abs(outputDir)
@@ -490,7 +495,8 @@ func removeEmptyDirs(rootDir string) {
 	// to remove empty directories is not a critical error.
 	_ = filepath.WalkDir(rootDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			// Unreadable directory: skip its subtree and keep cleaning the rest.
+			return filepath.SkipDir
 		}
 		// Skip symlinked directories — they point outside the project boundary (INV-002).
 		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {

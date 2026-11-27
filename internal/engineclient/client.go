@@ -3,6 +3,7 @@ package engineclient
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -132,7 +133,9 @@ func mergeCheckComplete(into, next *pb.CheckComplete) *pb.CheckComplete {
 
 // execute spawns the engine, sends a request, reads all responses, and waits for exit.
 func (c *Client) execute(ctx context.Context, req *pb.EngineRequest) ([]*pb.EngineResponse, error) {
-	cmd := exec.CommandContext(ctx, c.enginePath)
+	// enginePath is the digest-verified binary EnginePath extracted, run with no
+	// arguments and no shell.
+	cmd := exec.CommandContext(ctx, c.enginePath) //nolint:gosec // G204: fixed binary, no arguments
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -156,7 +159,7 @@ func (c *Client) execute(ctx context.Context, req *pb.EngineRequest) ([]*pb.Engi
 	var responses []*pb.EngineResponse
 	for {
 		resp, err := readMessage(stdout)
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			break
 		}
 		if err != nil {
@@ -179,8 +182,12 @@ func writeMessage(w io.Writer, msg *pb.EngineRequest) error {
 		return err
 	}
 
+	n, err := frameLength(len(data))
+	if err != nil {
+		return err
+	}
 	lenBuf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(lenBuf, uint32(len(data)))
+	binary.LittleEndian.PutUint32(lenBuf, n)
 
 	if _, err := w.Write(lenBuf); err != nil {
 		return err
@@ -191,6 +198,15 @@ func writeMessage(w io.Writer, msg *pb.EngineRequest) error {
 
 // maxMsgSize is the maximum protobuf message size accepted from the engine (64 MiB).
 const maxMsgSize = 64 * 1024 * 1024
+
+// frameLength converts a payload size to the uint32 length prefix, enforcing
+// the same maxMsgSize limit the reader applies to engine responses.
+func frameLength(size int) (uint32, error) {
+	if size < 0 || size > maxMsgSize {
+		return 0, fmt.Errorf("engine request too large: %d bytes (max %d)", size, maxMsgSize)
+	}
+	return uint32(size), nil
+}
 
 // readMessage reads a length-prefixed protobuf message.
 func readMessage(r io.Reader) (*pb.EngineResponse, error) {

@@ -123,6 +123,8 @@ func applyEngineStatuses(result *RunResult, engineStatuses map[string]pb.RuleSta
 		case pb.RuleStatus_INVALID:
 			result.Statuses[i].Status = "invalid"
 			result.Statuses[i].Error = "engine reported invalid rule"
+		case pb.RuleStatus_VALID, pb.RuleStatus_STATUS_UNSPECIFIED:
+			// The engine raised no objection; keep the status computed in Go.
 		}
 	}
 }

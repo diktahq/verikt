@@ -309,7 +309,10 @@ func installSkills(cmd *cobra.Command, agents []AIAgent) error {
 			).
 			Value(&installScope),
 	)).Run(); err != nil {
-		return nil
+		// The skills prompt is optional and comes after the agent rules are
+		// written. An aborted prompt, or one that cannot run without a TTY
+		// (install.sh --setup under curl | bash), skips skill installation.
+		return nil //nolint:nilerr // optional prompt; setup already succeeded
 	}
 
 	if installScope == "skip" {

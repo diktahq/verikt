@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -362,7 +363,8 @@ func getDiffFiles(projectPath, ref string) ([]string, error) {
 	// ACMR: deleted files cannot carry findings, but a renamed file can — ACM
 	// alone filtered away every finding in a file the branch had moved.
 	// The trailing "--" pins base as a revision; nothing after it is a pathspec.
-	cmd := exec.CommandContext(context.Background(),
+	// base is a commit hash printed by git merge-base; no shell is involved.
+	cmd := exec.CommandContext(context.Background(), //nolint:gosec // G204: fixed git subcommand, base from git itself
 		"git", "diff", "--name-only", "--diff-filter=ACMR", base, "--")
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
@@ -382,7 +384,8 @@ func getDiffFiles(projectPath, ref string) ([]string, error) {
 // An unresolvable ref fails here rather than yielding an empty file list, because
 // an empty list filters every finding away and reports a pass.
 func gitMergeBase(projectPath, ref string) (string, error) {
-	cmd := exec.CommandContext(context.Background(), "git", "merge-base", ref, "HEAD")
+	// ref is rejected above when empty or option-like, and no shell is involved.
+	cmd := exec.CommandContext(context.Background(), "git", "merge-base", ref, "HEAD") //nolint:gosec // G204: fixed git subcommand, validated ref
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
@@ -1077,9 +1080,40 @@ type engineMetricAdapter struct {
 	client *engineclient.Client
 }
 
+// functionMetricSpec converts verikt.yaml function limits to the engine's int32
+// fields, rejecting values the wire format cannot carry instead of letting them
+// wrap into a different limit.
+func functionMetricSpec(rules config.FunctionRules) (*pb.FunctionMetricSpec, error) {
+	maxLines, err := metricLimit("max_lines", rules.MaxLines)
+	if err != nil {
+		return nil, err
+	}
+	maxParams, err := metricLimit("max_params", rules.MaxParams)
+	if err != nil {
+		return nil, err
+	}
+	maxReturns, err := metricLimit("max_return_values", rules.MaxReturnValues)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.FunctionMetricSpec{MaxLines: maxLines, MaxParams: maxParams, MaxReturns: maxReturns}, nil
+}
+
+func metricLimit(field string, v int) (int32, error) {
+	if v < 0 || v > math.MaxInt32 {
+		return 0, fmt.Errorf("rules.functions.%s must be between 0 and %d, got %d", field, math.MaxInt32, v)
+	}
+	return int32(v), nil
+}
+
 func (a *engineMetricAdapter) CheckFunctionMetrics(projectPath string, rules config.FunctionRules) ([]checker.Violation, error) {
 	if rules.MaxLines == 0 && rules.MaxParams == 0 && rules.MaxReturnValues == 0 {
 		return nil, nil
+	}
+
+	spec, err := functionMetricSpec(rules)
+	if err != nil {
+		return nil, err
 	}
 
 	rule := &pb.Rule{
@@ -1087,13 +1121,7 @@ func (a *engineMetricAdapter) CheckFunctionMetrics(projectPath string, rules con
 		Severity: pb.Severity_WARNING,
 		Message:  "function metric violation",
 		Engine:   pb.EngineType_METRIC,
-		Spec: &pb.Rule_FunctionMetric{
-			FunctionMetric: &pb.FunctionMetricSpec{
-				MaxLines:   int32(rules.MaxLines),
-				MaxParams:  int32(rules.MaxParams),
-				MaxReturns: int32(rules.MaxReturnValues),
-			},
-		},
+		Spec:     &pb.Rule_FunctionMetric{FunctionMetric: spec},
 	}
 
 	result, err := a.client.Check(context.Background(), projectPath, []*pb.Rule{rule}, nil)

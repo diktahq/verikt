@@ -21,6 +21,15 @@ linters:
     - bodyclose
     - noctx
     - prealloc
+    - gosec
+    - errorlint
+    - nilerr
+    - exhaustive
+  settings:
+    exhaustive:
+      # A switch with an explicit default already states what happens to the
+      # remaining values; only switches that silently drop cases are reported.
+      default-signifies-exhaustive: true
   exclusions:
     paths:
       - ^experiments/
@@ -29,6 +38,17 @@ linters:
         linters:
           - errcheck
           - gocritic
-      - text: "strings.Title is deprecated"
+          # Tests write fixtures into t.TempDir(), read files they just created,
+          # and run the verikt binary and git with test-controlled arguments.
+          # gosec findings there describe no reachable attack surface.
+          - gosec
+      # verikt is a CLI whose job is to read and write files inside the user's
+      # own project (verikt.yaml, source trees, scaffolded code, agent rules
+      # files). Paths come from the user's arguments by design (G304, and its
+      # taint-analysis variant G703). The files it creates are ordinary project
+      # source meant to be committed and shared, so 0755 directories and 0644
+      # files are correct; 0750/0600 would break group-readable checkouts and
+      # generated repositories (G301/G306).
+      - text: "(G30[146]|G703):"
         linters:
-          - staticcheck
+          - gosec

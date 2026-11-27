@@ -89,7 +89,7 @@ func findGoEntrypoints(projectPath string) []goEntrypoint {
 	// case, and an unreadable one is reported by detectUnreadablePaths.
 	_ = filepath.WalkDir(cmdRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return filepath.SkipDir
 		}
 		// Before the directory filter: WalkDir reports a symlink from Lstat, so
 		// IsDir() is false even for a link to a directory (INV-002).
@@ -105,7 +105,7 @@ func findGoEntrypoints(projectPath string) []goEntrypoint {
 		}
 		rel, relErr := filepath.Rel(projectPath, p)
 		if relErr != nil {
-			return nil
+			return nil //nolint:nilerr // p is under projectPath; Rel cannot fail
 		}
 		rel = filepath.ToSlash(rel)
 		out = append(out, goEntrypoint{dir: rel, file: path.Join(rel, file)})

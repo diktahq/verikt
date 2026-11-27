@@ -65,7 +65,10 @@ func TestTemplates_NoInsecurePatterns(t *testing.T) {
 		t.Run(prov.name, func(t *testing.T) {
 			tmplFS := prov.p.GetTemplateFS()
 			err := fs.WalkDir(tmplFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
-				if walkErr != nil || d.IsDir() {
+				if walkErr != nil {
+					return walkErr
+				}
+				if d.IsDir() {
 					return nil
 				}
 				if !strings.HasSuffix(path, ".tmpl") && !strings.HasSuffix(path, ".yml.tmpl") && !strings.HasSuffix(path, ".yaml.tmpl") {

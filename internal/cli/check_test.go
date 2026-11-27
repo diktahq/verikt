@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -667,4 +668,24 @@ func TestFilterRuleResultByFiles(t *testing.T) {
 
 	assert.Len(t, filtered.Violations, 1)
 	assert.Equal(t, "service/svc.go", filtered.Violations[0].File)
+}
+
+func TestFunctionMetricSpec_CarriesConfiguredLimits(t *testing.T) {
+	spec, err := functionMetricSpec(config.FunctionRules{MaxLines: 80, MaxParams: 4, MaxReturnValues: 2})
+	require.NoError(t, err)
+	assert.Equal(t, int32(80), spec.MaxLines)
+	assert.Equal(t, int32(4), spec.MaxParams)
+	assert.Equal(t, int32(2), spec.MaxReturns)
+}
+
+func TestFunctionMetricSpec_RejectsNegativeLimit(t *testing.T) {
+	_, err := functionMetricSpec(config.FunctionRules{MaxParams: -1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_params")
+}
+
+func TestFunctionMetricSpec_RejectsLimitAboveInt32(t *testing.T) {
+	_, err := functionMetricSpec(config.FunctionRules{MaxLines: math.MaxInt32 + 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_lines")
 }

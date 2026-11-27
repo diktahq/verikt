@@ -251,7 +251,7 @@ Warnings are advisory — they don't block scaffolding.
 | Logging | `log/slog` | Stdlib structured logging |
 | Tracing | OpenTelemetry | OTLP/gRPC export |
 | Metrics | Prometheus | `promhttp` handler |
-| Config | `gopkg.in/yaml.v3` + stdlib | Defaults in code, then YAML file, then environment |
+| Config | `go.yaml.in/yaml/v3` + stdlib | Defaults in code, then YAML file, then environment |
 | Lifecycle | `golang.org/x/sync/errgroup` | Concurrent component management |
 | PostgreSQL | pgx v5 | Native driver, connection pooling |
 | MySQL | `go-sql-driver/mysql` | Standard `database/sql` |

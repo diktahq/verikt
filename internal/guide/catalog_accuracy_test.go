@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TestWhenToUseKeysAreRealCapabilities asserts the hardcoded whenToUse map does not
@@ -106,7 +106,7 @@ func capabilityFiles(t *testing.T, provider, name string) []string {
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if !d.IsDir() {
 			out = append(out, filepath.Base(path))
