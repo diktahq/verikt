@@ -40,8 +40,9 @@ var (
 )
 
 // allReferenceSpecs lists every reference verikt may write, so stale ones from
-// a previous run (e.g. architecture.md after switching to --catalog-only, or
-// interview.md after switching back) can be removed.
+// a previous run (e.g. interview.md once a catalog-only project gets a
+// verikt.yaml) can be removed. --catalog-only refuses in a configured project,
+// so it never removes architecture.md.
 var allReferenceSpecs = []referenceSpec{refArchitecture, refCapabilities, refReview, refInterview}
 
 // referenceSpecs returns the references produced for opts, in reading order.

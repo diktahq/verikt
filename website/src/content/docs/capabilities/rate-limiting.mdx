@@ -9,8 +9,10 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- Rate limiting middleware
+- Per-client-IP token bucket middleware: `RateLimiter(ctx, rps, burst, logger)`
 - Per-endpoint configuration
+
+The client IP is the TCP peer, or the IP recorded by chi's trusted `ClientIPFrom*` middleware when you run behind a proxy, so a spoofed `X-Forwarded-For` cannot buy a fresh bucket. At most 100,000 clients are tracked at once; past that, new clients get 429 until idle ones are swept. The sweep goroutine stops when `ctx` is cancelled.
 
 ## When to Use
 

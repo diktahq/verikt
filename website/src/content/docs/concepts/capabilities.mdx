@@ -19,7 +19,7 @@ REST API with a full middleware chain and structured error responses.
 
 <Tabs>
 <TabItem label="Go">
-Built on [Chi](https://github.com/go-chi/chi) v5. **What you get:** Chi router, middleware chain (RequestID, RealIP, Recoverer, OTel), RFC 7807 Problem Detail error responses, pagination helpers, OpenAPI spec, handler patterns with request/response types.
+Built on [Chi](https://github.com/go-chi/chi) v5. **What you get:** Chi router, middleware chain (Recoverer, RequestID, OTel, request logging, security headers; forwarding headers are not trusted), RFC 7807 Problem Detail error responses, pagination helpers, OpenAPI spec, handler patterns with request/response types.
 </TabItem>
 <TabItem label="TypeScript">
 Framework is chosen during scaffold (Express, Fastify, or Hono). **What you get:** Router setup, middleware chain, RFC 7807-compatible error responses, handler patterns with typed request/response shapes.

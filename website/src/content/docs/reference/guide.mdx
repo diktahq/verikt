@@ -22,9 +22,13 @@ The guide is normative: it describes what `verikt.yaml` declares and never scans
 | Flag | Description | Default |
 |------|------------|---------|
 | `--target` | Which agent's files to write: `all`, `claude`, `cursor`, `copilot`, `windsurf`, `agents` | `all` |
-| `--catalog-only` | Write only the capability catalog. No `verikt.yaml` required. | `false` |
+| `--catalog-only` | Write only the capability catalog, for a project without `verikt.yaml`. Refuses, and writes nothing, when `verikt.yaml` is found. | `false` |
 
 `verikt guide` runs in the current directory and finds `verikt.yaml` there or in a parent directory. It writes files; it does not print the guide to stdout.
+
+`--catalog-only` used to run in configured projects too, where it deleted `.verikt/references/architecture.md` and stripped the layer rules from every target. It now stops with an error when it finds `verikt.yaml`; run plain `verikt guide` there.
+
+`verikt guide` writes only regular files inside the project. If a file it reads or writes (`AGENTS.md`, `.cursor/rules/verikt.mdc`, `.claude/rules/*`, `.claude/settings.json`, the hook scripts, `.verikt/references/*`), or a directory above it inside the project, is a symlink, it stops and names the path.
 
 ## Targets
 
@@ -44,7 +48,9 @@ With `--catalog-only`, the Claude target writes a single `.claude/rules/verikt.m
 
 `AGENTS.md`, `.github/copilot-instructions.md` and `.windsurfrules` often hold your own instructions too. verikt rewrites only the section between its `<!-- verikt:start -->` and `<!-- verikt:end -->` markers and leaves the rest of the file alone. If the markers are malformed — one without the other, more than one of either, or end before start — verikt refuses to write the file and tells you to fix the markers by hand, rather than appending a second section.
 
-`.cursor/rules/verikt.mdc` and the `.claude/rules/verikt-*.md` files belong to verikt entirely and are rewritten on every run.
+`.cursor/rules/verikt.mdc` and the `.claude/rules/verikt-*.md` files belong to verikt entirely and are rewritten on every run. A `.claude/rules/verikt.md` or `verikt-*.md` file the current run did not write — a category you no longer use, say — is removed, but only when it carries verikt's `<!-- verikt:generated -->` header. A file you wrote under one of those names is never touched.
+
+Claude Code loads `verikt-index.md` at launch; it has no frontmatter. Each category file starts with `paths:` frontmatter listing that category's directories, and Claude Code loads it only when it works on a matching file.
 
 ### Migrating from `.cursorrules`
 
@@ -52,7 +58,11 @@ Cursor's single-file `.cursorrules` format is deprecated, so the Cursor target n
 
 ### Claude Code hooks
 
-The Claude target also writes two hook scripts under `.claude/hooks/` and registers them in `.claude/settings.json`: `verikt-check.sh` runs `verikt check --diff HEAD` after every Write or Edit and feeds the violation count back to the agent (it needs `jq` on `PATH`); `verikt-guide-refresh.sh` runs at session start and regenerates the Claude guide when `verikt.yaml` has changed since the last run. A check that fails without a readable report is reported to the agent as unverified, not as a pass.
+The Claude target also writes two hook scripts under `.claude/hooks/` and registers them in `.claude/settings.json`.
+
+`verikt-check.sh` runs `verikt check --diff HEAD` after every Write or Edit and feeds the violation count back to the agent (it needs `jq` on `PATH`). `--diff` includes untracked files that git does not ignore, so a file the agent just created is checked too. When a proxy rule could not run because it is stale (matches no files) or invalid, the hook names the rule instead of reporting an unreadable report. Any other failure without a readable report is reported to the agent as unverified, not as a pass.
+
+`verikt-guide-refresh.sh` runs at session start and regenerates the Claude guide when `verikt.yaml` has changed since the last run. If regenerating fails, it tells the agent that the rules in `.claude/rules` may be stale and leaves the stored hash alone, so the next session tries again.
 
 `settings.json` is merged, not overwritten. verikt updates its own hook entries in place and keeps every hook you added. If the file is not valid JSON, or `hooks` (or one of its events) has the wrong type, verikt refuses to write it and names the problem.
 
@@ -71,7 +81,7 @@ The **references** under `.verikt/references/` hold the long material. The agent
 | `review.md` | Before finishing a change, and when reviewing code | Verification checklist, interaction warnings, design questions, decision status, proxy rule table |
 | `interview.md` | The user asks to scaffold a new service | The scaffold interview — written only with `--catalog-only` |
 
-Commit `.verikt/references/` with the always-loaded files. The always-loaded files point at these paths, so an agent working from a fresh clone without them is sent to files that don't exist. A reference the current run no longer produces — `architecture.md` after switching to `--catalog-only`, for example — is deleted.
+Commit `.verikt/references/` with the always-loaded files. The always-loaded files point at these paths, so an agent working from a fresh clone without them is sent to files that don't exist. A reference the current run no longer produces — `interview.md`, once a catalog-only project gets a `verikt.yaml`, for example — is deleted.
 
 ### The budget
 
@@ -85,7 +95,7 @@ Components marked `optional: true` in `verikt.yaml` are labelled as optional in 
 verikt guide                  # every agent the project uses
 verikt guide --target claude  # Claude Code only
 verikt guide --target agents  # AGENTS.md only
-verikt guide --catalog-only   # capability catalog, no verikt.yaml needed
+verikt guide --catalog-only   # capability catalog, only where there is no verikt.yaml
 ```
 
 Re-run it whenever `verikt.yaml` changes: after `verikt add`, after editing components, after recording a decision.
@@ -100,6 +110,6 @@ Every guide output includes a governance checkpoint — an instruction block tha
 
 The checkpoint doesn't add new rules. It tells the agent *when to check* the rules that are already in the guide. The prompting pattern comes from Anthropic's [think tool research](https://www.anthropic.com/engineering/claude-think-tool), which found that agents follow complex policies significantly better when explicitly told to pause and verify at decision points rather than only receiving the rules upfront.
 
-In [EXP-10](/experiments/exp-10/), the checkpoint eliminated variance in agent compliance (0.89 → 0.00) and reduced violations by 25% on greenfield builds. On brownfield projects with a conforming codebase, the checkpoint has no measurable effect — the existing code already constrains the agent.
+In [EXP-10](/experiments/exp-10/), the checkpoint eliminated variance in agent compliance (0.89 → 0.00) and reduced violations by 25% on greenfield builds. On brownfield projects with a conforming codebase, the checkpoint has no measurable effect — the existing code already constrains the agent. EXP-10 ran one model (claude-sonnet-4-6) against the single-file guide verikt generated before 0.3.0; the checkpoint has not been measured in the current two-tier guide or with other agents.
 
 The checkpoint adds approximately 80 tokens to the guide output. It is part of the always-loaded writer rules, so it appears in every target's file.

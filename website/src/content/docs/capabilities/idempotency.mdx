@@ -9,9 +9,11 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- Idempotency middleware
-- Key storage
+- Idempotency middleware that replays a stored response only for the same caller, method, path and `Idempotency-Key`
+- In-memory key storage with expiry, an entry cap, and a 1 MiB cap on each stored response
 - Duplicate detection
+
+`Idempotency(store, scope, logger)` takes a scope function that returns the verified principal for a request. A request with a key but no principal is refused with 401, so mount it after authentication. With `auth-jwt`, `IdempotencyScopeFromClaims` scopes keys to the verified JWT subject.
 
 ## When to Use
 

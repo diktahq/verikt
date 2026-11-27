@@ -9,10 +9,11 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- OAuth2 provider integration
+- OAuth2 provider integration with token introspection middleware
 - Token exchange
-- Callback handler
-- Session management
+- `OAuth2Flow` with a `Login` handler that starts the authorization code flow and a `Callback` handler that completes it
+
+`Login` binds a single-use `state` value to the browser with an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. `Callback` accepts the provider's redirect only when the returned `state` matches that cookie, which stops login CSRF. The token response is sent with `Cache-Control: no-store`. Mount both handlers on your router; the callback path must match `RedirectURL`. Pending state lives in memory, so with more than one instance move it to shared storage.
 
 ## When to Use
 

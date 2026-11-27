@@ -33,4 +33,7 @@
 # 44 -> 40: paid down. Porting #21 and #23 brought renderFilesDir,
 # RenderCapabilityFiles, PreviewCapabilityFiles, RenderComposition and the check
 # verdict logic under the limits.
-40
+#
+# 40 -> 39: paid down. runGuide came under the limit when the --catalog-only
+# path moved into runGuideCatalogOnly, fixing the #36 review findings.
+39

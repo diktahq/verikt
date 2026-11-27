@@ -4,7 +4,8 @@ All notable changes to verikt are documented here. Format follows [Keep a Change
 
 ## [Unreleased] — 0.3.0
 
-Issues #8 to #18, then #24, #28, #29, #30 and #32. Most are cases where verikt
+Issues #8 to #18, then #24, #28, #29, #30 and #32, then the findings of a
+three-lens review of this release (red team, security, agent safety; #36). Most are cases where verikt
 reported success for something it had not done: an installer that skipped verification when it could not verify, a
 hook that never reported a violation, scaffolds that failed their own
 `verikt check`. Read *Upgrade notes* before upgrading; several change what an
@@ -97,6 +98,58 @@ existing pipeline sees.
   install script registers verikt with your agents any more. Run `verikt setup`
   yourself, or pass `--setup` to the install script.
 
+- **`verikt check` validates `severity_overrides` and `check.allowed_entrypoints`
+  before it runs.** An override severity must be `must`, `should` or `ignore`, and
+  `ignore` needs a `reason`. `severity: info` used to turn an error into a finding
+  that passed even under `--strict` and never appeared under WAIVED; a
+  `verikt.yaml` that uses it, or another unknown value, now stops the check with a
+  message naming the entry.
+- **The engine's grep rules match the documented meaning of `must-contain`,
+  `must-not-contain` and `file-must-contain`.** The Rust engine reported the
+  compliant line or file and missed the violating one; the Go fallback was right.
+  A proxy rule that relied on the engine's behaviour, typically `must-not-contain`
+  used to exclude lines, now reports the lines it used to skip: rewrite it with
+  `must-contain`. A proxy rule with no `severity` is an error, as documented; the
+  engine ran it as `info`.
+- **`--diff` sees untracked files and works in monorepos.** `--diff` now includes
+  files git does not track yet, compares paths relative to the checked project, and
+  reads file names with non-ASCII characters verbatim. Findings these filters used
+  to drop will appear, so a `--diff` gate can newly fail without a code change.
+- **Waivers stay visible.** A `# verikt:allow` marker now lists the finding under
+  WAIVED with its reason instead of hiding it, and waivers are kept under `--diff`
+  and `--staged`.
+- **The engine cache must be private.** verikt stops with an error instead of
+  running the engine when its cache directory (`<user cache dir>/verikt`) or the
+  `engine-<hash>` directory inside it is a symlink, is not a directory, is group- or
+  world-writable, or is owned by another user. verikt has always created them as
+  `0700`, so only a hand-made or shared cache is affected. `sudo verikt` with a
+  cache owned by your user is refused for the same reason.
+- **`verikt guide` refuses symlinks.** It stops, naming the path, when a file it
+  writes or reads (`AGENTS.md`, `.cursor/rules/verikt.mdc`, `.claude/rules/*`,
+  `.claude/settings.json`, the hook scripts, `.verikt/references/*`) or a directory
+  above it inside the project is a symlink. A symlinked `AGENTS.md` was copied into
+  the repository, and a symlinked hook script overwrote the file it pointed to.
+- **`verikt guide --catalog-only` refuses in a project with `verikt.yaml`.** It
+  used to delete `.verikt/references/architecture.md` and strip the layer rules
+  from every target.
+- **Claude Code rule files use `paths:` frontmatter.** Claude Code ignores `globs:`,
+  so every `verikt-<category>.md` loaded in every session. The index now has no
+  frontmatter and loads at launch; category files load when Claude works on a
+  matching path. `verikt guide` removes generated `verikt*.md` files the current
+  run did not write; files without verikt's generated header are never touched.
+- **Generated security defaults changed (new projects and `verikt add` only).**
+  Existing generated code is yours and is not rewritten. In new code:
+  `middleware.RealIP` is gone from the router (it trusted client-supplied
+  `X-Forwarded-For`); `decodeJSON(w, r, dst)` caps bodies at 1 MiB;
+  `RateLimiter(ctx, rps, burst, logger)` stops with `ctx` and tracks at most
+  100,000 clients; `Idempotency(store, scope, logger)` scopes replays to the caller,
+  method and path; `Tenant(resolver)` resolves the tenant from verified auth and
+  starts with `tenant.NotConfigured`, which refuses every request until you replace
+  it; oauth2's `HandleOAuth2Callback` is replaced by `OAuth2Flow` (`Login`,
+  `Callback`); CORS panics at startup on `*` with credentials; `docker-compose.yml`
+  publishes ports on `127.0.0.1` only. The other generated changes are listed under
+  *Security*.
+
 ### Added
 
 - **`AGENTS.md` target** (`verikt guide --target agents`), for Codex, Antigravity and
@@ -151,6 +204,51 @@ existing pipeline sees.
 
 ### Fixed
 
+- **The PostToolUse hook checks files the agent just created.** It runs
+  `verikt check --diff HEAD`, and `git diff` never lists untracked files, so every
+  finding in a new file was filtered away and the hook stayed silent. `--diff` now
+  includes untracked, non-ignored files. Paths are relative to the checked project,
+  so `--diff` and `--staged` work in a subdirectory of the repository, where every
+  finding used to be dropped; names git would quote are read verbatim; a symlink
+  replaced by a regular file counts as changed; and `--staged -o json` with nothing
+  staged prints JSON. (#36)
+- **The hooks say what went wrong.** The PostToolUse hook names proxy rules that
+  could not run (stale or invalid) instead of reporting an unreadable report, and
+  the SessionStart hook tells the agent when regenerating the guide fails instead of
+  exiting silently. (#36)
+- **A proxy rule with no `severity` fails the check on the default engine.** The
+  documented default of `error` was applied to a copy and never reached the engine,
+  which read the empty severity as `info`. An unknown severity maps to error in both
+  directions. (#36)
+- **The engine's grep rules are no longer inverted.** `must-contain`,
+  `must-not-contain` and `file-must-contain` reported compliant lines and missed
+  violations on the Rust engine. It now matches the Go implementation, and the
+  parity test covers all three fields and the match text, which is cut at 120 bytes
+  on a character boundary in both. A `file-must-contain` rule with no `pattern` no
+  longer flags every line. The generated `cap-tracing-context` rule is written with
+  `must-contain`. (#36)
+- **Waived findings are reported.** `verikt:allow` markers record the finding under
+  WAIVED (`waived[]`) with the marker's reason, waived proxy-rule findings are
+  reported under `--proxy-rules`, `--rule` and `--allow-degraded`, and `--diff` /
+  `--staged` keep the waivers in the changed files. (#36)
+- **`cmd_allowlist` is not hidden by `//go:build !ignore`.** Any constraint that
+  mentioned `ignore` excluded the file; now only one that cannot be true without
+  `ignore` does. (#36)
+- **`verikt guide` and `verikt setup` write only regular files inside the
+  project.** See *Upgrade notes*. Writes are atomic. (#36)
+- **`verikt guide` refuses content that contains its own section markers**, for
+  example from a component name, so a later run is never locked out of the file. (#36)
+- **`invalid_allow_directive` quotes at most 80 bytes** of the offending comment. (#36)
+- **The guide's HTTP middleware table matches the router**: Recoverer first, and no
+  RealIP. (#36)
+- **Website docs match 0.3.0 output.** Guide excerpts are real `verikt guide`
+  output instead of invented examples; experiment citations say they were measured
+  on the pre-0.3.0 single-file guide with one model (claude-sonnet-4-6); claims of
+  "0 extra tokens" and of committed artifacts for every experiment are corrected;
+  the `--catalog-only`, hook, `--diff`, waiver and override-validation pages match
+  this release. (#36)
+- **The experiment harness reads `.cursor/rules/verikt.mdc`**, which the cursor
+  target writes; it read `.cursorrules`. (#36)
 - **Feature flags are wired for Go, and `requires_features` is enforced.** Go
   templates got no `.Features`, so nothing could be gated on the Go version, and
   `requires_features` was parsed but never enforced (ADR-007). The Go provider now resolves `.Features` from the target version
@@ -234,8 +332,10 @@ existing pipeline sees.
   place, keeps yours, and writes atomically, preserving the file mode. (#10)
 - **A cached engine is verified before it runs.** It is used only if it is a regular
   file (not a symlink) of the right size, executable, and matching the embedded
-  SHA-256; anything else is extracted again. Cache directories are `0700`, and a
-  symlinked cache directory is refused. (#11)
+  SHA-256; anything else is extracted again. Cache directories are created `0700`,
+  and the cache root and engine directory are refused if they are symlinks, are
+  not directories, are writable by others, or belong to another user, checked
+  before a cached copy is used. (#11, #36)
 - **The capability matrix covers all 65 Go capabilities and 4 architectures.**
   `matrix.go`, which feeds the generated `docs/PROJECT.md`, covered 21, so the rest
   were silently left out. Parity tests tie the matrix, the reference doc and the
@@ -260,8 +360,58 @@ existing pipeline sees.
 - **Engine request frames are bounded at 64 MiB**, and `rules.functions` limits
   outside the `int32` range are rejected. (#12)
 
+### Security
+
+- **`install.sh` downloads over HTTPS only.** Every request is pinned to
+  `--proto '=https' --tlsv1.2`, redirects included, and any other scheme is refused.
+  The binary is installed with `install -m 0755`, owned by root when sudo is needed,
+  and a `TMPDIR` containing a quote no longer breaks the cleanup trap. (#36)
+- **The release workflow is read-only by default.** Only the publishing job gets
+  `contents: write`, the engine-build checkout drops its credential, and `cross` is
+  pinned to 0.2.5. GitHub Actions does not currently run for this repository. (#36)
+- **Generated code (new projects and `verikt add`):**
+  - multi-tenancy: the tenant is resolved through a `TenantResolver` from verified
+    auth; the `X-Tenant-ID` header is never trusted.
+  - http-api: no `middleware.RealIP`; request bodies are capped at 1 MiB.
+  - rate-limiting: bounded client map, and the cleanup goroutine stops with its
+    context.
+  - idempotency: replays are scoped to caller, method, path and key; stored
+    responses are capped at 1 MiB, and expired entries are evicted.
+  - oauth2: `state` is single use and bound to the browser by an HttpOnly, Secure,
+    SameSite=Lax cookie compared in constant time; the token response is
+    `Cache-Control: no-store`.
+  - cors: only the exact matched origin is echoed, with `Vary: Origin`.
+  - websocket: messages over 64 KiB close the connection; connections are keyed by
+    a server-generated ID, not the client's `X-Request-ID`; `Broadcast` does not
+    hold the hub lock while writing.
+  - sse: event names with CR or LF are rejected, and multi-line data is sent one
+    `data:` line per line.
+  - bff: backend redirects are not followed, and a path must start with exactly
+    one `/`.
+  - mailpit: CR or LF in from, to or subject is rejected before connecting.
+  - docker-compose: ports are published on `127.0.0.1`; `.gitlab-ci.yml` pins
+    `docker:27-dind`. (#36)
+
 ### Changed
 
+- **`silent_ci_swallow` and `mutable_install_url` read more shapes.** Escaped
+  quotes outside quotes, YAML quoted `run:` values, `{ …; } || true`,
+  `|| /bin/true`, `|| (exit 0)`, a Makefile `-` prefix on a verification command,
+  `sh -c "…"`, shell options before a script, `env -u`, `cargo +toolchain` and
+  `continue-on-error: ${{ true }}`; downloads piped into a shell through
+  intermediate stages, `/bin/sh -c "$(curl …)"`, `sh -ec`, backticks and
+  `source <(curl …)`. Both still ship at warning. Old and new produced identical
+  findings over about 100 local repositories and 1,205 Go modules. `cmd || echo`
+  and a verification used only as an `if` condition are not covered. (#36)
+- **`live_dot_claude_fixture` covers more of what Claude Code loads.** Matching
+  ignores case; `CLAUDE.md`, `agents/` and `commands/` inside a fixture `.claude/`
+  are reported, as is a standalone `CLAUDE.md` inside a fixture case
+  (`testdata/<case>/CLAUDE.md`); `__tests__` and `__fixtures__` count as fixture
+  paths; the remedy is worded for any language. (#36)
+- **The template security test enforces more of INV-003.** It rejects RealIP, a
+  tenant read from a header, a joined CORS allow-list, an idempotency key hashed
+  alone, and Docker images without a version tag, and asserts that required
+  controls (body limits, `Vary: Origin`, read limits) stay in place. (#36)
 - **`mise run release-check` compiles generated projects.** It runs
   `TestScaffoldBuilds`, which scaffolds every architecture with several capability
   sets (including the orderings, the `ddd`/`event-bus` pair and the renamed adapter

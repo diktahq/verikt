@@ -9,24 +9,25 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- Tenant middleware
+- Tenant middleware that resolves the tenant through a `TenantResolver`
 - Context-based tenant propagation
-- Query scoping helpers
 
 ## When to Use
 
-Use `multi-tenancy` for SaaS applications serving multiple organizations. Every query must be scoped by tenant — missing a scope is a data leak. The middleware extracts tenant identity from authenticated JWT claims, not raw headers (which any caller can spoof).
+Use `multi-tenancy` for SaaS applications serving multiple organizations. Every query must be scoped by tenant — missing a scope is a data leak. The middleware never reads the tenant from a header, which any caller can spoof. It asks a `TenantResolver` that you implement from verified identity, such as a tenant claim your auth middleware has checked.
+
+A new project starts with `tenant.NotConfigured`, which refuses every request with 500 until you replace it. verikt cannot know which claim carries your tenant, and a default that guessed would have to trust something the client sends. A resolver that returns an error, or an empty tenant, gets a 403.
 
 ## Requirements & Suggestions
 
-**Requires:** [`http-api`](/capabilities/http-api/), [`platform`](/capabilities/platform/) (config)
+**Requires:** [`http-api`](/capabilities/http-api/)
 
 **Suggests:** [`auth-jwt`](/capabilities/auth-jwt/), [`observability`](/capabilities/observability/)
 
 ## Add to Your Service
 
 ```bash
-verikt new my-service --language go --cap http-api,platform,multi-tenancy
+verikt new my-service --language go --cap http-api,multi-tenancy
 # or add to an existing service:
 verikt add multi-tenancy
 ```

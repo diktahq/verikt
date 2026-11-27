@@ -206,9 +206,9 @@ The structural rules are enforced when verikt writes the file — `verikt new`, 
 - Every `check.allowed_entrypoints` entry is a non-empty, project-relative path that stays inside the project
 - `check.fail_on` is empty, `error` or `warning`
 - Every `check.silent_ci_swallow.extra_commands` entry is a command name, optionally followed by fixed arguments (`deno test`). Blank entries, duplicates and shell syntax (`|`, `;`, `$(`, quotes, `=`) are rejected
-- Every `severity_overrides` entry has a known severity and a reason, and no catch-all shadows entries after it
+- Every `severity_overrides` entry has a severity of `must`, `should` or `ignore` and a reason, and no catch-all shadows entries after it
 
-`verikt check` does not re-run these structural rules on a file you edited by hand, except `check.fail_on` and `check.silent_ci_swallow.extra_commands`, which it validates before running, and nothing validates `in` patterns as globs.
+`verikt check` does not re-run these structural rules on a file you edited by hand, with exceptions it validates before running: `check.fail_on`, `check.silent_ci_swallow.extra_commands`, `check.allowed_entrypoints`, and in `severity_overrides` the severity (`must`, `should` or `ignore`) and the `reason` on every `ignore` entry. An invalid entry stops the check with a message naming it. A hand-written `must` or `should` entry without a reason, or a catch-all ahead of other entries, is accepted by `check`, because neither hides a finding. Nothing validates `in` patterns as globs.
 
 <Aside type="tip">
 You can add `verikt check` to your CI pipeline to catch dependency violations before merge.

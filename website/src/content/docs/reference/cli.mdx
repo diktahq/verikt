@@ -18,7 +18,7 @@ verikt guide [flags]
 | Flag | Description | Default |
 |------|------------|---------|
 | `--target` | Which agent's files to write (`all`, `claude`, `cursor`, `copilot`, `windsurf`, `agents`) | `all` |
-| `--catalog-only` | Write only the capability catalog; no `verikt.yaml` required | `false` |
+| `--catalog-only` | Write only the capability catalog, for a project without `verikt.yaml`; refuses and writes nothing when `verikt.yaml` is found | `false` |
 
 `all` writes for every agent the project already uses, or for all of them when none is detected.
 
@@ -139,9 +139,11 @@ verikt check [flags]
 
 ### Checking Only What Changed
 
-`--diff main` compares against the merge base of `main` and `HEAD`, not against `main`'s current tip, so on a branch that has fallen behind it reports what the branch changed rather than everything `main` moved on. The comparison is with the working tree, so committed and uncommitted work are both included. A ref that git cannot resolve is an error, not an empty file list: an empty list would filter every finding away and report a pass. An empty ref, or one starting with `-`, is rejected before git sees it.
+`--diff main` compares against the merge base of `main` and `HEAD`, not against `main`'s current tip, so on a branch that has fallen behind it reports what the branch changed rather than everything `main` moved on. The comparison is with the working tree, so committed and uncommitted work are both included, and so are untracked files git does not ignore: a file created since the last commit is checked before anyone runs `git add`. A ref that git cannot resolve is an error, not an empty file list: an empty list would filter every finding away and report a pass. An empty ref, or one starting with `-`, is rejected before git sees it.
 
-`--diff` and `--staged` include added, copied, modified and **renamed** files. Renames used to be left out, so every finding in a file the branch had moved — including one moved and then edited — disappeared from the report.
+`--diff` and `--staged` include added, copied, modified and **renamed** files, and a symlink replaced by a regular file. Renames used to be left out, so every finding in a file the branch had moved — including one moved and then edited — disappeared from the report.
+
+Paths are compared relative to the checked project, not the repository root, so both flags work when `--path` points at a service inside a monorepo. File names git would quote, such as ones with non-ASCII characters, are read verbatim. Findings waived with a `verikt:allow` marker in a changed file stay in the `WAIVED` section.
 
 ### When the Analysis Engine Is Unavailable
 
@@ -285,6 +287,8 @@ lines, it may sit above the first line or trail any of them. In opted-in
 Markdown, a `<!-- verikt:allow ... -->` directly above a code fence covers that
 block.
 
+A finding a marker allows is not dropped. It is listed under **WAIVED**, and in the JSON `waived[]` array with `category: "structure"`, carrying the marker's reason, and it does not affect the exit code.
+
 ```sh
 golangci-lint run ./... || true  # verikt:allow silent_ci_swallow reason="advisory until the v2 config lands (#412)"
 ```
@@ -311,7 +315,7 @@ For a whole file or directory, use `severity_overrides` with the rule id and
 | Code | Meaning |
 |------|---------|
 | 0 | No finding at or above the fail threshold. Warnings may be present. |
-| 1 | A finding at or above the fail threshold was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability, an invalid `check.fail_on` or an invalid `check.silent_ci_swallow.extra_commands` entry in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
+| 1 | A finding at or above the fail threshold was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability, an invalid `check.fail_on`, `check.silent_ci_swallow.extra_commands`, `check.allowed_entrypoints` or `severity_overrides` entry in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
 
 One rule decides pass or fail for every finding — built-in detectors,
 anti-patterns, proxy rules and decision gates alike — after `severity_overrides`
@@ -363,6 +367,8 @@ severity_overrides:
       reason: "the shared domain vocabulary; 27 types + 15 constants, nothing to trim"
       paths: ["internal/core/**"]
 ```
+
+`verikt check` validates every override before it runs. The severity must be `must`, `should` or `ignore`; `info`, `error`, `warning` or anything else stops the check with a message naming the entry. An `ignore` entry needs a `reason`. `severity: info` used to be accepted: it turned an error into a finding that passed even under `--strict` and never appeared under `WAIVED`.
 
 Waived findings are still reported, in a `WAIVED` section and in the `waived[]`
 array of the JSON output, and they do not affect the exit code. A finding that

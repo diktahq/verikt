@@ -10,6 +10,11 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 ## What You Get
 
 - CORS middleware with configurable origins, methods, and headers
+- Exact matching of the request `Origin` against the allow-list; only the matched origin is echoed back
+- `Vary: Origin` on every response, so shared caches keep origins apart
+- Startup refusal of `AllowCredentials` combined with `*`
+
+The allow-list starts empty, so no cross-origin request is allowed until you add origins.
 
 ## When to Use
 
