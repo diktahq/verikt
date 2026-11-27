@@ -456,3 +456,96 @@ func TestExtractEngine_ConcurrentCallersSeeWholeBinary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "only the installed engine should remain in its cache directory")
 }
+
+// A symlinked cache root would make extraction, execution and pruning all happen
+// wherever the link points. It is refused before anything is read or created.
+func TestExtractEngine_RefusesSymlinkedCacheRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	target := t.TempDir()
+	root := filepath.Join(t.TempDir(), "verikt")
+	require.NoError(t, os.Symlink(target, root))
+
+	_, err := extractEngine(fakeEngine, root)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+
+	entries, err := os.ReadDir(target)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing may be written through a symlinked cache root")
+}
+
+// A symlinked engine-<hash> directory is refused even when it holds a verified
+// copy: the cache-hit path must not run from a directory someone else chose.
+func TestExtractEngine_RefusesSymlinkedEngineDirOnCacheHit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	elsewhere := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(elsewhere, "verikt-engine"), fakeEngine, 0o700))
+	root := t.TempDir()
+	require.NoError(t, os.Symlink(elsewhere, filepath.Join(root, "engine-"+engineCacheKey(fakeEngine))))
+
+	_, err := extractEngine(fakeEngine, root)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+}
+
+// A cache directory others can write to lets them swap the engine between the
+// hash check and exec, so it is refused.
+func TestExtractEngine_RefusesGroupOrWorldWritableCacheDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	t.Run("root", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.Chmod(root, 0o777))
+		_, err := extractEngine(fakeEngine, root)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "writable")
+	})
+	t.Run("engine dir", func(t *testing.T) {
+		root := t.TempDir()
+		path, err := extractEngine(fakeEngine, root)
+		require.NoError(t, err)
+		require.NoError(t, os.Chmod(filepath.Dir(path), 0o770))
+		_, err = extractEngine(fakeEngine, root)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "writable")
+	})
+}
+
+// Ownership is checked against the effective user: a directory owned by someone
+// else is theirs to change.
+func TestPrivateDirProblem_RejectsForeignOwner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX ownership")
+	}
+	dir := t.TempDir()
+	info, err := os.Lstat(dir)
+	require.NoError(t, err)
+
+	assert.NoError(t, privateDirProblem(dir, info, os.Geteuid()))
+	err = privateDirProblem(dir, info, os.Geteuid()+1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "owned by")
+}
+
+// Pruning through a symlinked root would delete directories at the link target.
+func TestPruneStaleEngineCaches_DoesNotFollowSymlinkedRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	target := t.TempDir()
+	stale := filepath.Join(target, "engine-0000000000000000")
+	require.NoError(t, os.Mkdir(stale, 0o700))
+	old := time.Now().Add(-48 * time.Hour)
+	require.NoError(t, os.Chtimes(stale, old, old))
+
+	root := filepath.Join(t.TempDir(), "verikt")
+	require.NoError(t, os.Symlink(target, root))
+
+	pruneStaleEngineCaches(root, "engine-1111111111111111")
+	assert.DirExists(t, stale)
+}

@@ -238,6 +238,92 @@ else
   fail "relative VERIKT_INSTALL_DIR rejected for wrong reason"; cat "$WORK/out.log"
 fi
 
+# --- TMPDIR with a single quote: cleanup must not run it as shell ----------
+# shellcheck disable=SC2016 # the $(...) is meant to stay literal in the name
+QDIR="$WORK/q'\$(touch injected)'"
+mkdir -p "$QDIR"
+DIR="$WORK/inst-quote"
+if (cd "$WORK" && run_install "$FIX" "$DIR" TMPDIR="$QDIR" --) && [ -x "$DIR/verikt" ]; then
+  pass "TMPDIR containing a quote installs"
+else
+  fail "TMPDIR containing a quote installs"; cat "$WORK/out.log"
+fi
+if [ ! -e "$WORK/injected" ]; then
+  pass "TMPDIR containing a quote is not executed by the cleanup trap"
+else
+  fail "TMPDIR containing a quote is not executed by the cleanup trap"
+fi
+if [ -z "$(ls -A "$QDIR")" ]; then
+  pass "TMPDIR containing a quote is cleaned up"
+else
+  fail "TMPDIR containing a quote is cleaned up"; ls -A "$QDIR"
+fi
+
+# --- https downloads are pinned to https and TLS 1.2+ ---------------------
+# A fake curl records its arguments and fails, so no network is used.
+SHIM="$WORK/shim-bin"
+mkdir -p "$SHIM"
+CURL_LOG="$WORK/curl.log"
+cat >"$SHIM/curl" <<SHIMEOF
+#!/bin/sh
+printf '%s\n' "\$*" >>"$CURL_LOG"
+exit 22
+SHIMEOF
+chmod 0755 "$SHIM/curl"
+rm -f "$CURL_LOG"
+DIR="$WORK/inst-https"
+mkdir -p "$DIR"
+env VERIKT_INSTALL_DIR="$DIR" PATH="$SHIM:$PATH" "$BASH_BIN" "$INSTALLER" >"$WORK/out.log" 2>&1 || true
+if [ -s "$CURL_LOG" ] && ! grep -v -e "--proto =https --tlsv1.2" "$CURL_LOG" >/dev/null; then
+  pass "https downloads use --proto =https --tlsv1.2"
+else
+  fail "https downloads use --proto =https --tlsv1.2"; cat "$CURL_LOG" 2>/dev/null || true
+fi
+rm -f "$CURL_LOG"
+env VERIKT_INSTALL_DIR="$DIR" VERIKT_VERSION=v1.2.3 \
+  VERIKT_RELEASE_URL="http://example.invalid/releases" \
+  PATH="$SHIM:$PATH" "$BASH_BIN" "$INSTALLER" >"$WORK/out.log" 2>&1 || true
+if [ ! -s "$CURL_LOG" ] && grep -q "must use https" "$WORK/out.log"; then
+  pass "plain http release URL is refused"
+else
+  fail "plain http release URL is refused"; cat "$WORK/out.log"
+fi
+
+# --- sudo branch installs root-owned with mode 0755 -----------------------
+# Its own shim directory: the fake curl above must not be on this PATH.
+SUDO_SHIM="$WORK/sudo-bin"
+mkdir -p "$SUDO_SHIM"
+SUDO_LOG="$WORK/sudo.log"
+cat >"$SUDO_SHIM/sudo" <<SHIMEOF
+#!/bin/sh
+printf '%s\n' "\$*" >>"$SUDO_LOG"
+SHIMEOF
+chmod 0755 "$SUDO_SHIM/sudo"
+rm -f "$SUDO_LOG"
+DIR="$WORK/inst-readonly"
+mkdir -p "$DIR"
+chmod 0555 "$DIR"
+run_install "$FIX" "$DIR" PATH="$SUDO_SHIM:$PATH" -- || true
+chmod 0755 "$DIR"
+if grep -Eq "^install -m 0755 -o 0 -g 0 .*/verikt $DIR/verikt\$" "$SUDO_LOG" 2>/dev/null; then
+  pass "sudo install is root-owned, mode 0755"
+else
+  fail "sudo install is root-owned, mode 0755"; cat "$SUDO_LOG" 2>/dev/null || true
+fi
+
+# --- install sets mode 0755 whatever the archive's mode -------------------
+FIX6="$WORK/mode0700"
+make_release "$FIX6"
+chmod 0700 "$FIX6/stage/verikt"
+tar czf "$FIX6/download/$TAG/$ARCHIVE" -C "$FIX6/stage" verikt
+echo "$(sha256 "$FIX6/download/$TAG/$ARCHIVE")  $ARCHIVE" >"$FIX6/download/$TAG/checksums.txt"
+DIR="$WORK/inst-mode"
+if run_install "$FIX6" "$DIR" -- && [ -n "$(find "$DIR/verikt" -perm 0755)" ]; then
+  pass "installed binary is mode 0755"
+else
+  fail "installed binary is mode 0755"; ls -l "$DIR" 2>/dev/null; cat "$WORK/out.log"
+fi
+
 echo ""
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

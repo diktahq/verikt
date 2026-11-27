@@ -16,6 +16,10 @@ set -euo pipefail
 
 VERSION_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 
+# Script scope so the EXIT trap can read it without expanding it into the trap
+# string: a TMPDIR containing a quote would otherwise be run as shell.
+TMP_DIR=""
+
 die() {
   echo "Error: $*" >&2
   exit 1
@@ -47,10 +51,23 @@ normalize_version() {
   printf '%s\n' "$v"
 }
 
+# fetch downloads a URL with curl. https URLs are pinned to https and TLS 1.2+,
+# redirects included. file:// is accepted for install_test.sh fixtures and is
+# pinned to file://. Any other scheme is refused.
+fetch() {
+  local url="$1"
+  shift
+  case "$url" in
+    https://*) curl -fsSL --proto '=https' --tlsv1.2 "$@" "$url" ;;
+    file://*) curl -fsSL --proto '=file' "$@" "$url" ;;
+    *) die "download URL must use https: $url" ;;
+  esac
+}
+
 # resolve_latest prints the tag_name of the latest release.
 resolve_latest() {
   local url="$1" body tag
-  body=$(curl -fsSL "$url") || die "could not query latest release from $url"
+  body=$(fetch "$url") || die "could not query latest release from $url"
   tag=$(printf '%s\n' "$body" \
     | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
     | head -n 1)
@@ -124,13 +141,12 @@ main() {
   local base="$release_url/download/$tag"
 
   echo "Installing verikt $tag ($os/$arch)..."
-  local tmp
-  tmp=$(mktemp -d "${TMPDIR:-/tmp}/verikt-install.XXXXXX")
-  # shellcheck disable=SC2064 # expand $tmp now; it is local to main.
-  trap "rm -rf '$tmp'" EXIT
+  TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/verikt-install.XXXXXX")
+  trap 'rm -rf -- "$TMP_DIR"' EXIT
+  local tmp="$TMP_DIR"
 
-  curl -fsSL "$base/$archive" -o "$tmp/$archive" || die "download failed: $base/$archive"
-  curl -fsSL "$base/checksums.txt" -o "$tmp/checksums.txt" || die "download failed: $base/checksums.txt"
+  fetch "$base/$archive" -o "$tmp/$archive" || die "download failed: $base/$archive"
+  fetch "$base/checksums.txt" -o "$tmp/checksums.txt" || die "download failed: $base/checksums.txt"
 
   # Verify the checksum before extracting. Match the exact filename field.
   local expected actual
@@ -151,13 +167,16 @@ main() {
   mkdir "$tmp/extract"
   tar xzf "$tmp/$archive" -C "$tmp/extract"
   [ -f "$tmp/extract/verikt" ] || die "archive does not contain a verikt binary"
-  chmod 0755 "$tmp/extract/verikt"
 
+  # install sets the mode explicitly instead of trusting the archive's, and on
+  # the sudo branch makes the binary root-owned: mv would keep the invoking
+  # user's UID, leaving a user-writable binary in a system directory. Owner and
+  # group are numeric because root's group is wheel on macOS and root on Linux.
   if [ -w "$install_dir" ]; then
-    mv "$tmp/extract/verikt" "$install_dir/verikt"
+    install -m 0755 "$tmp/extract/verikt" "$install_dir/verikt"
   else
     echo "Installing to $install_dir requires sudo."
-    sudo mv "$tmp/extract/verikt" "$install_dir/verikt"
+    sudo install -m 0755 -o 0 -g 0 "$tmp/extract/verikt" "$install_dir/verikt"
   fi
   echo "verikt $tag installed to $install_dir/verikt"
 

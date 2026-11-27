@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -80,6 +81,16 @@ func extractEngineWithDigest(binary []byte, digest [sha256.Size]byte, cacheRoot 
 	path := filepath.Join(dir, name)
 	size := int64(len(binary))
 
+	// Both directories are checked before the cache-hit path, so a verified copy
+	// is never run from, and nothing is written into, a directory someone else
+	// chose or can change.
+	if err := prepareCacheRoot(cacheRoot); err != nil {
+		return "", err
+	}
+	if err := checkCacheDirIfPresent(dir); err != nil {
+		return "", err
+	}
+
 	// The cache used to be trusted on existence alone: whatever file sat at this
 	// path was executed. A truncated extraction, a corrupted block, or a file
 	// planted in the user's cache directory ran as the engine without a word.
@@ -87,17 +98,12 @@ func extractEngineWithDigest(binary []byte, digest [sha256.Size]byte, cacheRoot 
 		return path, nil
 	}
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return "", fmt.Errorf("create engine cache dir: %w", err)
 	}
-	// MkdirAll accepts an existing symlink to a directory. Writing an executable
-	// through one would install it wherever the link points.
-	info, err := os.Lstat(dir)
-	if err != nil {
-		return "", fmt.Errorf("stat engine cache dir: %w", err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("engine cache dir %s is not a directory", dir)
+	// Checked again: the directory may have been created, or replaced, since.
+	if err := checkCacheDir(dir); err != nil {
+		return "", err
 	}
 
 	if err := extractEngineAtomically(binary, path, dir); err != nil {
@@ -113,6 +119,43 @@ func extractEngineWithDigest(binary []byte, digest [sha256.Size]byte, cacheRoot 
 	pruneStaleEngineCaches(cacheRoot, filepath.Base(dir))
 
 	return path, nil
+}
+
+// prepareCacheRoot creates cacheRoot if it is missing and refuses it if it is
+// not a private directory. It is checked with Lstat before MkdirAll: MkdirAll
+// accepts an existing symlink to a directory, and everything below would then be
+// created, executed and pruned wherever the link points.
+func prepareCacheRoot(cacheRoot string) error {
+	if _, err := os.Lstat(cacheRoot); errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
+			return fmt.Errorf("create engine cache dir: %w", err)
+		}
+	}
+	return checkCacheDir(cacheRoot)
+}
+
+// checkCacheDirIfPresent applies checkCacheDir to path if anything exists there.
+func checkCacheDirIfPresent(path string) error {
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return checkCacheDir(path)
+}
+
+// checkCacheDir refuses a cache directory that is a symlink, is not a directory,
+// or could be changed by someone other than the current user.
+func checkCacheDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("stat engine cache dir: %w", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("engine cache dir %s is a symlink; refusing to use it", path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("engine cache dir %s is not a directory", path)
+	}
+	return privateDirProblem(path, info, os.Geteuid())
 }
 
 // cachedEngineValid reports whether path is the embedded engine: a regular file
@@ -215,6 +258,11 @@ const staleEngineCacheAge = 24 * time.Hour
 // executable's file is safe (the inode outlives the directory entry); on Windows
 // the removal simply fails and the directory is retried on the next run.
 func pruneStaleEngineCaches(root, current string) {
+	// ReadDir follows a symlinked root; pruning through one would delete
+	// directories at the link target.
+	if info, err := os.Lstat(root); err != nil || !info.IsDir() {
+		return
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return
