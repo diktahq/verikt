@@ -1,6 +1,10 @@
 package scriptguard
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestClassify(t *testing.T) {
 	cases := map[string]Kind{
@@ -42,5 +46,12 @@ func TestClassify(t *testing.T) {
 	}
 	if _, ok := Classify("pkg/README.md", true); ok {
 		t.Error("only the root README.md is a docs target")
+	}
+}
+
+func TestSnippet_CutsOnRuneBoundary(t *testing.T) {
+	got := snippet(strings.Repeat("a", 76) + "éééé")
+	if !utf8.ValidString(got) || !strings.HasSuffix(got, "...") || len(got) > 80 {
+		t.Fatalf("snippet = %q", got)
 	}
 }

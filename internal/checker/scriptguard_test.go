@@ -28,7 +28,7 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 
 func guardHits(t *testing.T, check config.CheckConfig, root string) []string {
 	t.Helper()
-	vs := detectScriptGuards(root, check)
+	vs, _ := detectScriptGuards(root, check)
 	out := make([]string, 0, len(vs))
 	for _, v := range vs {
 		out = append(out, v.Rule+" "+v.File+":"+strconv.Itoa(v.Line)+" "+v.Severity)
@@ -47,7 +47,7 @@ func TestDetectScriptGuards_ShipAtWarning(t *testing.T) {
 		"Dockerfile":               "FROM ubuntu\n",
 		"Makefile":                 "t:\n\tgo vet || true\n",
 	})
-	vs := detectScriptGuards(root, config.CheckConfig{})
+	vs, _ := detectScriptGuards(root, config.CheckConfig{})
 	if len(vs) != 7 {
 		t.Fatalf("got %d findings, want 7: %+v", len(vs), vs)
 	}

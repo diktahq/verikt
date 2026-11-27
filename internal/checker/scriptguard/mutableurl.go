@@ -2,6 +2,7 @@ package scriptguard
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -16,9 +17,12 @@ var (
 	// "| sha256sum" do not match.
 	pipeToShell = regexp.MustCompile(`\b(?:curl|wget)\b[^|;&\n]*\|\s*(?:(?:sudo|(?:/(?:usr/)?bin/)?env)(?:\s+-\S+)*\s+)*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)*(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|da|k|a)?sh(?:[\s;&|)]|$)`)
 
-	// shellOfDownload is `bash <(curl ...)`, `sh -c "$(curl ...)"` and
-	// `eval "$(curl ...)"`.
-	shellOfDownload = regexp.MustCompile(`(?:^|[\s;&|(])(?:(?:/(?:usr/)?bin/)?(?:ba|z|da|k|a)?sh\s[^;&\n]*<\(\s*(?:curl|wget)\b|(?:(?:ba|z|da|k|a)?sh\s+(?:-\S+\s+)*-c|eval)\s+["']?\$\(\s*(?:curl|wget)\b)`)
+	// shellOfDownload is `bash <(curl ...)`, `source <(curl ...)`,
+	// `sh -c "$(curl ...)"` (any path, any -…c… flag cluster, $() or
+	// backticks) and `eval "$(curl ...)"`.
+	shellOfDownload = regexp.MustCompile(`(?:^|[\s;&|(])(?:` +
+		`(?:(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|da|k|a)?sh|source|\.)\s[^;&\n]*<\(\s*(?:curl|wget)\b|` +
+		`(?:(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|da|k|a)?sh\s+(?:[-+]\S+\s+)*-[A-Za-z]*c[A-Za-z]*|eval)\s+["']?(?:\$\(|` + "`" + `)\s*(?:curl|wget)\b)`)
 
 	// latestReleaseDownload is GitHub's floating "latest release" asset URL.
 	latestReleaseDownload = regexp.MustCompile(`/releases/latest/download/`)
@@ -38,23 +42,21 @@ var (
 var staticAssetExts = []string{".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico"}
 
 // scanMutableInstallURL applies mutable_install_url to f.
-func scanMutableInstallURL(f *scriptFile) []Finding {
+func scanMutableInstallURL(f *scriptFile) {
 	switch f.kind {
 	case KindWorkflow, KindLefthook, KindShell, KindMakefile, KindDockerfile, KindCIConfig, KindMarkdown:
 	default:
-		return nil
+		return
 	}
-	var out []Finding
 	stages := map[string]bool{}
 	for _, ll := range f.logical {
 		reasons := mutableReasons(f.kind, ll, stages)
-		if len(reasons) == 0 || f.allowed(RuleMutableInstallURL, ll) {
+		if len(reasons) == 0 {
 			continue
 		}
 		msg := strings.Join(reasons, "; ") + ". Pin a version tag, commit SHA or image digest, and verify downloads with a checksum"
-		out = append(out, f.violation(RuleMutableInstallURL, msg, ll))
+		f.report(RuleMutableInstallURL, msg, ll)
 	}
-	return out
 }
 
 // mutableReasons lists every mutable reference on one logical line. stages
@@ -62,7 +64,7 @@ func scanMutableInstallURL(f *scriptFile) []Finding {
 func mutableReasons(kind Kind, ll logicalLine, stages map[string]bool) []string {
 	var reasons []string
 	text := ll.text
-	if unquotedPipeToShell(ll.cmd) || shellOfDownload.MatchString(ll.cmd) {
+	if unquotedPipeToShell(ll.cmd) || pipelineIntoShell(ll.cmd) || shellOfDownload.MatchString(ll.cmd) {
 		reasons = append(reasons, "downloads a script and runs it without pinning or verifying it")
 	}
 	if latestReleaseDownload.MatchString(text) {
@@ -97,6 +99,54 @@ func unquotedPipeToShell(text string) bool {
 		}
 	}
 	return false
+}
+
+// pipelineIntoShell reports a download that reaches a shell reading stdin
+// through intermediate stages: `curl ... | tee log | bash`. Stages are split
+// outside quotes, so an echoed install hint is not a pipeline.
+func pipelineIntoShell(text string) bool {
+	for _, cmd := range splitTopLevel(text, listSep) {
+		downloaded := false
+		for _, stage := range splitTopLevel(cmd, pipeSep) {
+			fields := stripCommandPrefixes(strings.Fields(stage))
+			if len(fields) == 0 {
+				continue
+			}
+			switch base := path.Base(fields[0]); {
+			case base == "curl" || base == "wget":
+				downloaded = true
+			case downloaded && shellNames[base] && shellReadsStdin(fields[1:]):
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// shellNames are the shells a download can be piped into.
+var shellNames = setOf("sh", "bash", "zsh", "dash", "ksh", "ash")
+
+// shellReadsStdin reports whether a shell with these arguments runs its
+// standard input: no script file and no -c command string, or -s.
+func shellReadsStdin(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "--":
+			return true
+		case strings.HasPrefix(a, "--"):
+			continue
+		case strings.HasPrefix(a, "-"):
+			if strings.Contains(a, "s") {
+				return true
+			}
+			if strings.Contains(a, "c") {
+				return false
+			}
+		default:
+			return false // a script file: stdin is its input, not its code
+		}
+	}
+	return true
 }
 
 func rawBranchHit(text string) bool {

@@ -107,6 +107,45 @@ func TestUnapprovedEntrypoints_IgnoresBuildIgnoredGenerators(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// A file is a generator only when its build constraint cannot be true without
+// the ignore tag. Mentioning ignore is not enough: `!ignore` and `x || ignore`
+// build by default, so the binary exists and must be reported.
+func TestUnapprovedEntrypoints_BuildConstraintNeedsIgnoreToHide(t *testing.T) {
+	cases := []struct {
+		constraint string
+		reported   bool
+	}{
+		{"//go:build ignore", false},
+		{"//go:build ignore && linux", false},
+		{"//go:build linux && ignore", false},
+		{"//go:build !windows && ignore", false},
+		{"//go:build (ignore || ignore) && amd64", false},
+		{"//go:build ignore && !ignore", false},
+		{"//go:build !ignore", true},
+		{"//go:build linux || ignore", true},
+		{"//go:build go1.1 || ignore", true},
+		{"//go:build !(ignore)", true},
+		{"//go:build !(ignore && linux)", true},
+		{"//go:build !windows", true},
+		{"//go:build linux && !ignore", true},
+		{"//go:build (ignore || linux) && !windows", true},
+	}
+	for _, c := range cases {
+		t.Run(c.constraint, func(t *testing.T) {
+			dir := t.TempDir()
+			writeProjectFile(t, dir, "cmd/helper/main.go", c.constraint+"\n\npackage main\n\nfunc main() {}\n")
+
+			got := entrypointFiles(t, detectUnapprovedEntrypoints(entrypointCfg(), dir))
+
+			if c.reported {
+				assert.Equal(t, []string{"cmd/helper/main.go"}, got)
+			} else {
+				assert.Empty(t, got)
+			}
+		})
+	}
+}
+
 func TestUnapprovedEntrypoints_ReportsNestedMainUnderCmd(t *testing.T) {
 	dir := t.TempDir()
 	writeProjectFile(t, dir, "cmd/server/main.go", mainSrc)

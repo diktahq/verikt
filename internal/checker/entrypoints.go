@@ -125,8 +125,8 @@ func goToolIgnoresDir(name string) bool {
 // package main, and names the file to report: main.go when it qualifies,
 // otherwise the first by name.
 //
-// Test files are never read (INV-004). A file whose //go:build line uses the
-// `ignore` tag is a generator script, not an entrypoint. Other constraints —
+// Test files are never read (INV-004). A file whose //go:build line cannot be
+// true without the `ignore` tag is a generator script, not an entrypoint. Other constraints —
 // GOOS, GOARCH, custom tags — do not hide one: the binary still exists on the
 // platforms it targets.
 func mainPackageFile(dir string) (string, bool) {
@@ -172,14 +172,14 @@ func isBuildableMainFile(file string) bool {
 }
 
 // buildIgnored reports whether a //go:build line before the package clause
-// references the `ignore` tag.
+// needs the `ignore` tag to be true.
 func buildIgnored(f *ast.File) bool {
 	for _, group := range f.Comments {
 		if group.Pos() >= f.Package {
 			break
 		}
 		for _, c := range group.List {
-			if constraintUsesIgnore(c.Text) {
+			if constraintNeedsIgnore(c.Text) {
 				return true
 			}
 		}
@@ -187,9 +187,16 @@ func buildIgnored(f *ast.File) bool {
 	return false
 }
 
-// constraintUsesIgnore reports whether a comment is a //go:build line that
-// mentions the `ignore` tag anywhere in its expression.
-func constraintUsesIgnore(line string) bool {
+// maxConstraintTags bounds the assignments constraintNeedsIgnore tries. Real
+// constraints name a handful of tags; past this the file is treated as
+// buildable, so an entrypoint is reported rather than hidden.
+const maxConstraintTags = 12
+
+// constraintNeedsIgnore reports whether a comment is a //go:build line that no
+// assignment of its other tags can satisfy while `ignore` is unset: the go
+// tool never builds such a file. Mentioning ignore is not enough — `!ignore`
+// and `linux || ignore` build by default, and the binary exists.
+func constraintNeedsIgnore(line string) bool {
 	if !constraint.IsGoBuild(line) {
 		return false
 	}
@@ -197,12 +204,22 @@ func constraintUsesIgnore(line string) bool {
 	if err != nil {
 		return false
 	}
-	ignored := false
+	bit := map[string]int{} // every tag except ignore -> its bit in an assignment
+	mentionsIgnore := false
 	expr.Eval(func(tag string) bool {
-		if tag == "ignore" {
-			ignored = true
+		if _, ok := bit[tag]; !ok && tag != "ignore" {
+			bit[tag] = len(bit)
 		}
+		mentionsIgnore = mentionsIgnore || tag == "ignore"
 		return false
 	})
-	return ignored
+	if !mentionsIgnore || len(bit) > maxConstraintTags {
+		return false
+	}
+	for set := 0; set < 1<<len(bit); set++ {
+		if expr.Eval(func(tag string) bool { return tag != "ignore" && set&(1<<bit[tag]) != 0 }) {
+			return false
+		}
+	}
+	return true
 }

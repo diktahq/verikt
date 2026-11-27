@@ -41,8 +41,13 @@ var markerBody = regexp.MustCompile(`^verikt:allow[ \t]+([a-z][a-z0-9_]*)[ \t]+r
 // AllowMarkers holds the valid verikt:allow markers of one file, for
 // line-based rules to consult before reporting a finding.
 type AllowMarkers struct {
-	rules       map[int][]string // line -> rule ids allowed by a marker on that line
-	commentOnly map[int]bool     // lines holding nothing but a comment
+	rules       map[int][]allowEntry // line -> markers on that line
+	commentOnly map[int]bool         // lines holding nothing but a comment
+}
+
+// allowEntry is one valid marker: the rule it names and the reason it gives.
+type allowEntry struct {
+	rule, reason string
 }
 
 // ParseAllowMarkers finds every verikt:allow marker in lines (lines[0] is
@@ -55,7 +60,7 @@ type AllowMarkers struct {
 // known yields an invalid_allow_directive error at its line and allows
 // nothing.
 func ParseAllowMarkers(file string, lines []string, syntax func(line int) CommentSyntax, known map[string]bool) (*AllowMarkers, []Finding) {
-	m := &AllowMarkers{rules: map[int][]string{}, commentOnly: map[int]bool{}}
+	m := &AllowMarkers{rules: map[int][]allowEntry{}, commentOnly: map[int]bool{}}
 	var invalid []Finding
 	for i, line := range lines {
 		n := i + 1
@@ -70,7 +75,7 @@ func ParseAllowMarkers(file string, lines []string, syntax func(line int) Commen
 		if !ok {
 			continue
 		}
-		rule, problem := parseMarkerBody(body, known)
+		entry, problem := parseMarkerBody(body, known)
 		if problem != "" {
 			invalid = append(invalid, Finding{
 				File: file,
@@ -81,7 +86,7 @@ func ParseAllowMarkers(file string, lines []string, syntax func(line int) Commen
 			})
 			continue
 		}
-		m.rules[n] = append(m.rules[n], rule)
+		m.rules[n] = append(m.rules[n], entry)
 	}
 	return m, invalid
 }
@@ -90,47 +95,53 @@ func ParseAllowMarkers(file string, lines []string, syntax func(line int) Commen
 // to last: by a trailing marker on any of those lines, or by a marker in the
 // contiguous comment-only lines directly above first.
 func (m *AllowMarkers) Allows(rule string, first, last int) bool {
+	_, ok := m.Reason(rule, first, last)
+	return ok
+}
+
+// Reason is Allows that also returns the reason the covering marker gives.
+func (m *AllowMarkers) Reason(rule string, first, last int) (string, bool) {
 	if m == nil {
-		return false
+		return "", false
 	}
 	for n := first; n <= last; n++ {
-		if m.has(n, rule) {
-			return true
+		if reason, ok := m.find(n, rule); ok {
+			return reason, true
 		}
 	}
 	for n := first - 1; n >= 1 && m.commentOnly[n]; n-- {
-		if m.has(n, rule) {
-			return true
+		if reason, ok := m.find(n, rule); ok {
+			return reason, true
 		}
 	}
-	return false
+	return "", false
 }
 
-func (m *AllowMarkers) has(line int, rule string) bool {
-	for _, r := range m.rules[line] {
-		if r == rule {
-			return true
+func (m *AllowMarkers) find(line int, rule string) (string, bool) {
+	for _, e := range m.rules[line] {
+		if e.rule == rule {
+			return e.reason, true
 		}
 	}
-	return false
+	return "", false
 }
 
-// parseMarkerBody validates the comment text. It returns the rule id, or a
+// parseMarkerBody validates the comment text. It returns the marker, or a
 // description of what is wrong.
-func parseMarkerBody(body string, known map[string]bool) (rule, problem string) {
+func parseMarkerBody(body string, known map[string]bool) (entry allowEntry, problem string) {
 	match := markerBody.FindStringSubmatch(strings.TrimSpace(body))
 	if match == nil {
-		return "", fmt.Sprintf("malformed %s comment %q", allowToken, strings.TrimSpace(body))
+		return entry, fmt.Sprintf("malformed %s comment %q", allowToken, snippet(body))
 	}
-	rule = match[1]
+	rule := match[1]
 	reason := strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(match[2])
 	if strings.TrimSpace(reason) == "" {
-		return "", fmt.Sprintf("%s %s has a blank reason", allowToken, rule)
+		return entry, fmt.Sprintf("%s %s has a blank reason", allowToken, rule)
 	}
 	if !known[rule] {
-		return "", fmt.Sprintf("%s names unknown rule %q", allowToken, rule)
+		return entry, fmt.Sprintf("%s names unknown rule %q", allowToken, snippet(rule))
 	}
-	return rule, ""
+	return allowEntry{rule: rule, reason: reason}, ""
 }
 
 // markerComment returns the text of the comment that contains the allow
@@ -175,6 +186,8 @@ func commentStart(s string, syn CommentSyntax) (start, end int, ok bool) {
 			continue
 		}
 		switch {
+		case c == '\\':
+			i++ // an escaped character outside quotes opens no quote
 		case (c == '"' || c == '\'') && opensQuote(s, i):
 			quote = c
 		case syn&CommentHTML != 0 && strings.HasPrefix(s[i:], "<!--"):

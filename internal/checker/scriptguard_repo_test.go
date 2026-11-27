@@ -14,7 +14,11 @@ func TestScriptGuards_VeriktRepoIsClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range detectScriptGuards("../..", cfg.Check) {
+	violations, waived := detectScriptGuards("../..", cfg.Check)
+	for _, v := range violations {
 		t.Errorf("%s:%d [%s] %s", v.File, v.Line, v.Rule, v.Message)
+	}
+	for _, w := range waived {
+		t.Logf("waived %s:%d [%s] %s", w.File, w.Line, w.Rule, w.Reason)
 	}
 }

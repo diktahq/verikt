@@ -180,7 +180,7 @@ func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient Anti
 // uses the Rust engine for import graph dependency checks when a client is available.
 func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *CheckResult, _ AntiPatternClient, depClient DependencyClient, _ MetricClient) (*CheckResult, error) {
 	// Structure and coverage checks are language-agnostic.
-	result.StructureViolations = detectStructure(cfg, projectPath)
+	result.StructureViolations, result.WaivedFindings = detectStructure(cfg, projectPath)
 	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
 	result.DependencyViolations = append(result.DependencyViolations,
@@ -221,7 +221,7 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 
 	result.DependencyViolations = append(result.DependencyViolations,
 		detectArchitectureShape(cfg, projectPath)...)
-	result.StructureViolations = detectStructure(cfg, projectPath)
+	result.StructureViolations, result.WaivedFindings = detectStructure(cfg, projectPath)
 
 	if violations, err := metricClient.CheckFunctionMetrics(projectPath, cfg.Rules.Functions); err == nil {
 		result.FunctionViolations = violations
@@ -267,11 +267,13 @@ func detectArchitectureShape(cfg *config.VeriktConfig, projectPath string) []Vio
 // fixture paths, and the line-based guards over CI, script, build and
 // container files (silent_ci_swallow, mutable_install_url). cmd_allowlist is
 // also a structure finding, but is added separately because check.exclude
-// must not apply to it.
-func detectStructure(cfg *config.VeriktConfig, projectPath string) []Violation {
+// must not apply to it. The second result holds the line-based findings an
+// inline verikt:allow marker waived.
+func detectStructure(cfg *config.VeriktConfig, projectPath string) ([]Violation, []WaivedFinding) {
 	violations := checkStructure(cfg.Rules.Structure, projectPath)
 	violations = append(violations, detectLiveAgentFixtures(projectPath, cfg.Check.Exclude)...)
-	return append(violations, detectScriptGuards(projectPath, cfg.Check)...)
+	guards, waived := detectScriptGuards(projectPath, cfg.Check)
+	return append(violations, guards...), waived
 }
 
 // detectMissingComponents finds components declared in verikt.yaml that have

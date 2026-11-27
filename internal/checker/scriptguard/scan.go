@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // Kind classifies the CI, hook, build and container files that the
@@ -44,6 +45,17 @@ type Finding struct {
 	File    string
 	Line    int
 	Message string
+	// Reason is the reason a verikt:allow marker gave, set only on a finding
+	// in Result.Waived.
+	Reason string
+}
+
+// Result is what ScanAll finds in one file. Findings still count; Waived are
+// the findings a valid verikt:allow marker covers, kept so a waiver stays
+// visible with its reason instead of vanishing.
+type Result struct {
+	Findings []Finding
+	Waived   []Finding
 }
 
 // inlineAllowRules are the rule ids a verikt:allow marker may name.
@@ -97,8 +109,15 @@ func isTemplateFile(base string) bool {
 
 // Scan runs the line-based guards that apply to kind over one
 // file's content and returns their findings plus any invalid verikt:allow
-// markers, ordered by line. rel is used as Finding.File.
+// markers, ordered by line. rel is used as Finding.File. Findings a marker
+// waives are left out; ScanAll returns them.
 func Scan(rel string, kind Kind, content []byte, opts Options) []Finding {
+	return ScanAll(rel, kind, content, opts).Findings
+}
+
+// ScanAll is Scan that also returns the findings verikt:allow markers waive,
+// each with the marker's reason. Both lists are ordered by line.
+func ScanAll(rel string, kind Kind, content []byte, opts Options) Result {
 	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
 	fences := markdownFences(lines, kind)
 	syntax := func(n int) CommentSyntax {
@@ -107,33 +126,46 @@ func Scan(rel string, kind Kind, content []byte, opts Options) []Finding {
 		}
 		return AllComments
 	}
-	markers, out := ParseAllowMarkers(rel, lines, syntax, inlineAllowRules)
+	markers, invalid := ParseAllowMarkers(rel, lines, syntax, inlineAllowRules)
 	logical := logicalLines(lines, fences, kind)
 	for i := range logical {
 		logical[i].cmd = commandText(kind, logical[i].text)
 	}
 	f := &scriptFile{rel: rel, kind: kind, markers: markers, logical: logical}
-	out = append(out, scanSilentCISwallow(f, opts)...)
-	out = append(out, scanMutableInstallURL(f)...)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
-	return out
+	f.res.Findings = invalid
+	scanSilentCISwallow(f, opts)
+	scanMutableInstallURL(f)
+	for _, list := range []*[]Finding{&f.res.Findings, &f.res.Waived} {
+		sort.SliceStable(*list, func(i, j int) bool { return (*list)[i].Line < (*list)[j].Line })
+	}
+	return f.res
 }
 
-// scriptFile is one file prepared for the line-based rules.
+// scriptFile is one file prepared for the line-based rules, and what they
+// have reported so far.
 type scriptFile struct {
 	rel     string
 	kind    Kind
 	markers *AllowMarkers
 	logical []logicalLine
+	res     Result
 }
 
-// allowed reports whether a verikt:allow marker covers rule for ll.
-func (f *scriptFile) allowed(rule string, ll logicalLine) bool {
-	if f.markers.Allows(rule, ll.start, ll.end) {
-		return true
+// report records a finding of rule for ll: waived, with the marker's reason,
+// when a verikt:allow marker covers it, otherwise as a finding.
+func (f *scriptFile) report(rule, msg string, ll logicalLine) {
+	v := Finding{File: f.rel, Line: ll.start, Message: msg, Rule: rule}
+	reason, ok := f.markers.Reason(rule, ll.start, ll.end)
+	if !ok && ll.fence > 0 {
+		// In markdown, a marker directly above the opening fence covers the block.
+		reason, ok = f.markers.Reason(rule, ll.fence, ll.fence)
 	}
-	// In markdown, a marker directly above the opening fence covers the block.
-	return ll.fence > 0 && f.markers.Allows(rule, ll.fence, ll.fence)
+	if ok {
+		v.Reason = reason
+		f.res.Waived = append(f.res.Waived, v)
+		return
+	}
+	f.res.Findings = append(f.res.Findings, v)
 }
 
 // logicalLine is a command with comments removed and trailing-backslash
@@ -216,6 +248,8 @@ func stripLineComment(line string) string {
 			continue
 		}
 		switch {
+		case c == '\\':
+			i++ // an escaped character outside quotes: `\"` opens nothing, `\#` is no comment
 		case (c == '"' || c == '\'') && opensQuote(line, i):
 			quote = c
 		case c == '#' && atWordStart(line, i):
@@ -225,33 +259,71 @@ func stripLineComment(line string) string {
 	return line
 }
 
-// violation builds a finding of rule for ll.
-func (f *scriptFile) violation(rule, msg string, ll logicalLine) Finding {
-	return Finding{File: f.rel, Line: ll.start, Message: msg, Rule: rule}
-}
-
 // yamlKeyPrefix is the "- key: " in front of a command in YAML files.
 var yamlKeyPrefix = regexp.MustCompile(`^\s*(?:-\s+)?(?:[A-Za-z_][\w.-]*\s*:(?:\s+|$))?`)
 
 // commandText returns the shell command a logical line holds. In YAML files
-// that is the value after "key:" or "- ", unwrapped from a quoted scalar so
-// `run: "go test || true"` reads the same as the unquoted form.
+// that is the value after "key:" or "- ", unwrapped and unescaped from a
+// quoted scalar so `run: "go test -run \"A\" || true"` reads as the runner
+// receives it.
 func commandText(kind Kind, text string) string {
 	if kind != KindWorkflow && kind != KindLefthook && kind != KindCIConfig {
 		return text
 	}
 	v := strings.TrimSpace(yamlKeyPrefix.ReplaceAllString(text, ""))
-	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] && !strings.ContainsRune(v[1:len(v)-1], rune(v[0])) {
-		return v[1 : len(v)-1]
+	if unquoted, ok := yamlQuotedScalar(v); ok {
+		return unquoted
 	}
 	return v
 }
 
-// snippet shortens a command for a finding message.
+// yamlDoubleQuotedEscapes are the YAML escapes that matter in a command.
+// Any other escaped character is kept as written.
+var yamlDoubleQuotedEscapes = map[byte]string{'"': `"`, '\\': `\`, '/': "/", 'n': "\n", 't': "\t", ' ': " "}
+
+// yamlQuotedScalar unquotes v when it is a whole single-line YAML quoted
+// scalar: "..." with backslash escapes, or '...' with a doubled quote inside. A
+// scalar that does not close on this line, or has text after its closing
+// quote, is not unwrapped.
+func yamlQuotedScalar(v string) (string, bool) {
+	if len(v) < 2 || (v[0] != '"' && v[0] != '\'') {
+		return "", false
+	}
+	q := v[0]
+	var b strings.Builder
+	for i := 1; i < len(v); i++ {
+		c := v[i]
+		switch {
+		case q == '"' && c == '\\' && i+1 < len(v):
+			i++
+			if e, ok := yamlDoubleQuotedEscapes[v[i]]; ok {
+				b.WriteString(e)
+			} else {
+				b.WriteByte('\\')
+				b.WriteByte(v[i])
+			}
+		case q == '\'' && c == '\'' && i+1 < len(v) && v[i+1] == '\'':
+			i++
+			b.WriteByte('\'')
+		case c == q:
+			return b.String(), strings.TrimSpace(v[i+1:]) == ""
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return "", false
+}
+
+// snippet shortens source text echoed in a finding message to at most 80
+// bytes, cutting on a UTF-8 boundary.
 func snippet(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 80 {
-		s = s[:77] + "..."
+	if len(s) <= 80 {
+		return s
 	}
-	return s
+	cut := 77
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }

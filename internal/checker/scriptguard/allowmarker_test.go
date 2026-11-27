@@ -143,3 +143,25 @@ func TestAllowMarkers_NilSafe(t *testing.T) {
 		t.Fatal("nil markers allowed something")
 	}
 }
+
+// An invalid marker's message quotes the comment so the author can find it,
+// but a comment can be as long as the file. The echo is capped, like every
+// other command snippet in a finding.
+func TestParseAllowMarkers_InvalidMessageCapsEchoedComment(t *testing.T) {
+	long := strings.Repeat("x", 5000) + "TAIL"
+	for name, line := range map[string]string{
+		"malformed":    `# verikt:allow silent_ci_swallow reason="x" ` + long,
+		"unknown rule": `# verikt:allow ` + strings.Repeat("a", 5000) + `tail reason="x"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, invalid := parseMarkers(t, line, nil)
+			if len(invalid) != 1 {
+				t.Fatalf("invalid directives = %+v, want exactly one", invalid)
+			}
+			msg := invalid[0].Message
+			if len(msg) > 300 || strings.Contains(msg, "TAIL") || strings.Contains(msg, "tail") {
+				t.Errorf("message echoes the whole comment (%d bytes): %.120q...", len(msg), msg)
+			}
+		})
+	}
+}

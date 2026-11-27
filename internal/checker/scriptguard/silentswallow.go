@@ -12,11 +12,27 @@ const RuleSilentCISwallow = "silent_ci_swallow"
 
 var (
 	// continueOnErrorTrue matches a literal `continue-on-error: true` (after
-	// comments are stripped). Expressions like ${{ matrix.x }} are not literal.
-	continueOnErrorTrue = regexp.MustCompile(`^\s*(?:-\s*)?continue-on-error\s*:\s*(?i:true|'true'|"true")\s*$`)
+	// comments are stripped), or the expression ${{ true }}. Other
+	// expressions, like ${{ matrix.x }}, are not literal.
+	continueOnErrorTrue = regexp.MustCompile(`^\s*(?:-\s*)?continue-on-error\s*:\s*(?:(?i:true|'true'|"true")|\$\{\{\s*true\s*\}\})\s*$`)
 
-	// swallowTail matches what follows "||" in a swallow: true, ":" or exit 0.
-	swallowTail = regexp.MustCompile(`^\s*(true|:|exit\s+0)(?:[\s;&|)}]|$)`)
+	// continueOnErrorKey is `continue-on-error:` with its value on the next line.
+	continueOnErrorKey = regexp.MustCompile(`^\s*(?:-\s*)?(continue-on-error)\s*:\s*$`)
+
+	// swallowTail matches what follows "||" in a swallow: true (or its path),
+	// ":", exit 0 or (exit 0).
+	swallowTail = regexp.MustCompile(`^\s*(true|/(?:usr/)?bin/true|:|exit\s+0|\(\s*exit\s+0\s*\))(?:[\s;&|)}]|$)`)
+
+	// shellCommandString is `sh -c "cmd"` (any -…c… flag cluster, optional
+	// path), capturing the quoted command string.
+	shellCommandString = regexp.MustCompile(`^(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|da|k|a)?sh\s+(?:[-+]\S+\s+)*-[A-Za-z]*c[A-Za-z]*\s+(?:"(.*)"|'(.*)')\s*$`)
+
+	// braceGroup is `{ cmd; }`, capturing the commands inside.
+	braceGroup = regexp.MustCompile(`^\{\s(.*?);?\s*\}$`)
+
+	// makeIgnoreErrors is a Make recipe line whose prefix includes "-", which
+	// tells make to ignore the command's exit status.
+	makeIgnoreErrors = regexp.MustCompile(`^\t[@+]*-[-@+]*`)
 
 	// exitStatusRead matches a read of $? (or $$? in a Makefile recipe).
 	exitStatusRead = regexp.MustCompile(`\$\$?(?:\?|\{\?\})`)
@@ -28,29 +44,63 @@ var (
 )
 
 // scanSilentCISwallow applies silent_ci_swallow to f.
-func scanSilentCISwallow(f *scriptFile, opts Options) []Finding {
+func scanSilentCISwallow(f *scriptFile, opts Options) {
 	switch f.kind {
 	case KindWorkflow, KindLefthook, KindShell, KindMakefile, KindCIConfig:
 	default:
-		return nil
+		return
 	}
-	var out []Finding
 	for i, ll := range f.logical {
-		if f.allowed(RuleSilentCISwallow, ll) {
+		next := nextText(f.logical, i)
+		if f.kind == KindWorkflow && continueOnErrorIsTrue(ll.text, next) {
+			f.report(RuleSilentCISwallow, "continue-on-error: true lets this job or step fail while the workflow stays green. "+
+				"Remove it, or mark a deliberate best-effort step with verikt:allow silent_ci_swallow reason=\"...\"", ll)
 			continue
 		}
-		if f.kind == KindWorkflow && continueOnErrorTrue.MatchString(ll.text) {
-			out = append(out, f.violation(RuleSilentCISwallow, "continue-on-error: true lets this job or step fail while the workflow stays green. "+
-				"Remove it, or mark a deliberate best-effort step with verikt:allow silent_ci_swallow reason=\"...\"", ll))
-			continue
-		}
+		reported := false
 		for _, s := range findSwallows(ll.cmd) {
-			if msg, ok := swallowFinding(ll.cmd, s, nextText(f.logical, i), opts.ExtraCommands); ok {
-				out = append(out, f.violation(RuleSilentCISwallow, msg, ll))
+			if msg, ok := swallowFinding(ll.cmd, s, next, opts.ExtraCommands); ok {
+				f.report(RuleSilentCISwallow, msg, ll)
+				reported = true
+			}
+		}
+		if f.kind == KindMakefile && !reported {
+			if msg, ok := makeIgnoredFinding(ll.text, opts.ExtraCommands); ok {
+				f.report(RuleSilentCISwallow, msg, ll)
 			}
 		}
 	}
-	return out
+}
+
+// continueOnErrorIsTrue reports `continue-on-error: true`, including the
+// value written alone on the next, further-indented line.
+func continueOnErrorIsTrue(text, next string) bool {
+	if continueOnErrorTrue.MatchString(text) {
+		return true
+	}
+	m := continueOnErrorKey.FindStringSubmatchIndex(text)
+	if m == nil {
+		return false
+	}
+	indent := len(next) - len(strings.TrimLeft(next, " "))
+	return indent > m[2] && strings.EqualFold(strings.TrimSpace(next), "true")
+}
+
+// makeIgnoredFinding reports a Make recipe line whose "-" prefix discards the
+// exit status of a verification command in it.
+func makeIgnoredFinding(text string, extra []string) (string, bool) {
+	prefix := makeIgnoreErrors.FindString(text)
+	if prefix == "" {
+		return "", false
+	}
+	for _, part := range splitTopLevel(text[len(prefix):], listSep) {
+		if name, ok := swallowedVerification(part, extra); ok {
+			return fmt.Sprintf("the \"-\" prefix on %q makes make ignore the exit status of %s, so a failing check passes. "+
+				"Remove the \"-\", or mark a deliberate one with verikt:allow silent_ci_swallow reason=\"...\"",
+				snippet(text), name), true
+		}
+	}
+	return "", false
 }
 
 // nextText returns the next non-empty logical line after index i.
@@ -107,8 +157,13 @@ func findSwallows(text string) []swallow {
 // (pipeline) it applies to: the previous ;, &, &&, || or the opening of the
 // enclosing group, at the same nesting depth and outside quotes.
 func commandStart(text string, sc shellScan, pos int) int {
+	from := pos
+	if open, ok := groupOpen(text, sc, pos); ok {
+		// `{ cmd; } || true` swallows the group: start before its "{".
+		from = open
+	}
 	d0 := sc.depth[pos]
-	for j := pos - 1; j >= 0; j-- {
+	for j := from - 1; j >= 0; j-- {
 		if sc.quoted[j] || sc.depth[j] > d0 {
 			continue
 		}
@@ -125,6 +180,49 @@ func commandStart(text string, sc shellScan, pos int) int {
 		}
 	}
 	return 0
+}
+
+// groupOpen finds the "{" of the brace group whose "}" ends the command
+// before the "||" at pos. A "}" closes a group only as a word after ";" or
+// "&"; `${VAR}` does not.
+func groupOpen(text string, sc shellScan, pos int) (int, bool) {
+	k := lastNonSpace(text, pos)
+	if k < 0 || text[k] != '}' || sc.quoted[k] || !closesGroup(text, k) {
+		return 0, false
+	}
+	nest := 1
+	for j := k - 1; j >= 0; j-- {
+		if sc.quoted[j] {
+			continue
+		}
+		switch {
+		case text[j] == '}' && closesGroup(text, j):
+			nest++
+		case text[j] == '{' && opensGroup(text, j):
+			if nest--; nest == 0 {
+				return j, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// lastNonSpace returns the index of the last non-blank byte before end, or -1.
+func lastNonSpace(text string, end int) int {
+	k := end - 1
+	for k >= 0 && (text[k] == ' ' || text[k] == '\t') {
+		k--
+	}
+	return k
+}
+
+func closesGroup(text string, k int) bool {
+	p := lastNonSpace(text, k)
+	return p >= 0 && p < k-1 && (text[p] == ';' || text[p] == '&' || text[p] == '\n')
+}
+
+func opensGroup(text string, j int) bool {
+	return (j == 0 || strings.IndexByte(" \t;&|(", text[j-1]) >= 0) && j+1 < len(text) && (text[j+1] == ' ' || text[j+1] == '\t')
 }
 
 // shellScan records, per byte, whether it is inside quotes and its
@@ -151,6 +249,11 @@ func scanShell(text string) shellScan {
 			} else if c == quote {
 				quote = 0
 			}
+		case c == '\\' && i+1 < len(text):
+			// Outside quotes a backslash makes the next character literal:
+			// `\"` is not an opening quote, `\|` is not a pipe.
+			i++
+			sc.quoted[i], sc.depth[i] = true, depth
 		case c == '"' || c == '\'':
 			if opensQuote(text, i) {
 				quote = c
@@ -163,6 +266,17 @@ func scanShell(text string) shellScan {
 		}
 	}
 	return sc
+}
+
+// wrappedCommands returns the command list inside VAR=$(...), sh -c "..."
+// or { ...; }: the exit status of each is that of its last command.
+func wrappedCommands(cmd string) (string, bool) {
+	for _, re := range []*regexp.Regexp{captureAssign, shellCommandString, braceGroup} {
+		if m := re.FindStringSubmatch(cmd); m != nil {
+			return strings.Join(m[1:], ""), true
+		}
+	}
+	return "", false
 }
 
 // splitTopLevel splits s at separators outside quotes and parentheses.
@@ -205,12 +319,10 @@ func listSep(s string, i int) int {
 // swallowed is a verification command, unwrapping VAR=$(cmd) captures.
 func swallowedVerification(cmd string, extra []string) (string, bool) {
 	for depth := 0; depth < 4; depth++ {
-		cmd = strings.TrimSpace(cmd)
-		m := captureAssign.FindStringSubmatch(cmd)
-		if m == nil {
+		inner, ok := wrappedCommands(strings.TrimSpace(cmd))
+		if !ok {
 			break
 		}
-		inner := m[1] + m[2]
 		parts := splitTopLevel(inner, listSep)
 		cmd = parts[len(parts)-1]
 	}

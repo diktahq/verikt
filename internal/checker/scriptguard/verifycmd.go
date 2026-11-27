@@ -51,9 +51,11 @@ func verificationCommand(fields []string, extra []string) (string, bool) {
 	}
 	cmd, args := fields[0], fields[1:]
 	base := path.Base(cmd)
-	if (base == "bash" || base == "sh" || base == "zsh") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		cmd, args = args[0], args[1:]
-		base = path.Base(cmd)
+	if base == "bash" || base == "sh" || base == "zsh" {
+		if script, ok := shellScriptArgs(args); ok {
+			cmd, args = script[0], script[1:]
+			base = path.Base(cmd)
+		}
 	}
 	switch {
 	case cleanupCommands[base], base == "test", base == "[", base == "[[":
@@ -77,6 +79,31 @@ func verificationCommand(fields []string, extra []string) (string, bool) {
 	return "", false
 }
 
+// shellScriptArgs skips a shell's options and returns the script file and
+// its arguments. It reports false when the shell runs a command string (-c)
+// or reads the script from stdin (-s), or names no script.
+func shellScriptArgs(args []string) ([]string, bool) {
+	for len(args) > 0 {
+		a := args[0]
+		switch {
+		case a == "-o" || a == "+o":
+			args = args[min(2, len(args)):]
+		case a == "--":
+			args = args[1:]
+		case strings.HasPrefix(a, "--"):
+			args = args[1:]
+		case strings.HasPrefix(a, "-") || strings.HasPrefix(a, "+"):
+			if strings.ContainsAny(a[1:], "cs") {
+				return nil, false
+			}
+			args = args[1:]
+		default:
+			return args, true
+		}
+	}
+	return nil, false
+}
+
 // subcommandVerifies handles tools whose subcommand decides whether they
 // verify. known is false when base is not such a tool.
 func subcommandVerifies(base string, args []string) (ok, known bool) {
@@ -88,6 +115,9 @@ func subcommandVerifies(base string, args []string) (ok, known bool) {
 	case "go":
 		return first == "test" || first == "vet", true
 	case "cargo":
+		if strings.HasPrefix(first, "+") && len(args) > 1 {
+			first = args[1] // cargo +nightly test: the toolchain comes first
+		}
 		return first == "test" || first == "clippy" || first == "check", true
 	case "deno":
 		return first == "test" || first == "lint" || first == "check", true
@@ -127,6 +157,8 @@ func stripCommandPrefixes(fields []string) []string {
 			fields = fields[1:]
 		case len(fields) > 1 && twoWordPrefixes[fields[0]+" "+fields[1]]:
 			fields = fields[2:]
+		case fields[0] == "env":
+			fields = skipEnvOptions(fields[1:])
 		case fields[0] == "timeout" && len(fields) > 1:
 			fields = skipFlags(fields[1:])
 			if len(fields) > 0 {
@@ -137,6 +169,21 @@ func stripCommandPrefixes(fields []string) []string {
 		default:
 			return fields
 		}
+	}
+	return fields
+}
+
+// envOptionsWithValue are env options that take the next word as a value.
+var envOptionsWithValue = setOf("-u", "--unset", "-C", "--chdir")
+
+// skipEnvOptions drops env's options, and the values of those that take one.
+func skipEnvOptions(fields []string) []string {
+	for len(fields) > 0 && strings.HasPrefix(fields[0], "-") {
+		if envOptionsWithValue[fields[0]] {
+			fields = fields[min(2, len(fields)):]
+			continue
+		}
+		fields = fields[1:]
 	}
 	return fields
 }

@@ -28,9 +28,13 @@ const maxScriptGuardFileSize = 2 << 20
 // source language. check.exclude applies, symlinks are never followed
 // (INV-002), and what cannot be read is skipped rather than failing the
 // check — detectUnreadablePaths reports it.
-func detectScriptGuards(projectPath string, check config.CheckConfig) []Violation {
+//
+// Findings an inline verikt:allow marker covers are returned as waived, with
+// the marker's reason, so they stay visible in the WAIVED section.
+func detectScriptGuards(projectPath string, check config.CheckConfig) ([]Violation, []WaivedFinding) {
 	opts := scriptguard.Options{ExtraCommands: check.SilentCISwallow.ExtraCommands}
 	var out []Violation
+	var waived []WaivedFinding
 	// Per-entry errors are skipped inside the callback; an unreadable path is
 	// reported by detectUnreadablePaths, and a failed walk has found nothing.
 	_ = filepath.WalkDir(projectPath, func(p string, d fs.DirEntry, err error) error {
@@ -58,11 +62,13 @@ func detectScriptGuards(projectPath string, check config.CheckConfig) []Violatio
 			return nil
 		}
 		if content, ok := readScriptFile(p, d); ok {
-			out = append(out, scriptFindings(scriptguard.Scan(rel, kind, content, opts))...)
+			res := scriptguard.ScanAll(rel, kind, content, opts)
+			out = append(out, scriptFindings(res.Findings)...)
+			waived = append(waived, scriptWaivers(res.Waived)...)
 		}
 		return nil
 	})
-	return out
+	return out, waived
 }
 
 // readScriptFile reads a regular text file. Large, binary and unreadable
@@ -87,6 +93,18 @@ func scriptFindings(findings []scriptguard.Finding) []Violation {
 	for _, f := range findings {
 		out = append(out, Violation{
 			Category: "structure", File: f.File, Line: f.Line, Message: f.Message, Rule: f.Rule, Severity: "warning",
+		})
+	}
+	return out
+}
+
+// scriptWaivers records findings an inline verikt:allow marker waived, with
+// the reason the marker gave.
+func scriptWaivers(findings []scriptguard.Finding) []WaivedFinding {
+	out := make([]WaivedFinding, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, WaivedFinding{
+			Category: "structure", Rule: f.Rule, File: f.File, Line: f.Line, Message: f.Message, Reason: f.Reason,
 		})
 	}
 	return out
