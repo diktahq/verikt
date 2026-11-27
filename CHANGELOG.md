@@ -25,9 +25,12 @@ existing pipeline sees.
   pipeline gating on `--diff main` can newly fail without any change to your code.
 - **Two new structure detectors, both at warning severity**, so neither changes the
   exit code unless you raise it. `live_dot_claude_fixture` is always on: it reports a
-  `.claude/` directory holding `skills`, `rules`, `hooks` or `settings.json` under a
-  `test`, `tests`, `testdata`, `fixtures`, `evals` or `examples` path, where an agent
-  can load it as live instructions. `cmd_allowlist` (Go) is off until you set
+  `.claude/` directory holding `rules/` or `skills/` under a `test`, `tests`,
+  `testdata`, `fixtures`, `evals`, `examples`, `__tests__` or `__fixtures__` path, and
+  a standalone `CLAUDE.md` or `CLAUDE.local.md` inside a fixture case
+  (`testdata/<case>/CLAUDE.md`). Claude Code loads these on demand once it reads or
+  edits a file in that directory, so an agent working on the fixture takes them as
+  live instructions. `cmd_allowlist` (Go) is off until you set
   `check.allowed_entrypoints`; it then reports any `package main` under `cmd/` or at
   the module root that the list does not name. Waive a specific finding with a
   `severity_overrides` entry under the detector's name (`severity: ignore`, a
@@ -429,11 +432,29 @@ existing pipeline sees.
   `| bash -o pipefail` and `| bash +e` at the end of a download pipeline. Over 85
   local repositories and 261 Go modules this added 10 findings, all from the
   redirection change, and removed none. (#36)
-- **`live_dot_claude_fixture` covers more of what Claude Code loads.** Matching
-  ignores case; `CLAUDE.md`, `agents/` and `commands/` inside a fixture `.claude/`
-  are reported, as is a standalone `CLAUDE.md` inside a fixture case
-  (`testdata/<case>/CLAUDE.md`); `__tests__` and `__fixtures__` count as fixture
-  paths; the remedy is worded for any language. (#36)
+- **`context_background_in_handler` checks for a request, not a package name.** It
+  took any package path containing `handler`, `controller`, `adapter`, `transport` or
+  `api` as a handler, so it reported `context.Background()` in `main()` under
+  `api/cmd`, in a CLI command under an `...adapter` package, and in any package
+  named like `rapid` or `capital`, while a real handler in a package named `web` was
+  never checked. It now reports `context.Background()` only when it is passed to a
+  call while a named `*http.Request` or `context.Context` parameter is in scope, in
+  any package, and stays silent for deferred and error-path cleanup, goroutines,
+  `context.With*` derivations, setup calls and logging. The message names the
+  parameter to use (`use r.Context()`, `pass ctx`). Found by the ADR-012 corpus run;
+  each wrong shape is now a `detector-restraint` case. (#36)
+- **`live_dot_claude_fixture` reports only what Claude Code loads from a nested
+  directory.** A fixture `.claude/` is reported when it holds `rules/` or `skills/`,
+  the two entries Claude Code documents loading on demand below the working
+  directory. `agents/`, `commands/`, `hooks/`, `settings.json`, `settings.local.json`
+  and a nested `.claude/CLAUDE.md` are not reported: subagents are found by walking
+  up, settings and hooks are read from the root, and the rest are not documented to
+  load from a subdirectory. A standalone `CLAUDE.md` or `CLAUDE.local.md` inside a
+  fixture case is reported. Matching ignores case; `__tests__` and `__fixtures__`
+  count as fixture paths; the remedy is worded for any language. The ADR-012 corpus
+  run found the earlier markers wrong: of 1,025 findings over 26 local
+  repositories, 628 were `.claude/` directories holding only `agents/` or
+  `commands/`. (#36)
 - **The template security test enforces more of INV-003.** It rejects RealIP, a
   tenant read from a header, a joined CORS allow-list, an idempotency key hashed
   alone, and Docker images without a version tag, and asserts that required

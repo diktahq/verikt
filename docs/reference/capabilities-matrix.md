@@ -205,7 +205,7 @@ Warnings are advisory — they don't block scaffolding.
 | Detector | Severity | What It Catches |
 |----------|----------|----------------|
 | `sql_concatenation` | warning | String concatenation with SQL keywords, in a file that shows evidence of SQL |
-| `context_background_in_handler` | warning | `context.Background()` in handler/adapter code |
+| `context_background_in_handler` | warning | `context.Background()` passed to a call while a request context is in scope (a named `*http.Request` or `context.Context` parameter), in any package |
 
 ## Design Patterns by Category
 
