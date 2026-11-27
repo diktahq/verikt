@@ -2,7 +2,6 @@ package guide
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,7 +26,8 @@ var categoryCapabilities = map[string][]string{
 	"frontend":   {"templ", "htmx", "static-assets"},
 }
 
-// categoryGlobs maps split categories to file globs for Claude frontmatter.
+// categoryGlobs maps split categories to the file globs in each category
+// file's `paths:` frontmatter.
 var categoryGlobs = map[string][]string{
 	// The bff gateway entries mirror each architecture's adapter/bffgateway
 	// path mapping (hexagonal, clean, flat; layered's internal/handler/bff is
@@ -75,10 +75,11 @@ func buildSplitContent(opts GenerateOptions) SplitContent {
 	return sc
 }
 
-// buildIndexContent generates the always-loaded index file: Claude frontmatter
-// plus the writer rules shared by every target.
+// buildIndexContent generates the always-loaded index file: the writer rules
+// shared by every target. It has no frontmatter, because Claude Code loads a
+// rule without `paths:` frontmatter at launch, which is what the index needs.
 func buildIndexContent(opts GenerateOptions) string {
-	return "---\nglobs: [\"**/*\"]\n---\n" + claudeHeader + buildWriterRules(opts)
+	return claudeHeader + buildWriterRules(opts)
 }
 
 // writeArchitectureSummary writes a 2-3 sentence architecture summary.
@@ -122,15 +123,13 @@ func writeCriticalWarnings(b *strings.Builder, capabilities []string) {
 func buildCategoryContent(category string, installed []string, opts GenerateOptions) string {
 	var b strings.Builder
 
-	globs := globsForCategory(category)
-	b.WriteString("---\nglobs: [")
-	for i, g := range globs {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%q", g)
+	// Claude Code scopes a rule with a `paths:` YAML list and loads it only
+	// when the agent works on a matching file. It ignores Cursor's `globs:`.
+	b.WriteString("---\npaths:\n")
+	for _, g := range globsForCategory(category) {
+		fmt.Fprintf(&b, "  - %q\n", g)
 	}
-	b.WriteString("]\n---\n")
+	b.WriteString("---\n")
 	b.WriteString(claudeHeader)
 
 	title := categoryTitles[category]
@@ -314,7 +313,7 @@ func installedInCategory(category string, installed []string) []string {
 	return result
 }
 
-// globsForCategory returns the globs for a category's frontmatter.
+// globsForCategory returns the globs for a category's `paths:` frontmatter.
 func globsForCategory(category string) []string {
 	if g, ok := categoryGlobs[category]; ok {
 		return g
@@ -324,32 +323,12 @@ func globsForCategory(category string) []string {
 
 // WriteSplit writes split guide files for the Claude target.
 func (t *claudeTarget) WriteSplit(projectDir string, sc SplitContent) error {
-	dir := filepath.Join(projectDir, ".claude", "rules")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create claude rules dir: %w", err)
-	}
-
-	// Clean up old monolithic file.
-	oldPath := filepath.Join(dir, "verikt.md")
-	if _, err := os.Stat(oldPath); err == nil {
-		if err := os.Remove(oldPath); err != nil {
-			return fmt.Errorf("remove old verikt.md: %w", err)
-		}
-	}
-
-	// Write index.
-	indexPath := filepath.Join(dir, "verikt-index.md")
-	if err := os.WriteFile(indexPath, []byte(sc.Index), 0o644); err != nil {
-		return fmt.Errorf("write verikt-index.md: %w", err)
-	}
-
-	// Write category files.
+	files := map[string]string{claudeIndexRule: sc.Index}
 	for category, content := range sc.Categories {
-		filename := fmt.Sprintf("verikt-%s.md", category)
-		path := filepath.Join(dir, filename)
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", filename, err)
-		}
+		files["verikt-"+category+".md"] = content
+	}
+	if err := writeClaudeRules(projectDir, files); err != nil {
+		return err
 	}
 
 	// Generate Claude Code hook scripts and update settings.json.
@@ -363,4 +342,69 @@ func (t *claudeTarget) WriteSplit(projectDir string, sc SplitContent) error {
 	}
 
 	return nil
+}
+
+const (
+	claudeIndexRule      = "verikt-index.md"
+	claudeMonolithicRule = "verikt.md"
+)
+
+var claudeRulesDir = filepath.Join(".claude", "rules")
+
+// writeClaudeRules writes files (name -> content) to .claude/rules, then
+// removes every rule file an earlier verikt run generated that this run did
+// not write: a category the project dropped, verikt.md after leaving
+// --catalog-only, or the split files after entering it. Claude Code loads
+// every file in .claude/rules, so a stale one keeps steering the agent.
+func writeClaudeRules(projectDir string, files map[string]string) error {
+	for name, content := range files {
+		if err := WriteProjectFile(projectDir, filepath.Join(claudeRulesDir, name), []byte(content)); err != nil {
+			return fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+	return removeStaleClaudeRules(projectDir, files)
+}
+
+// removeStaleClaudeRules removes a .claude/rules file only when verikt owns
+// both its name (verikt.md or verikt-*.md) and its content (the generated
+// header in its first lines). A user's file is never removed.
+func removeStaleClaudeRules(projectDir string, keep map[string]string) error {
+	names, err := listProjectDir(projectDir, claudeRulesDir)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if _, ok := keep[name]; ok || !isVeriktRuleName(name) {
+			continue
+		}
+		rel := filepath.Join(claudeRulesDir, name)
+		data, err := readProjectFile(projectDir, rel)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", filepath.ToSlash(rel), err)
+		}
+		if !hasGeneratedHeader(string(data)) {
+			continue
+		}
+		if err := removeProjectFile(projectDir, rel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isVeriktRuleName(name string) bool {
+	return name == claudeMonolithicRule || (strings.HasPrefix(name, "verikt-") && strings.HasSuffix(name, ".md"))
+}
+
+// hasGeneratedHeader reports whether content carries claudeHeader at its start
+// or right after its frontmatter, where verikt writes it.
+func hasGeneratedHeader(content string) bool {
+	if strings.HasPrefix(content, claudeHeader) {
+		return true
+	}
+	if !strings.HasPrefix(content, "---\n") {
+		return false
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	return end >= 0 && strings.HasPrefix(content[4+end+5:], claudeHeader)
 }

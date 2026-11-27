@@ -138,9 +138,15 @@ func providerCapabilities(t *testing.T, provider string) map[string]bool {
 	root := filepath.Join("..", "..", "providers", provider, "templates", "capabilities")
 	entries, err := os.ReadDir(root)
 	require.NoError(t, err)
+	// Same discovery as `verikt new`: a capability is a directory carrying a
+	// capability.yaml. Counting every directory read agent tooling's stray
+	// dot-directories (an empty templates/capabilities/.claude) as a capability.
 	out := map[string]bool{}
 	for _, e := range entries {
-		if e.IsDir() {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, e.Name(), "capability.yaml")); err == nil {
 			out[e.Name()] = true
 		}
 	}

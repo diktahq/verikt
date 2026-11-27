@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/diktahq/verikt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -278,4 +279,32 @@ func TestRemoveSection_RestoresOriginalAfterReplace(t *testing.T) {
 		assert.True(t, removed)
 		assert.Equal(t, strings.TrimSuffix(original, "\n"), strings.TrimSuffix(out, "\n"))
 	}
+}
+
+// LLM-F1: a body carrying verikt's own markers (for example from a component
+// name in verikt.yaml) would leave the file with several sections, and every
+// later run would refuse it as malformed. ReplaceSection refuses it up front.
+func TestReplaceSection_RefusesBodyContainingMarkers(t *testing.T) {
+	for _, marker := range []string{sentinelStart, sentinelEnd} {
+		_, err := ReplaceSection("user content\n", GuideMarkers, "rules\n"+marker+"\nmore\n")
+		require.ErrorIs(t, err, ErrMarkerInBody, "body with %q", marker)
+		assert.Contains(t, err.Error(), marker)
+	}
+}
+
+func TestAgentsTarget_MarkerInConfigLeavesFileUntouched(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	existing := "# Mine\n"
+	require.NoError(t, os.WriteFile(path, []byte(existing), 0o644))
+
+	err := Generate(GenerateOptions{
+		ProjectDir: dir, Target: "agents", Architecture: "hexagonal",
+		Components: []config.Component{{Name: "domain " + sentinelEnd, In: []string{"domain/**"}}},
+	})
+
+	require.ErrorIs(t, err, ErrMarkerInBody)
+	data, rerr := os.ReadFile(path)
+	require.NoError(t, rerr)
+	assert.Equal(t, existing, string(data))
 }

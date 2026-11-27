@@ -33,8 +33,9 @@ shared files such as AGENTS.md, verikt only rewrites the section between its
 file whose markers are malformed. A legacy .cursorrules keeps your own content;
 only verikt's old section is removed from it.
 
-Use --catalog-only to generate only the capability catalog without requiring
-an verikt.yaml configuration file.`,
+Use --catalog-only in a project without verikt.yaml to generate only the
+capability catalog. In a project with verikt.yaml it refuses and writes
+nothing: read .verikt/references/capabilities.md instead.`,
 		Example: `  verikt guide
   verikt guide --target claude
   verikt guide --target cursor
@@ -46,7 +47,7 @@ an verikt.yaml configuration file.`,
 	}
 
 	cmd.Flags().StringVar(&target, "target", "all", "Output target: "+strings.Join(guide.TargetNames(), ", "))
-	cmd.Flags().BoolVar(&catalogOnly, "catalog-only", false, "Generate only the capability catalog (no verikt.yaml required)")
+	cmd.Flags().BoolVar(&catalogOnly, "catalog-only", false, "Generate only the capability catalog, for a project without verikt.yaml")
 	_ = cmd.RegisterFlagCompletionFunc("target", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return guide.TargetNames(), cobra.ShellCompDirectiveNoFileComp
 	})
@@ -58,28 +59,7 @@ func runGuide(notices io.Writer, target string, catalogOnly bool) error {
 	projectDir := "."
 
 	if catalogOnly {
-		// Catalog-only mode: no verikt.yaml required, but load capabilities if present
-		// so the dynamic "Your Stack: Specific Warnings" section fires.
-		p, provErr := provider.Get("go")
-		opts := guide.GenerateOptions{
-			ProjectDir:  projectDir,
-			Target:      target,
-			CatalogOnly: true,
-			Notices:     notices,
-		}
-		if provErr == nil {
-			opts.TemplateFS = p.GetTemplateFS()
-		}
-		if cfgPath, cfgErr := config.FindVeriktYAML("."); cfgErr == nil {
-			if cfg, cfgErr := config.LoadVeriktYAML(cfgPath); cfgErr == nil {
-				opts.Capabilities = cfg.Capabilities
-			}
-		}
-		if err := guide.Generate(opts); err != nil {
-			return err
-		}
-		fmt.Printf("Guide generated (catalog-only) for target: %s\n", target)
-		return nil
+		return runGuideCatalogOnly(notices, projectDir, target)
 	}
 
 	cfgPath, err := config.FindVeriktYAML(".")
@@ -108,5 +88,32 @@ func runGuide(notices io.Writer, target string, catalogOnly bool) error {
 	}
 
 	fmt.Printf("Guide generated for target: %s\n", target)
+	return nil
+}
+
+// runGuideCatalogOnly writes the capability catalog for a project with no
+// verikt.yaml. In a configured project it refuses and writes nothing: the
+// catalog-only guide replaces the architecture rules generated from
+// verikt.yaml, and the project's own capability reference already holds the
+// catalog.
+func runGuideCatalogOnly(notices io.Writer, projectDir, target string) error {
+	if cfgPath, err := config.FindVeriktYAML(projectDir); err == nil {
+		return fmt.Errorf("--catalog-only is for projects without verikt.yaml, and %s configures this one; "+
+			"nothing was written. Read .verikt/references/capabilities.md for the capability catalog, "+
+			"or run `verikt guide` to regenerate it", cfgPath)
+	}
+	opts := guide.GenerateOptions{
+		ProjectDir:  projectDir,
+		Target:      target,
+		CatalogOnly: true,
+		Notices:     notices,
+	}
+	if p, err := provider.Get("go"); err == nil {
+		opts.TemplateFS = p.GetTemplateFS()
+	}
+	if err := guide.Generate(opts); err != nil {
+		return err
+	}
+	fmt.Printf("Guide generated (catalog-only) for target: %s\n", target)
 	return nil
 }

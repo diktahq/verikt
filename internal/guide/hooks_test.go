@@ -347,6 +347,49 @@ func TestHookScriptCheck_ReportsFailureWithoutReadableReport(t *testing.T) {
 	assert.Contains(t, out.HookSpecificOutput.AdditionalContext, "exit code 3")
 }
 
+// LLM-F2: a check that fails only because a proxy rule could not run (stale or
+// invalid) has no findings, and must say so instead of claiming the report was
+// unreadable.
+func TestHookScriptCheck_ReportsUnrunProxyRules(t *testing.T) {
+	tools := requireTools(t, "bash", "jq")
+	report := `{
+  "result": "fail", "violations": [], "anti_patterns": [],
+  "proxy_rules": {"violations": [], "statuses": [
+    {"filename": "ok.yaml", "status": "valid"},
+    {"filename": "no-raw-sql.yaml", "status": "stale"},
+    {"filename": "bad\"name.yaml", "status": "invalid", "error": "missing pattern"}
+  ]}
+}`
+	bin := fakeVeriktCheck(t, report, 1)
+
+	stdout, stderr, err := runHook(t, tools["bash"], hookScriptCheck, t.TempDir(),
+		bin+":"+os.Getenv("PATH"), postToolUseInput(t, "main.go"))
+	require.NoError(t, err, "stderr: %s", stderr)
+
+	ctx := decodeHookOutput(t, stdout).HookSpecificOutput.AdditionalContext
+	assert.Contains(t, ctx, "2 proxy rule(s) could not run")
+	assert.Contains(t, ctx, "no-raw-sql.yaml")
+	assert.Contains(t, ctx, `bad"name.yaml`)
+	assert.NotContains(t, ctx, "no readable report")
+	assert.NotContains(t, ctx, "ok.yaml")
+}
+
+// Findings and unrun rules in one run are both reported.
+func TestHookScriptCheck_ReportsViolationsAndUnrunRules(t *testing.T) {
+	tools := requireTools(t, "bash", "jq")
+	report := `{"violations": [{"rule": "a"}], "anti_patterns": [],
+  "proxy_rules": {"violations": [], "statuses": [{"filename": "x.yaml", "status": "stale"}]}}`
+	bin := fakeVeriktCheck(t, report, 1)
+
+	stdout, stderr, err := runHook(t, tools["bash"], hookScriptCheck, t.TempDir(),
+		bin+":"+os.Getenv("PATH"), postToolUseInput(t, "main.go"))
+	require.NoError(t, err, "stderr: %s", stderr)
+
+	ctx := decodeHookOutput(t, stdout).HookSpecificOutput.AdditionalContext
+	assert.Contains(t, ctx, "found 1 violation(s)")
+	assert.Contains(t, ctx, "1 proxy rule(s) could not run")
+}
+
 func TestHookScriptCheck_SkipsVendorFiles(t *testing.T) {
 	tools := requireTools(t, "bash", "jq")
 	bin := fakeVeriktCheck(t, `{"violations": [{"rule": "a"}]}`, 1)
@@ -569,4 +612,24 @@ func TestMergeClaudeSettingsJSON_CreatesClaudeDir(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, mergeClaudeSettingsJSON(dir, veriktCheckHooks(10)))
 	assert.FileExists(t, filepath.Join(dir, ".claude", "settings.json"))
+}
+
+// LLM-F2: a failed regeneration is reported to the agent through SessionStart
+// additionalContext, and the stored hash is left alone so the next session
+// retries.
+func TestHookScriptGuideRefresh_ReportsGuideFailure(t *testing.T) {
+	tools := requireTools(t, "bash")
+	dir := refreshProject(t)
+	path := refreshPath(t, map[string]string{
+		"verikt":    "#!/bin/sh\necho 'load verikt.yaml: boom' >&2\nexit 1\n",
+		"sha256sum": "#!/bin/sh\necho \"newhash  $1\"\n",
+	})
+
+	stdout, stderr, err := runHook(t, tools["bash"], hookScriptGuideRefresh, dir, path, "")
+	require.NoError(t, err, "stderr: %s", stderr)
+
+	out := decodeHookOutput(t, stdout)
+	assert.Equal(t, "SessionStart", out.HookSpecificOutput.HookEventName)
+	assert.Contains(t, out.HookSpecificOutput.AdditionalContext, "verikt guide --target claude failed")
+	assert.NoFileExists(t, filepath.Join(dir, ".verikt", ".guide-hash"))
 }

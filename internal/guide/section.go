@@ -59,8 +59,15 @@ func (m SectionMarkers) locate(existing string) (*sectionSpan, error) {
 // ReplaceSection returns existing with verikt's section set to body. When the
 // file has no section yet, the section is appended after the user's content.
 // Content outside the markers is preserved byte for byte. Malformed markers
-// return ErrMalformedSection so the caller never clobbers user content.
+// return ErrMalformedSection so the caller never clobbers user content. A body
+// that contains either marker returns ErrMarkerInBody: written, it would leave
+// the file with marker counts every later run refuses as malformed.
 func ReplaceSection(existing string, m SectionMarkers, body string) (string, error) {
+	for _, marker := range []string{m.Start, m.End} {
+		if strings.Contains(body, marker) {
+			return "", fmt.Errorf("%w: %q (check verikt.yaml for a name or value containing it)", ErrMarkerInBody, marker)
+		}
+	}
 	if body != "" && !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
@@ -134,3 +141,7 @@ func WriteFileAtomic(path string, data []byte) error {
 	}
 	return nil
 }
+
+// ErrMarkerInBody is returned when the body ReplaceSection would write contains
+// the section's own start or end marker.
+var ErrMarkerInBody = errors.New("section body contains a verikt section marker")

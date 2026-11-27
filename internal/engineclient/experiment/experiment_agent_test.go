@@ -401,8 +401,15 @@ func generateGuide(t *testing.T, bin, dir string) string {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "verikt guide failed: %s", out)
 
-	guidePath := filepath.Join(dir, ".cursorrules")
-	guide, err := os.ReadFile(guidePath)
+	return readCursorGuide(t, dir)
+}
+
+// readCursorGuide returns the guide the cursor target wrote in dir. Since
+// 0.3.0 that is .cursor/rules/verikt.mdc; the legacy .cursorrules is no
+// longer written.
+func readCursorGuide(t *testing.T, dir string) string {
+	t.Helper()
+	guide, err := os.ReadFile(filepath.Join(dir, ".cursor", "rules", "verikt.mdc"))
 	require.NoError(t, err, "guide file not found after verikt guide")
 	return string(guide)
 }

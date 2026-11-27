@@ -1,7 +1,6 @@
 package guide
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,20 +131,17 @@ func writeReviewReference(b *strings.Builder, opts GenerateOptions) {
 // writeReferences writes the on-demand references under projectDir and removes
 // any verikt reference that this run no longer produces.
 func writeReferences(projectDir string, refs map[string]string) error {
-	dir := filepath.Join(projectDir, filepath.FromSlash(referencesDir))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", referencesDir, err)
-	}
+	dir := filepath.FromSlash(referencesDir)
 	for _, spec := range allReferenceSpecs {
-		path := filepath.Join(dir, spec.file)
+		rel := filepath.Join(dir, spec.file)
 		content, ok := refs[spec.file]
 		if !ok {
-			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := removeProjectFile(projectDir, rel); err != nil {
 				return fmt.Errorf("remove stale reference %s: %w", spec.file, err)
 			}
 			continue
 		}
-		if err := WriteFileAtomic(path, []byte(content)); err != nil {
+		if err := WriteProjectFile(projectDir, rel, []byte(content)); err != nil {
 			return fmt.Errorf("write reference %s: %w", spec.file, err)
 		}
 	}

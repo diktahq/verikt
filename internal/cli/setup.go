@@ -349,12 +349,23 @@ func installSkills(cmd *cobra.Command, agents []AIAgent) error {
 			}
 		}
 		if installScope == "local" || installScope == "both" {
-			localBase := ".claude"
-			if err := writeSkill(localBase, name, content); err != nil {
+			if err := installLocalSkill(cmd, name, content); err != nil {
 				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+// installLocalSkill writes a skill into the current project's .claude/skills.
+// It goes through guide.WriteProjectFile, which refuses a symlinked path: a
+// project-scoped write must not follow a link out of the project.
+func installLocalSkill(cmd *cobra.Command, name, content string) error {
+	rel := filepath.Join(".claude", "skills", name, "SKILL.md")
+	if err := guide.WriteProjectFile(".", rel, []byte(content)); err != nil {
+		return fmt.Errorf("writing skill %s: %w", rel, err)
+	}
+	cmd.Printf("  ✓ %s → %s\n", name, rel)
 	return nil
 }

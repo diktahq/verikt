@@ -216,7 +216,7 @@ func alwaysLoadedFiles(t *testing.T, bc budgetCase) map[string]string {
 
 // budgetedFiles returns every file INV-001's budget applies to for bc: the
 // always-loaded files plus Claude's per-category files. Those load whenever an
-// edited path matches their globs, and "domain/**" or "**/*_test.go" match most
+// edited path matches their `paths:` globs, and "domain/**" or "**/*_test.go" match most
 // edits, so they are held to the same budget.
 func budgetedFiles(t *testing.T, bc budgetCase) map[string]string {
 	t.Helper()

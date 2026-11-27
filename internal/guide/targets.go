@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,11 +66,26 @@ case "$COUNT" in
   ''|*[!0-9]*) COUNT=0 ;;
 esac
 
+# A proxy rule that is stale (matches no files) or invalid fails the check
+# without producing a finding; name those rules rather than calling the
+# report unreadable.
+UNRUN=$(printf '%s' "$RESULT" | jq -r '
+  [(.proxy_rules.statuses // [])[]
+   | select(.status == "stale" or .status == "invalid")
+   | "\(.filename // "?") (\(.status))"]
+  | if length == 0 then "" else "\(length) proxy rule(s) could not run: " + join(", ") end' 2>/dev/null) || UNRUN=""
+
 if [ "$COUNT" -gt 0 ]; then
-  MESSAGE="verikt check --diff HEAD found $COUNT violation(s) after editing $FILE_PATH. Run verikt check --diff HEAD -o terminal for details."
+  MESSAGE="verikt check --diff HEAD found $COUNT violation(s) after editing $FILE_PATH."
+elif [ -n "$UNRUN" ]; then
+  MESSAGE="verikt check --diff HEAD failed after editing $FILE_PATH."
 else
-  MESSAGE="verikt check --diff HEAD failed (exit code $EXIT_CODE) after editing $FILE_PATH and produced no readable report, so architecture compliance is unverified. Run verikt check --diff HEAD -o terminal for details."
+  MESSAGE="verikt check --diff HEAD failed (exit code $EXIT_CODE) after editing $FILE_PATH and produced no readable report, so architecture compliance is unverified."
 fi
+if [ -n "$UNRUN" ]; then
+  MESSAGE="$MESSAGE $UNRUN. Fix or remove them under .verikt/rules."
+fi
+MESSAGE="$MESSAGE Run verikt check --diff HEAD -o terminal for details."
 
 # Feed the result back as context for Claude to self-correct.
 jq -n --arg ctx "$MESSAGE" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $ctx}}'
@@ -111,6 +127,10 @@ if verikt guide --target claude 2>/dev/null; then
   echo "$CURRENT_HASH" > "$TMP_HASH"
   mv "$TMP_HASH" "$HASH_FILE"
   echo '{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "verikt guide regenerated: architecture rules updated."}}'
+else
+  # The hash is left as it was, so the next session retries. The message is a
+  # fixed string, so it needs no JSON escaping and no jq.
+  echo '{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "verikt.yaml changed but verikt guide --target claude failed, so the architecture rules in .claude/rules may be stale. Run verikt guide to see the error and fix verikt.yaml before relying on those rules."}}'
 fi
 exit 0
 `
@@ -202,35 +222,24 @@ func targetInUse(t Target, projectDir string) bool {
 	return false
 }
 
-// claudeTarget writes directly to .claude/rules/verikt.md.
+// claudeTarget writes .claude/rules/verikt.md in catalog-only output; a guide
+// generated from verikt.yaml uses WriteSplit instead.
 type claudeTarget struct{}
 
 func (t *claudeTarget) Name() string { return "claude" }
 
 func (t *claudeTarget) Write(projectDir, content string) error {
-	dir := filepath.Join(projectDir, ".claude", "rules")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create claude rules dir: %w", err)
-	}
-	path := filepath.Join(dir, "verikt.md")
-	return os.WriteFile(path, []byte(claudeHeader+content), 0o644)
+	return writeClaudeRules(projectDir, map[string]string{claudeMonolithicRule: claudeHeader + content})
 }
 
 // generateHooks creates hook scripts under .claude/hooks/ and registers them
 // in .claude/settings.json via JSON-aware merge.
 func generateHooks(projectDir string) error {
-	hooksDir := filepath.Join(projectDir, ".claude", "hooks")
-	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
-		return fmt.Errorf("create hooks dir: %w", err)
-	}
-
-	checkScript := filepath.Join(hooksDir, "verikt-check.sh")
-	if err := os.WriteFile(checkScript, []byte(hookScriptCheck), 0o755); err != nil {
+	hooksDir := filepath.Join(".claude", "hooks")
+	if err := writeProjectScript(projectDir, filepath.Join(hooksDir, "verikt-check.sh"), []byte(hookScriptCheck)); err != nil {
 		return fmt.Errorf("write verikt-check.sh: %w", err)
 	}
-
-	refreshScript := filepath.Join(hooksDir, "verikt-guide-refresh.sh")
-	if err := os.WriteFile(refreshScript, []byte(hookScriptGuideRefresh), 0o755); err != nil {
+	if err := writeProjectScript(projectDir, filepath.Join(hooksDir, "verikt-guide-refresh.sh"), []byte(hookScriptGuideRefresh)); err != nil {
 		return fmt.Errorf("write verikt-guide-refresh.sh: %w", err)
 	}
 
@@ -281,10 +290,9 @@ var veriktHookScripts = []string{
 // file untouched. Per event, user hooks are kept where they are and verikt's own
 // entries are replaced in place, so repeated runs are idempotent.
 func mergeClaudeSettingsJSON(projectDir string, hooks map[string]any) error {
-	claudeDir := filepath.Join(projectDir, ".claude")
-	settingsPath := filepath.Join(claudeDir, "settings.json")
+	settingsPath := filepath.Join(".claude", "settings.json")
 
-	existing, err := readClaudeSettings(settingsPath)
+	existing, err := readClaudeSettings(projectDir, settingsPath)
 	if err != nil {
 		return err
 	}
@@ -325,17 +333,15 @@ func mergeClaudeSettingsJSON(projectDir string, hooks map[string]any) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", claudeDir, err)
-	}
-	return writeJSONAtomic(settingsPath, existing)
+	return writeSettingsJSON(projectDir, settingsPath, existing)
 }
 
-// readClaudeSettings returns the settings object at path: empty when the file
-// is absent or blank, an error when it holds anything but a JSON object.
-func readClaudeSettings(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+// readClaudeSettings returns the settings object at path (relative to
+// projectDir): empty when the file is absent or blank, an error when it holds
+// anything but a JSON object.
+func readClaudeSettings(projectDir, path string) (map[string]any, error) {
+	data, err := readProjectFile(projectDir, path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return map[string]any{}, nil
 	}
 	if err != nil {
@@ -472,40 +478,18 @@ func hookCommands(entry any) []string {
 	return commands
 }
 
-// writeJSONAtomic writes v as indented JSON to path through a temp file and a
-// rename, so an interrupted write never leaves a truncated settings file. The
-// file keeps its existing permissions.
-func writeJSONAtomic(path string, v any) error {
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temp for %s: %w", path, err)
-	}
-	tmpName := tmp.Name()
-	// Removing the temp file fails harmlessly once the rename has moved it.
-	defer func() { _ = os.Remove(tmpName) }()
-
-	enc := json.NewEncoder(tmp)
+// writeSettingsJSON writes v as indented JSON to path (relative to projectDir)
+// through a temp file and a rename, so an interrupted write never leaves a
+// truncated settings file. The file keeps its existing permissions.
+func writeSettingsJSON(projectDir, path string, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		_ = tmp.Close() // the encode error is the one worth reporting
-		return fmt.Errorf("marshal %s: %w", path, err)
+		return fmt.Errorf("marshal %s: %w", filepath.ToSlash(path), err)
 	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close() // the chmod error is the one worth reporting
-		return fmt.Errorf("chmod temp for %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace %s: %w", path, err)
-	}
-	return nil
+	return WriteProjectFile(projectDir, path, buf.Bytes())
 }
 
 // writeGuideHash computes sha256 of verikt.yaml in projectDir and writes it
@@ -524,13 +508,7 @@ func writeGuideHash(projectDir string) error {
 	sum := sha256.Sum256(data)
 	hash := fmt.Sprintf("%x", sum)
 
-	hashDir := filepath.Join(projectDir, ".verikt")
-	if err := os.MkdirAll(hashDir, 0o755); err != nil {
-		return fmt.Errorf("create .verikt dir: %w", err)
-	}
-
-	hashFile := filepath.Join(hashDir, ".guide-hash")
-	if err := os.WriteFile(hashFile, []byte(hash), 0o644); err != nil {
+	if err := WriteProjectFile(projectDir, filepath.Join(".verikt", ".guide-hash"), []byte(hash)); err != nil {
 		return fmt.Errorf("write .guide-hash: %w", err)
 	}
 	return nil
@@ -550,11 +528,9 @@ type sentinelTarget struct {
 func (t *sentinelTarget) Name() string { return t.name }
 
 func (t *sentinelTarget) Write(projectDir, content string) error {
-	path := filepath.Join(projectDir, t.relPath)
-
-	existing, err := os.ReadFile(path) //nolint:gosec // projectDir joined with a fixed relative path
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read %s: %w", t.relPath, err)
+	existing, err := readProjectFile(projectDir, t.relPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("read %s: %w", filepath.ToSlash(t.relPath), err)
 	}
 
 	merged, err := ReplaceSection(string(existing), GuideMarkers, content)
@@ -562,10 +538,7 @@ func (t *sentinelTarget) Write(projectDir, content string) error {
 		return fmt.Errorf("%s: %w; fix or remove the verikt markers by hand, verikt will not overwrite the file", t.relPath, err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create dir for %s: %w", t.name, err)
-	}
-	return WriteFileAtomic(path, []byte(merged))
+	return WriteProjectFile(projectDir, t.relPath, []byte(merged))
 }
 
 // cursorRulesPath is Cursor's project rules location (MDC format). The legacy
@@ -592,12 +565,8 @@ type cursorTarget struct {
 func (t *cursorTarget) Name() string { return "cursor" }
 
 func (t *cursorTarget) Write(projectDir, content string) error {
-	path := filepath.Join(projectDir, cursorRulesPath)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create cursor rules dir: %w", err)
-	}
-	if err := WriteFileAtomic(path, []byte(cursorFrontmatter+claudeHeader+content)); err != nil {
-		return fmt.Errorf("write %s: %w", cursorRulesPath, err)
+	if err := WriteProjectFile(projectDir, cursorRulesPath, []byte(cursorFrontmatter+claudeHeader+content)); err != nil {
+		return fmt.Errorf("write %s: %w", filepath.ToSlash(cursorRulesPath), err)
 	}
 	return t.migrateLegacy(projectDir)
 }
@@ -608,9 +577,8 @@ func (t *cursorTarget) Write(projectDir, content string) error {
 // with a notice, and the file is deleted only when nothing but whitespace
 // remains after removing verikt's section.
 func (t *cursorTarget) migrateLegacy(projectDir string) error {
-	path := filepath.Join(projectDir, legacyCursorRules)
-	data, err := os.ReadFile(path) //nolint:gosec // projectDir joined with a fixed relative path
-	if errors.Is(err, os.ErrNotExist) {
+	data, err := readProjectFile(projectDir, legacyCursorRules)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
@@ -627,13 +595,13 @@ func (t *cursorTarget) migrateLegacy(projectDir string) error {
 		return nil
 	}
 	if strings.TrimSpace(remaining) == "" {
-		if err := os.Remove(path); err != nil {
-			return fmt.Errorf("remove %s: %w", legacyCursorRules, err)
+		if err := removeProjectFile(projectDir, legacyCursorRules); err != nil {
+			return err
 		}
 		t.notify("verikt: removed legacy %s (it held only verikt's section); Cursor now reads %s.", legacyCursorRules, cursorRulesPath)
 		return nil
 	}
-	if err := WriteFileAtomic(path, []byte(remaining)); err != nil {
+	if err := WriteProjectFile(projectDir, legacyCursorRules, []byte(remaining)); err != nil {
 		return fmt.Errorf("write %s: %w", legacyCursorRules, err)
 	}
 	t.notify("verikt: moved verikt's section from %s to %s; your own content in %s was kept.", legacyCursorRules, cursorRulesPath, legacyCursorRules)

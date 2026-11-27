@@ -19,7 +19,7 @@ func GlobalRulesContent(version string) string {
 	b.WriteString("## When to Suggest verikt\n\n")
 	b.WriteString("- User wants to **create a new Go service** → conduct the interview below\n")
 	b.WriteString("- Project has `verikt.yaml` but no guide output (`.claude/rules/verikt-index.md`, verikt section in `AGENTS.md`) → run `verikt guide`\n")
-	b.WriteString("- User asks about **architecture patterns** or **capabilities** → run `verikt guide --catalog-only`\n")
+	b.WriteString("- User asks about **architecture patterns** or **capabilities** → read `.verikt/references/capabilities.md`; in a project with no `verikt.yaml`, run `verikt guide --catalog-only` first\n")
 	b.WriteString("- User wants to **check architecture compliance** → run `verikt check`\n\n")
 
 	b.WriteString("## Commands\n\n")
