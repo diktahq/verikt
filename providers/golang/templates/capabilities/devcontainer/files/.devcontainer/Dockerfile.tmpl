@@ -1,6 +1,6 @@
 FROM golang:{{.GoVersion}}-bookworm
 
-ARG GOLANGCI_LINT_VERSION=v1.57.2
+ARG GOLANGCI_LINT_VERSION=v1.64.8
 ARG AIR_VERSION=v1.51.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,9 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install golangci-lint
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-    | sh -s -- -b /usr/local/bin ${GOLANGCI_LINT_VERSION}
+# Install golangci-lint at a pinned version. go install verifies it against the
+# Go checksum database; no remote install script is run.
+RUN GOBIN=/usr/local/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 
 # Install air (live reload)
 RUN go install github.com/air-verse/air@${AIR_VERSION}
