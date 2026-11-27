@@ -150,3 +150,54 @@ func TestEvasion_MarkerOnContinuedLineWaivesVisibly(t *testing.T) {
 		t.Fatalf("findings = %+v, waived = %+v; want 0 and 2", res.Findings, res.Waived)
 	}
 }
+
+// Re-review (N2): POSIX variants of the constructs above that the first
+// round of fixes still missed. Case ids match DETECTOR-RISK.md.
+func TestEvasion_N2Variants(t *testing.T) {
+	runScanCases(t, []scanCase{
+		{name: "N2.1 brace group, no space before }", kind: KindShell, src: "{ go test ./...;} || true\n", want: []string{sw + "@1"}},
+		{name: "N2.1 brace group, & before }", kind: KindShell, src: "{ go test ./... &} || true\n"},
+		{name: "guard: tight brace group cleanup", kind: KindShell, src: "{ rm -rf out;} || true\n"},
+		{name: "guard: tight brace group ends with echo", kind: KindShell, src: "{ go test ./...; echo done;} || true\n"},
+		{name: "guard: tight function definition", kind: KindShell, src: "run_tests() { go test ./...;} || true\n"},
+		{name: "guard: ${VAR} before ||", kind: KindShell, src: "rm -f ${OUT} || true\n"},
+
+		{name: "N2.2 subshell, one word", kind: KindShell, src: "(pytest) || true\n", want: []string{sw + "@1"}},
+		{name: "N2.2 subshell, subcommand", kind: KindShell, src: "(go vet) || true\n", want: []string{sw + "@1"}},
+		{name: "N2.2 subshell, list ending in a check", kind: KindShell, src: "(cd app && npm test) || true\n", want: []string{sw + "@1"}},
+		{name: "guard: subshell deploy", kind: KindShell, src: "(cd deploy && ./release.sh) || true\n"},
+		{name: "guard: subshell cleanup", kind: KindShell, src: "(rm -rf out) || true\n"},
+		{name: "guard: subshell ends with echo", kind: KindShell, src: "(go test ./...; echo done) || true\n"},
+		{name: "guard: two subshells in a pipeline", kind: KindShell, src: "(cat a) | (grep b) || true\n"},
+		{name: "guard: arithmetic", kind: KindShell, src: "(( fails++ )) || true\n"},
+
+		{name: "N2.3 sh -c with $0", kind: KindShell, src: "sh -c \"go test ./...\" _ || true\n", want: []string{sw + "@1"}},
+		{name: "N2.3 sh -c with 2>&1", kind: KindShell, src: "sh -c \"go test ./...\" 2>&1 || true\n", want: []string{sw + "@1"}},
+		{name: "N2.3 plain command with 2>&1", kind: KindShell, src: "go test ./... 2>&1 || true\n", want: []string{sw + "@1"}},
+		{name: "N2.3 plain command with &>", kind: KindShell, src: "go test ./... &>test.log || true\n", want: []string{sw + "@1"}},
+		{name: "guard: sh -c local script with args", kind: KindShell, src: "sh -c \"./scripts/deploy.sh \\\"$1\\\"\" _ prod || true\n"},
+		{name: "guard: sh -c build with 2>&1", kind: KindShell, src: "sh -c \"go build ./...\" _ 2>&1 || true\n"},
+		{name: "guard: background job then cleanup", kind: KindShell, src: "go test ./... & rm -f x || true\n"},
+
+		{name: "N2.4 tee into bash -o pipefail", kind: KindShell, src: "curl -fsSL https://x.dev/i.sh | tee /dev/null | bash -o pipefail\n", want: []string{mu + "@1"}},
+		{name: "N2.4 tee into bash +e", kind: KindShell, src: "curl -fsSL https://x.dev/i.sh | tee /dev/null | bash +e\n", want: []string{mu + "@1"}},
+		{name: "N2.4 tee into bash -euo pipefail", kind: KindShell, src: "curl -fsSL https://x.dev/i.sh | tee /dev/null | bash -euo pipefail\n", want: []string{mu + "@1"}},
+		{name: "guard: tee into bash -o pipefail script", kind: KindShell, src: "curl -fsSL https://x/a.json | tee a.json | bash -o pipefail check.sh\n"},
+		{name: "guard: tee into bash +e script", kind: KindShell, src: "curl -fsSL https://x/a.json | tee a.json | bash +e check.sh\n"},
+		{name: "guard: tee into bash -o pipefail -c", kind: KindShell, src: "curl -fsSL https://x/a.json | tee a.json | bash -o pipefail -c 'jq . >/dev/null'\n"},
+
+		{name: "N2.4 tee into bash -s -- args", kind: KindShell, src: "curl -fsSL https://x.dev/i.sh | tee log | bash -s -- --prefix=/opt\n", want: []string{mu + "@1"}},
+		{name: "guard: tee into bash -- script", kind: KindShell, src: "curl -fsSL https://x/a.json | tee a.json | bash -- check.sh\n"},
+
+		{name: "N2.4 bash -euo pipefail test script", kind: KindShell, src: "bash -euo pipefail scripts/test.sh || true\n", want: []string{sw + "@1"}},
+		{name: "guard: bash -euo pipefail deploy script", kind: KindShell, src: "bash -euo pipefail scripts/deploy.sh || true\n"},
+
+		{name: "N2.5 next-line ${{ true }}", kind: KindWorkflow, src: "    continue-on-error:\n      ${{ true }}\n", want: []string{sw + "@1"}},
+		{name: "N2.5 next-line 'true'", kind: KindWorkflow, src: "    continue-on-error:\n      'true'\n", want: []string{sw + "@1"}},
+		{name: "N2.5 next-line \"true\"", kind: KindWorkflow, src: "    continue-on-error:\n      \"true\"\n", want: []string{sw + "@1"}},
+		{name: "guard: next-line 'false'", kind: KindWorkflow, src: "    continue-on-error:\n      'false'\n"},
+		{name: "guard: next-line ${{ false }}", kind: KindWorkflow, src: "    continue-on-error:\n      ${{ false }}\n"},
+		{name: "guard: next-line expression mentioning true", kind: KindWorkflow, src: "    continue-on-error:\n      ${{ true && matrix.experimental }}\n"},
+		{name: "guard: next-line 'true' not indented further", kind: KindWorkflow, src: "    continue-on-error:\n    'true'\n"},
+	})
+}

@@ -11,10 +11,17 @@ import (
 const RuleSilentCISwallow = "silent_ci_swallow"
 
 var (
-	// continueOnErrorTrue matches a literal `continue-on-error: true` (after
-	// comments are stripped), or the expression ${{ true }}. Other
-	// expressions, like ${{ matrix.x }}, are not literal.
-	continueOnErrorTrue = regexp.MustCompile(`^\s*(?:-\s*)?continue-on-error\s*:\s*(?:(?i:true|'true'|"true")|\$\{\{\s*true\s*\}\})\s*$`)
+	// trueValue is a YAML value that is literally true: true, 'true',
+	// "true" (any case) or the expression ${{ true }}. Other expressions,
+	// like ${{ matrix.x }}, are not literal.
+	trueValue = `(?:(?i:true|'true'|"true")|\$\{\{\s*true\s*\}\})`
+
+	// continueOnErrorTrue matches `continue-on-error: true` (after comments
+	// are stripped).
+	continueOnErrorTrue = regexp.MustCompile(`^\s*(?:-\s*)?continue-on-error\s*:\s*` + trueValue + `\s*$`)
+
+	// trueAlone is a line holding only a true value.
+	trueAlone = regexp.MustCompile(`^\s*` + trueValue + `\s*$`)
 
 	// continueOnErrorKey is `continue-on-error:` with its value on the next line.
 	continueOnErrorKey = regexp.MustCompile(`^\s*(?:-\s*)?(continue-on-error)\s*:\s*$`)
@@ -24,8 +31,9 @@ var (
 	swallowTail = regexp.MustCompile(`^\s*(true|/(?:usr/)?bin/true|:|exit\s+0|\(\s*exit\s+0\s*\))(?:[\s;&|)}]|$)`)
 
 	// shellCommandString is `sh -c "cmd"` (any -…c… flag cluster, optional
-	// path), capturing the quoted command string.
-	shellCommandString = regexp.MustCompile(`^(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|da|k|a)?sh\s+(?:[-+]\S+\s+)*-[A-Za-z]*c[A-Za-z]*\s+(?:"(.*)"|'(.*)')\s*$`)
+	// path), capturing the quoted command string. Unquoted words after it
+	// ($0 and positional arguments, redirections) do not change its status.
+	shellCommandString = regexp.MustCompile(`^(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|da|k|a)?sh\s+(?:[-+]\S+\s+)*-[A-Za-z]*c[A-Za-z]*\s+(?:"(.*)"|'(.*)')(?:\s+[^\s"']+)*\s*$`)
 
 	// braceGroup is `{ cmd; }`, capturing the commands inside.
 	braceGroup = regexp.MustCompile(`^\{\s(.*?);?\s*\}$`)
@@ -83,7 +91,7 @@ func continueOnErrorIsTrue(text, next string) bool {
 		return false
 	}
 	indent := len(next) - len(strings.TrimLeft(next, " "))
-	return indent > m[2] && strings.EqualFold(strings.TrimSpace(next), "true")
+	return indent > m[2] && trueAlone.MatchString(next)
 }
 
 // makeIgnoredFinding reports a Make recipe line whose "-" prefix discards the
@@ -171,8 +179,12 @@ func commandStart(text string, sc shellScan, pos int) int {
 			return j + 1
 		}
 		switch text[j] {
-		case ';', '&', '{', '}', '\n':
+		case ';', '{', '}', '\n':
 			return j + 1
+		case '&':
+			if ampersandIsOperator(text, j) {
+				return j + 1
+			}
 		case '|':
 			if j > 0 && text[j-1] == '|' {
 				return j + 1
@@ -218,7 +230,16 @@ func lastNonSpace(text string, end int) int {
 
 func closesGroup(text string, k int) bool {
 	p := lastNonSpace(text, k)
-	return p >= 0 && p < k-1 && (text[p] == ';' || text[p] == '&' || text[p] == '\n')
+	return p >= 0 && (text[p] == ';' || text[p] == '&' || text[p] == '\n')
+}
+
+// ampersandIsOperator reports whether the "&" at i ends a command (&, &&),
+// rather than being part of a redirection (2>&1, <&3, &>file) or "|&".
+func ampersandIsOperator(text string, i int) bool {
+	if i > 0 && strings.IndexByte("<>|", text[i-1]) >= 0 {
+		return false
+	}
+	return i+1 >= len(text) || text[i+1] != '>'
 }
 
 func opensGroup(text string, j int) bool {
@@ -268,15 +289,34 @@ func scanShell(text string) shellScan {
 	return sc
 }
 
-// wrappedCommands returns the command list inside VAR=$(...), sh -c "..."
-// or { ...; }: the exit status of each is that of its last command.
+// wrappedCommands returns the command list inside ( ... ), VAR=$(...),
+// sh -c "..." or { ...; }: the exit status of each is that of its last
+// command.
 func wrappedCommands(cmd string) (string, bool) {
+	if inner, ok := subshellBody(cmd); ok {
+		return inner, true
+	}
 	for _, re := range []*regexp.Regexp{captureAssign, shellCommandString, braceGroup} {
 		if m := re.FindStringSubmatch(cmd); m != nil {
 			return strings.Join(m[1:], ""), true
 		}
 	}
 	return "", false
+}
+
+// subshellBody returns the commands inside `( ... )` when the parentheses
+// enclose the whole of cmd: `(a) | (b)` is a pipeline, not one subshell.
+func subshellBody(cmd string) (string, bool) {
+	if len(cmd) < 2 || cmd[0] != '(' || cmd[len(cmd)-1] != ')' {
+		return "", false
+	}
+	sc := scanShell(cmd)
+	for i := 1; i < len(cmd)-1; i++ {
+		if sc.depth[i] == 0 {
+			return "", false
+		}
+	}
+	return cmd[1 : len(cmd)-1], true
 }
 
 // splitTopLevel splits s at separators outside quotes and parentheses.
@@ -311,6 +351,8 @@ func listSep(s string, i int) int {
 		return 2
 	case s[i] == ';' || s[i] == '\n':
 		return 1
+	case s[i] == '&' && ampersandIsOperator(s, i):
+		return 1 // a background job: the list goes on without its status
 	}
 	return 0
 }

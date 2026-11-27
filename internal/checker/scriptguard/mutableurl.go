@@ -129,22 +129,23 @@ var shellNames = setOf("sh", "bash", "zsh", "dash", "ksh", "ash")
 // shellReadsStdin reports whether a shell with these arguments runs its
 // standard input: no script file and no -c command string, or -s.
 func shellReadsStdin(args []string) bool {
-	for _, a := range args {
+	for len(args) > 0 {
+		a := args[0]
 		switch {
 		case a == "--":
+			return len(args) == 1 // a script file may follow "--"
+		case a == "-":
 			return true
-		case strings.HasPrefix(a, "--"):
-			continue
-		case strings.HasPrefix(a, "-"):
-			if strings.Contains(a, "s") {
-				return true
-			}
-			if strings.Contains(a, "c") {
-				return false
-			}
-		default:
+		case isShortOption(a, '-') && strings.Contains(a, "s"):
+			return true
+		case isShortOption(a, '-') && strings.Contains(a, "c"):
+			return false
+		}
+		n, ok := shellOptionLen(args)
+		if !ok {
 			return false // a script file: stdin is its input, not its code
 		}
+		args = args[n:]
 	}
 	return true
 }

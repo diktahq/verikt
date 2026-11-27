@@ -85,23 +85,41 @@ func verificationCommand(fields []string, extra []string) (string, bool) {
 func shellScriptArgs(args []string) ([]string, bool) {
 	for len(args) > 0 {
 		a := args[0]
-		switch {
-		case a == "-o" || a == "+o":
-			args = args[min(2, len(args)):]
-		case a == "--":
-			args = args[1:]
-		case strings.HasPrefix(a, "--"):
-			args = args[1:]
-		case strings.HasPrefix(a, "-") || strings.HasPrefix(a, "+"):
-			if strings.ContainsAny(a[1:], "cs") {
-				return nil, false
-			}
-			args = args[1:]
-		default:
+		if (isShortOption(a, '-') || isShortOption(a, '+')) && strings.ContainsAny(a[1:], "cs") {
+			return nil, false
+		}
+		n, ok := shellOptionLen(args)
+		if !ok {
 			return args, true
 		}
+		args = args[n:]
 	}
 	return nil, false
+}
+
+// shellOptionLen reports whether args[0] is a shell option and how many
+// arguments it takes up: `-o name`, `+o name` and a cluster holding o
+// (`-euo pipefail`) take the option name after it too.
+func shellOptionLen(args []string) (int, bool) {
+	a := args[0]
+	switch {
+	case strings.HasPrefix(a, "--"):
+		return 1, true
+	case isShortOption(a, '-') || isShortOption(a, '+'):
+		if strings.Contains(a[1:], "o") {
+			return min(2, len(args)), true
+		}
+		return 1, true
+	case a == "-":
+		return 1, true
+	}
+	return 0, false
+}
+
+// isShortOption reports whether a is a cluster of single-letter options
+// introduced by prefix: -e, -euo, +x. "--long" is not one.
+func isShortOption(a string, prefix byte) bool {
+	return len(a) > 1 && a[0] == prefix && a[1] != '-'
 }
 
 // subcommandVerifies handles tools whose subcommand decides whether they
