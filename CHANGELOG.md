@@ -2,7 +2,7 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — 0.3.0
+## [0.3.0] — 2026-11-27
 
 Issues #8 to #18, then #24, #28, #29, #30 and #32, then the findings of a
 three-lens review of this release (red team, security, agent safety; #36). Most are cases where verikt
