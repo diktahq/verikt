@@ -54,7 +54,9 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             _ => continue, // non-grep rules handled by other modules
         };
 
-        let pattern = match Regex::new(&spec.pattern) {
+        // An empty pattern means "no line check" (a file-must-contain-only
+        // rule), not a regex that matches every line.
+        let pattern = match compile_pattern(&spec.pattern) {
             Ok(p) => p,
             Err(e) => {
                 rule_statuses.push(RuleStatus {
@@ -66,9 +68,13 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             }
         };
 
-        let must_contain = compile_optional(&spec.must_contain);
-        let must_not_contain = compile_optional(&spec.must_not_contain);
-        let file_must_contain = compile_optional(&spec.file_must_contain);
+        let matchers = Matchers {
+            pattern,
+            must_contain: compile_optional(&spec.must_contain),
+            must_not_contain: compile_optional(&spec.must_not_contain),
+            file_must_contain: compile_optional(&spec.file_must_contain),
+            file_must_contain_src: &spec.file_must_contain,
+        };
 
         // Build scope globs
         let include_set = build_globset(&rule.scope.as_ref().map_or(vec![], |s| s.include.clone()));
@@ -103,30 +109,7 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
                 Err(_) => continue, // skip binary/unreadable files
             };
 
-            // File-level prerequisite
-            if let Some(ref fmc) = file_must_contain
-                && !fmc.is_match(&content)
-            {
-                continue;
-            }
-
-            for (line_num, line) in content.lines().enumerate() {
-                if !pattern.is_match(line) {
-                    continue;
-                }
-
-                if let Some(ref mc) = must_contain
-                    && !mc.is_match(line)
-                {
-                    continue;
-                }
-
-                if let Some(ref mnc) = must_not_contain
-                    && mnc.is_match(line)
-                {
-                    continue;
-                }
-
+            for (line, text) in matchers.violations(&content) {
                 findings_total += 1;
                 match rule.severity {
                     s if s == pb::Severity::Error as i32 => findings_error += 1,
@@ -140,10 +123,10 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
                         rule_id: rule.id.clone(),
                         severity: rule.severity,
                         file: rel_str.to_string(),
-                        line: (line_num + 1) as u32,
+                        line,
                         column: 0,
                         message: rule.message.clone(),
-                        r#match: line.trim().to_string(),
+                        r#match: text,
                         engine: "grep".to_string(),
                     })),
                 });
@@ -178,6 +161,88 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
     });
 
     responses
+}
+
+/// The compiled regexes of one grep rule.
+///
+/// The semantics mirror the Go implementation (internal/rules/grep.go), and the
+/// Go/Rust parity tests hold the two to it:
+///
+/// - `file_must_contain` that does not match the file is one finding at line 0.
+///   It does not stop the line check.
+/// - A line matching `pattern` is a finding when it lacks `must_contain`, or
+///   has `must_not_contain`, or — when neither is set — by matching alone.
+struct Matchers<'a> {
+    pattern: Option<Regex>,
+    must_contain: Option<Regex>,
+    must_not_contain: Option<Regex>,
+    file_must_contain: Option<Regex>,
+    file_must_contain_src: &'a str,
+}
+
+impl Matchers<'_> {
+    /// Every finding in one file, as (line, match text). Line 0 is the file.
+    fn violations(&self, content: &str) -> Vec<(u32, String)> {
+        let mut out = Vec::new();
+        if let Some(fmc) = &self.file_must_contain
+            && !fmc.is_match(content)
+        {
+            out.push((
+                0,
+                format!(
+                    "file does not contain pattern: {}",
+                    self.file_must_contain_src
+                ),
+            ));
+        }
+        let Some(pattern) = &self.pattern else {
+            return out;
+        };
+        for (idx, line) in content.lines().enumerate() {
+            if pattern.is_match(line) && self.line_violates(line) {
+                out.push(((idx + 1) as u32, match_text(line)));
+            }
+        }
+        out
+    }
+
+    fn line_violates(&self, line: &str) -> bool {
+        if let Some(mc) = &self.must_contain
+            && !mc.is_match(line)
+        {
+            return true;
+        }
+        if let Some(mnc) = &self.must_not_contain
+            && mnc.is_match(line)
+        {
+            return true;
+        }
+        self.must_contain.is_none() && self.must_not_contain.is_none()
+    }
+}
+
+/// Longest source line a finding echoes, in bytes, as in the Go implementation.
+const MAX_MATCH_BYTES: usize = 120;
+
+/// The line a finding echoes: trimmed, and cut at MAX_MATCH_BYTES on a char
+/// boundary. It used to be echoed whole, however long.
+fn match_text(line: &str) -> String {
+    let line = line.trim();
+    if line.len() <= MAX_MATCH_BYTES {
+        return line.to_string();
+    }
+    let mut end = MAX_MATCH_BYTES;
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &line[..end])
+}
+
+fn compile_pattern(pattern: &str) -> Result<Option<Regex>, regex::Error> {
+    if pattern.is_empty() {
+        return Ok(None);
+    }
+    Regex::new(pattern).map(Some)
 }
 
 fn compile_optional(pattern: &str) -> Option<Regex> {
@@ -403,6 +468,134 @@ mod tests {
 
         assert_eq!(status_of(&responses, "no-sprintf"), Status::Valid as i32);
 
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    fn spec_rule(id: &str, spec: GrepSpec, include: &[&str]) -> Rule {
+        let mut rule = grep_rule(id, "", include);
+        rule.spec = Some(Spec::Grep(spec));
+        rule
+    }
+
+    fn spec(pattern: &str) -> GrepSpec {
+        GrepSpec {
+            pattern: pattern.to_string(),
+            must_contain: String::new(),
+            must_not_contain: String::new(),
+            file_must_contain: String::new(),
+        }
+    }
+
+    /// Every finding as "file:line:match", sorted.
+    fn findings(responses: &[EngineResponse]) -> Vec<String> {
+        let mut out: Vec<String> = responses
+            .iter()
+            .filter_map(|r| match &r.payload {
+                Some(Payload::Finding(f)) => Some(format!("{}:{}:{}", f.file, f.line, f.r#match)),
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    const KAFKA: &str = "package k\n\nfunc bad() { msg, _ := reader.ReadMessage(ctx) }\nfunc good() { msg, err := reader.ReadMessage(ctx) }\n";
+
+    /// must-contain names text a matching line is required to have, so the
+    /// finding is the line that lacks it. The engine skipped that line and
+    /// reported the compliant one.
+    #[test]
+    fn must_contain_reports_the_line_that_lacks_it() {
+        let project = fixture("verikt-grep-must-contain", &[("k.go", KAFKA)]);
+        let mut s = spec(r"ReadMessage\(");
+        s.must_contain = "err :?=".to_string();
+
+        let got = findings(&check(&project, spec_rule("kafka-err", s, &["**/*.go"])));
+
+        assert_eq!(
+            got,
+            vec!["k.go:3:func bad() { msg, _ := reader.ReadMessage(ctx) }"]
+        );
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// must-not-contain is the inverse: the finding is the line that has it.
+    #[test]
+    fn must_not_contain_reports_the_line_that_has_it() {
+        let project = fixture("verikt-grep-must-not-contain", &[("k.go", KAFKA)]);
+        let mut s = spec(r"ReadMessage\(");
+        s.must_not_contain = ", _ :=".to_string();
+
+        let got = findings(&check(&project, spec_rule("kafka-err", s, &["**/*.go"])));
+
+        assert_eq!(
+            got,
+            vec!["k.go:3:func bad() { msg, _ := reader.ReadMessage(ctx) }"]
+        );
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// file-must-contain reports, once and at line 0, the file that lacks the
+    /// text. With no pattern there is no line check: an empty pattern used to
+    /// match every line of every compliant file.
+    #[test]
+    fn file_must_contain_reports_only_the_file_that_lacks_it() {
+        let project = fixture(
+            "verikt-grep-file-must-contain",
+            &[
+                ("proto/ok.proto", "syntax = \"proto3\";\npackage y;\n"),
+                ("proto/missing.proto", "package z;\n"),
+            ],
+        );
+        let mut s = spec("");
+        s.file_must_contain = r#"syntax = "proto3""#.to_string();
+
+        let got = findings(&check(&project, spec_rule("proto3", s, &["**/*.proto"])));
+
+        assert_eq!(
+            got,
+            vec![r#"proto/missing.proto:0:file does not contain pattern: syntax = "proto3""#]
+        );
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// A missing file-must-contain does not stop the line check in that file.
+    #[test]
+    fn file_must_contain_and_pattern_are_both_reported() {
+        let project = fixture(
+            "verikt-grep-fmc-and-pattern",
+            &[("a.go", "package a\n\nvar _ = Sprintf\n")],
+        );
+        let mut s = spec("Sprintf");
+        s.file_must_contain = "MUST-BE-HERE".to_string();
+
+        let got = findings(&check(&project, spec_rule("both", s, &["**/*.go"])));
+
+        assert_eq!(
+            got,
+            vec![
+                "a.go:0:file does not contain pattern: MUST-BE-HERE",
+                "a.go:3:var _ = Sprintf"
+            ]
+        );
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /// The echoed line is trimmed and cut at 120 bytes on a char boundary, as
+    /// the Go implementation does. It was echoed whole, however long.
+    #[test]
+    fn match_text_is_trimmed_and_cut_on_a_char_boundary() {
+        let head = format!("Sprintf{}", "x".repeat(119 - "Sprintf".len()));
+        let line = format!("\t\t{head}é{}", "y".repeat(50));
+        let content = format!("package a\n\n{line}\n");
+        let project = fixture("verikt-grep-match-text", &[("a.go", content.as_str())]);
+
+        let got = findings(&check(
+            &project,
+            grep_rule("no-sprintf", "Sprintf", &["**/*.go"]),
+        ));
+
+        assert_eq!(got, vec![format!("a.go:3:{head}...")]);
         let _ = fs::remove_dir_all(&project);
     }
 }

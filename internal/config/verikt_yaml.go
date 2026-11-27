@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -258,7 +259,7 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 			}
 		}
 	}
-	errs = append(errs, validateAllowedEntrypoints(cfg.Check)...)
+	errs = append(errs, ValidateAllowedEntrypoints(cfg.Check)...)
 	if err := ValidateFailOn(cfg.Check.FailOn); err != nil {
 		errs = append(errs, err)
 	}
@@ -293,14 +294,13 @@ func ValidateSilentCISwallow(c SilentCISwallowConfig) []error {
 // severity, a reason, and no catch-all ahead of entries it would shadow.
 func validateSeverityOverrides(all SeverityOverrides) []error {
 	var errs []error
-	validSeverities := map[string]bool{"must": true, "should": true, "ignore": true}
 	for key, overrides := range all {
 		for i, o := range overrides {
-			if !validSeverities[o.Severity] {
-				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].severity %q is invalid (must be one of: must, should, ignore)", key, i, o.Severity))
+			if err := validOverrideSeverity(key, i, o); err != nil {
+				errs = append(errs, err)
 			}
 			if strings.TrimSpace(o.Reason) == "" {
-				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].reason is required", key, i))
+				errs = append(errs, overrideReasonRequired(key, i))
 			}
 			// Warn if a catch-all (no paths) is not the last entry — subsequent entries are unreachable.
 			if len(o.Paths) == 0 && i < len(overrides)-1 {
@@ -311,9 +311,60 @@ func validateSeverityOverrides(all SeverityOverrides) []error {
 	return errs
 }
 
-// validateAllowedEntrypoints rejects allowlist entries that cannot name a
+// ValidateCheckOverrides is what `verikt check` enforces on severity_overrides
+// before it runs: every severity is must, should or ignore, and every waiver
+// (ignore) has a reason.
+//
+// check used to apply overrides unvalidated. `severity: info` turned an
+// error-level finding into info, which never fails — not even under --strict —
+// and, not being "ignore", left no trace in the WAIVED section. A waiver
+// without a reason was accepted too. Both quietly checked less than the file
+// appears to say.
+//
+// It is narrower than the save-time rules on purpose: a must or should entry
+// without a reason, or a catch-all ahead of other entries, hides no finding,
+// and the published examples write `severity: must` with no reason, so
+// refusing to run on them would break configs for no safety gain.
+func ValidateCheckOverrides(all SeverityOverrides) []error {
+	keys := make([]string, 0, len(all))
+	for key := range all {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var errs []error
+	for _, key := range keys {
+		for i, o := range all[key] {
+			if err := validOverrideSeverity(key, i, o); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if o.Severity == "ignore" && strings.TrimSpace(o.Reason) == "" {
+				errs = append(errs, overrideReasonRequired(key, i))
+			}
+		}
+	}
+	return errs
+}
+
+// validOverrideSeverity rejects anything but must, should and ignore. "info",
+// "error" and "warning" are finding severities, not override values.
+func validOverrideSeverity(key string, i int, o SeverityOverride) error {
+	switch o.Severity {
+	case "must", "should", "ignore":
+		return nil
+	default:
+		return fmt.Errorf("severity_overrides[%q][%d].severity %q is invalid (must be one of: must, should, ignore)", key, i, o.Severity)
+	}
+}
+
+func overrideReasonRequired(key string, i int) error {
+	return fmt.Errorf("severity_overrides[%q][%d].reason is required", key, i)
+}
+
+// ValidateAllowedEntrypoints rejects allowlist entries that cannot name a
 // directory inside the project: empty, absolute, or escaping it with "..".
-func validateAllowedEntrypoints(c CheckConfig) []error {
+func ValidateAllowedEntrypoints(c CheckConfig) []error {
 	if c.AllowedEntrypoints == nil {
 		return nil
 	}

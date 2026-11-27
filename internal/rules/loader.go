@@ -55,7 +55,7 @@ func LoadRules(rulesDir, projectRoot string) ([]Rule, []RuleStatus, error) {
 		statuses = append(statuses, status)
 
 		if status.Status == "valid" || status.Status == "stale" {
-			allRules = append(allRules, rule)
+			allRules = append(allRules, status.Rule)
 		}
 	}
 
@@ -63,7 +63,16 @@ func LoadRules(rulesDir, projectRoot string) ([]Rule, []RuleStatus, error) {
 }
 
 // ValidateRule checks a single rule for correctness and returns its status.
+//
+// The returned status carries the rule with its defaults applied, and that is
+// the rule to run. The severity default used to be set on this function's
+// by-value copy after the status was built, so it reached neither the caller
+// nor the status: the engine read the empty severity as info, and a rule
+// documented to fail the check passed it.
 func ValidateRule(r Rule, filename, projectRoot string) RuleStatus {
+	if r.Severity == "" {
+		r.Severity = "error"
+	}
 	status := RuleStatus{
 		Rule:     r,
 		Filename: filename,
@@ -83,10 +92,6 @@ func ValidateRule(r Rule, filename, projectRoot string) RuleStatus {
 		return status
 	}
 
-	// Default severity.
-	if r.Severity == "" {
-		r.Severity = "error"
-	}
 	if r.Severity != "error" && r.Severity != "warning" {
 		status.Status = "invalid"
 		status.Error = fmt.Sprintf("invalid severity %q (must be error or warning)", r.Severity)

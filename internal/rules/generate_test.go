@@ -146,7 +146,7 @@ func TestGenerateRules_ObservabilityCapability(t *testing.T) {
 
 	require.Len(t, rules, 1)
 	assert.Equal(t, "cap-tracing-context", rules[0].ID)
-	assert.NotEmpty(t, rules[0].MustNotContain)
+	assert.NotEmpty(t, rules[0].MustContain)
 }
 
 func TestGenerateRules_KafkaCapability(t *testing.T) {

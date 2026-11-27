@@ -255,15 +255,18 @@ func authRule() Rule {
 
 func observabilityRule() Rule {
 	return Rule{
-		ID:             "cap-tracing-context",
-		Engine:         "grep",
-		Description:    "Functions making external calls should pass context for tracing",
-		Severity:       "warning",
-		Ref:            "verikt.yaml",
-		Pattern:        `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
-		MustNotContain: "ctx",
-		Scope:          []string{"**/*.go"},
-		Exclude:        []string{"*_test.go", "vendor/**"},
+		ID:          "cap-tracing-context",
+		Engine:      "grep",
+		Description: "Functions making external calls should pass context for tracing",
+		Severity:    "warning",
+		Ref:         "verikt.yaml",
+		Pattern:     `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
+		// The finding is the call line that lacks a context. This read
+		// must-not-contain, which only behaved as intended while the engine had
+		// that field inverted.
+		MustContain: "ctx",
+		Scope:       []string{"**/*.go"},
+		Exclude:     []string{"*_test.go", "vendor/**"},
 	}
 }
 

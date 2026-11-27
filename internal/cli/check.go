@@ -141,8 +141,7 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 			return fmt.Errorf("get staged files: %w", err)
 		}
 		if len(stagedFiles) == 0 {
-			fmt.Println("No staged files to check.")
-			return nil
+			return reportNothingStaged(opts.Output)
 		}
 	}
 
@@ -227,13 +226,25 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 
 	// Apply path-scoped severity overrides after all file filtering, so the
 	// verdict is computed from the final results.
-	applySeverityOverrides(checkerResult, ruleResult, cfg.SeverityOverrides)
+	waived := applySeverityOverrides(checkerResult, ruleResult, cfg.SeverityOverrides)
 
 	return reportCheck(checkOutcome{
 		Checker:   checkerResult,
 		Rules:     ruleResult,
 		Decisions: decisionViolations,
+		Waived:    waived,
 	}, cfg, flags, opts.Output)
+}
+
+// reportNothingStaged reports a --staged run with nothing staged: nothing was
+// checked, so it passes. In -o json mode it is still one JSON document — plain
+// text on stdout broke every consumer that parses it.
+func reportNothingStaged(output string) error {
+	if output == "json" {
+		return printCombinedJSON(checkOutcome{}, checkVerdict{FailOn: config.FailOnError})
+	}
+	fmt.Println("No staged files to check.")
+	return nil
 }
 
 // validateCheckConfig rejects configuration that would make the run check
@@ -249,7 +260,14 @@ func validateCheckConfig(cfg *config.VeriktConfig, veriktPath string) error {
 	}
 	// Same for extra commands: a pipeline or quoted string could never match,
 	// so silent_ci_swallow would quietly check less than the user asked for.
-	if errs := config.ValidateSilentCISwallow(cfg.Check.SilentCISwallow); len(errs) > 0 {
+	errs := config.ValidateSilentCISwallow(cfg.Check.SilentCISwallow)
+	// An override check cannot read would change the verdict without a trace:
+	// `severity: info` passed an error under --strict and never reached WAIVED.
+	errs = append(errs, config.ValidateCheckOverrides(cfg.SeverityOverrides)...)
+	// An allowlist entry outside the project can never match, so cmd_allowlist
+	// would check something other than what was written.
+	errs = append(errs, config.ValidateAllowedEntrypoints(cfg.Check)...)
+	if len(errs) > 0 {
 		return fmt.Errorf("%s: %w", veriktPath, errors.Join(errs...))
 	}
 	return nil
@@ -303,10 +321,28 @@ func resolveCheckEngine(flags *checkFlags) (*engineclient.Client, bool, error) {
 // checkOutcome bundles the three result sets a single check produces. They are
 // always carried together, and passing them separately pushed every function
 // that handles them past the project's own parameter limit.
+//
+// Waived is every finding severity_overrides waived, proxy rules included. It
+// lives here rather than only on Checker because Checker is nil when only proxy
+// rules run (--proxy-rules, --rule, --allow-degraded without an engine), and a
+// proxy waiver recorded on a nil result was a waiver dropped.
 type checkOutcome struct {
 	Checker   *checker.CheckResult
 	Rules     *rules.RunResult
 	Decisions []checker.DecisionViolation
+	Waived    []checker.WaivedFinding
+}
+
+// waived returns the findings to report as waived. A caller that built the
+// outcome without Waived still gets what the checker recorded.
+func (o checkOutcome) waived() []checker.WaivedFinding {
+	if o.Waived != nil {
+		return o.Waived
+	}
+	if o.Checker != nil {
+		return o.Checker.WaivedFindings
+	}
+	return nil
 }
 
 // checkVerdict is the pass/fail decision for one run, with the counts that
@@ -443,20 +479,41 @@ func reportCheck(outcome checkOutcome, cfg *config.VeriktConfig, flags *checkFla
 	return nil
 }
 
-// getStagedFiles returns relative file paths in the git staging area. Renames
-// (R) are included: a staged move is a file the commit is about to change.
+// getStagedFiles returns the staged files, relative to projectPath. Renames
+// (R) and typechanges (T) are included: a staged move, or a symlink replaced by
+// a regular file, is a file the commit is about to change.
 func getStagedFiles(projectPath string) ([]string, error) {
-	cmd := exec.CommandContext(context.Background(), "git", "diff", "--cached", "--name-only", "--diff-filter=ACMR")
+	return gitPaths(projectPath, "diff", "--cached", "--relative", "--name-only", "--diff-filter=ACMRT")
+}
+
+// gitPaths runs a git command that lists paths and returns them as written on
+// disk, relative to projectPath.
+//
+// -z makes git print each path verbatim and NUL-terminated. Without it, git
+// C-quotes a path with non-ASCII bytes or special characters
+// ("domain/caf\303\251.go"), which matches no finding path, so every finding in
+// such a file was filtered away. --relative (passed by the callers of diff)
+// matters for a project in a subdirectory of the repository: git otherwise
+// prints repository-root paths (services/api/domain/d.go) while findings are
+// project-relative (domain/d.go), and nothing in a monorepo ever matched.
+//
+// -z goes straight after the subcommand: anything after a "--" is a pathspec.
+func gitPaths(projectPath, subcommand string, args ...string) ([]string, error) {
+	full := append([]string{"-c", "core.quotepath=false", subcommand, "-z"}, args...)
+	// Every argument is a fixed git option or a hash printed by git itself.
+	cmd := exec.CommandContext(context.Background(), "git", full...) //nolint:gosec // G204: fixed git subcommand
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git diff: %w", err)
+		return nil, fmt.Errorf("git %s %s: %w", subcommand, strings.Join(args, " "), err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return nil, nil
+	var paths []string
+	for p := range strings.SplitSeq(string(out), "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
 	}
-	return lines, nil
+	return paths, nil
 }
 
 // getDiffFiles returns relative file paths changed compared to a git ref.
@@ -486,23 +543,40 @@ func getDiffFiles(projectPath, ref string) ([]string, error) {
 		return nil, err
 	}
 
-	// ACMR: deleted files cannot carry findings, but a renamed file can — ACM
-	// alone filtered away every finding in a file the branch had moved.
+	// ACMRT: deleted files cannot carry findings, but a renamed file can — ACM
+	// alone filtered away every finding in a file the branch had moved — and so
+	// can a symlink replaced by a regular file (T).
 	// The trailing "--" pins base as a revision; nothing after it is a pathspec.
-	// base is a commit hash printed by git merge-base; no shell is involved.
-	cmd := exec.CommandContext(context.Background(), //nolint:gosec // G204: fixed git subcommand, base from git itself
-		"git", "diff", "--name-only", "--diff-filter=ACMR", base, "--")
-	cmd.Dir = projectPath
-	out, err := cmd.Output()
+	changed, err := gitPaths(projectPath, "diff", "--relative", "--name-only", "--diff-filter=ACMRT", base, "--")
 	if err != nil {
-		return nil, fmt.Errorf("git diff --name-only %s: %w", base, err)
+		return nil, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return nil, nil
+	// The comparison is with the working tree, so a file not yet added is part of
+	// it too. git diff never lists untracked files, and the PostToolUse hook runs
+	// `--diff HEAD` right after an agent's Write: every finding in a file the
+	// agent had just created was filtered away, and the hook stayed silent on it.
+	// --exclude-standard keeps ignored build output out.
+	untracked, err := gitPaths(projectPath, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
 	}
-	return lines, nil
+	return mergePaths(changed, untracked), nil
+}
+
+// mergePaths returns a followed by the entries of b not already in a.
+func mergePaths(a, b []string) []string {
+	seen := make(map[string]bool, len(a))
+	for _, p := range a {
+		seen[p] = true
+	}
+	for _, p := range b {
+		if !seen[p] {
+			seen[p] = true
+			a = append(a, p)
+		}
+	}
+	return a
 }
 
 // gitMergeBase resolves the merge base of ref and HEAD.
@@ -597,6 +671,13 @@ func filterCheckerResultByFiles(r *checker.CheckResult, files []string) *checker
 			filtered.AntiPatternViolations = append(filtered.AntiPatternViolations, v)
 		}
 	}
+	// Waivers stay visible under --diff/--staged: a finding waived in a changed
+	// file must still be listed, or the hook reports a clean edit.
+	for _, w := range r.WaivedFindings {
+		if fileInSet(w.File, set) || dirContainsAny(w.File, files) {
+			filtered.WaivedFindings = append(filtered.WaivedFindings, w)
+		}
+	}
 	filtered.RecalculateMetrics()
 	return filtered
 }
@@ -631,9 +712,12 @@ func filterRuleResultByFiles(r *rules.RunResult, files []string) *rules.RunResul
 // config validation), so the justification lands in the diff where a reviewer
 // sees it; and a waived finding is still reported, in its own section, rather
 // than disappearing.
-func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, overrides config.SeverityOverrides) {
+//
+// It returns every waived finding, so the report has them whether or not the
+// detectors ran; with a checker result they are also recorded on it.
+func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, overrides config.SeverityOverrides) []checker.WaivedFinding {
 	if len(overrides) == 0 {
-		return
+		return nil
 	}
 
 	// Proxy-rule waivers are collected first so they can be recorded alongside the
@@ -679,6 +763,7 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 		checkerResult.WaivedFindings = append(checkerResult.WaivedFindings, waived...)
 		checkerResult.RecalculateMetrics()
 	}
+	return waived
 }
 
 // filterViolationsBySeverity moves violations whose resolved severity is "ignore"
@@ -789,13 +874,16 @@ func printCombinedTerminal(outcome checkOutcome, cfg *config.VeriktConfig, flags
 		printViolationSection("FUNCTION VIOLATIONS", checkerResult.FunctionViolations)
 		printViolationSection("NAMING VIOLATIONS", checkerResult.NamingViolations)
 		printAntiPatternSection("ANTI-PATTERN VIOLATIONS", checkerResult.AntiPatternViolations)
-		printWaivedSection(checkerResult.WaivedFindings)
 	}
 
 	// Proxy rule results.
 	if ruleResult != nil {
 		printProxyRuleSection(ruleResult)
 	}
+
+	// Waivers cover detectors and proxy rules alike, so they are printed whether
+	// or not the detectors ran.
+	printWaivedSection(outcome.waived())
 
 	// Decision gate results.
 	if len(cfg.Decisions) > 0 {
@@ -1078,9 +1166,9 @@ func printCombinedJSON(outcome checkOutcome, verdict checkVerdict) error {
 		if checkerResult.AntiPatternViolations != nil {
 			out.AntiPatterns = checkerResult.AntiPatternViolations
 		}
-		if checkerResult.WaivedFindings != nil {
-			out.Waived = checkerResult.WaivedFindings
-		}
+	}
+	if waived := outcome.waived(); waived != nil {
+		out.Waived = waived
 	}
 
 	data, err := json.MarshalIndent(out, "", "  ")
