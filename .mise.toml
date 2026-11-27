@@ -126,6 +126,12 @@ current=$(jq '[.violations[], .anti_patterns[]] | map(select(.severity != "error
 echo "non-error findings: $current (baseline $baseline)"
 [ "$current" -le "$baseline" ]
 
+echo '── corpus audit script ──'
+VERIKT="$TMPDIR/verikt-verify" bash scripts/corpus-audit_test.sh
+
+echo '── reminder: ADR-012 ──'
+echo 'Run scripts/corpus-audit.sh over real repositories and read its suspected false positives before tagging.'
+
 echo '── release suite passed ──'
 """
 
