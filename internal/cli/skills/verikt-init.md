@@ -37,7 +37,7 @@ At the end, show a summary block:
   Architecture:  hexagonal
   Capabilities:  platform, bootstrap, http-api, postgres, docker
   Guide mode:    passive
-  Files:         verikt.yaml, .claude/rules/, .cursorrules
+  Files:         verikt.yaml, .claude/rules/, .cursor/rules/verikt.mdc, AGENTS.md
 
   Next:  verikt check    — validate architecture
          verikt add      — add more capabilities

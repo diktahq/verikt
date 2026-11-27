@@ -125,14 +125,18 @@ func TestSplitVsMonolithic_NonClaude(t *testing.T) {
 	err := Generate(opts)
 	require.NoError(t, err)
 
-	// Cursor gets monolithic output with sentinels.
-	data, err := os.ReadFile(filepath.Join(dir, ".cursorrules"))
+	// Cursor gets the compact writer rules; Adding Code is on demand.
+	data, err := os.ReadFile(filepath.Join(dir, ".cursor", "rules", "verikt.mdc"))
 	require.NoError(t, err)
 	content := string(data)
 
 	assert.Contains(t, content, "Architecture: hexagonal")
-	assert.Contains(t, content, "## Layer Rules")
-	assert.Contains(t, content, "## Adding Code")
+	assert.NotContains(t, content, "## Adding Code")
+	assert.Contains(t, content, ".verikt/references/architecture.md")
+
+	ref, err := os.ReadFile(filepath.Join(dir, ".verikt", "references", "architecture.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(ref), "## Adding Code")
 }
 
 func TestSplitCleanup_RemovesOldFile(t *testing.T) {

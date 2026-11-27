@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/diktahq/verikt/internal/config"
 	"github.com/diktahq/verikt/internal/guide"
@@ -21,29 +23,38 @@ func newGuideCommand(_ *globalOptions) *cobra.Command {
 		Long: `Generate architecture guidance files for AI coding agents.
 
 Reads verikt.yaml from the current directory and generates instruction files
-for Claude Code, Cursor, GitHub Copilot, and Windsurf.
+for Claude Code, Cursor (.cursor/rules/verikt.mdc), GitHub Copilot, Windsurf,
+and AGENTS.md (read by Codex, Antigravity and other agents).
+
+Always-loaded files stay small. Longer material (capability catalog, review
+checklist, full layer detail) is written on demand to .verikt/references/. In
+shared files such as AGENTS.md, verikt only rewrites the section between its
+<!-- verikt:start --> and <!-- verikt:end --> markers, and refuses to touch a
+file whose markers are malformed. A legacy .cursorrules keeps your own content;
+only verikt's old section is removed from it.
 
 Use --catalog-only to generate only the capability catalog without requiring
 an verikt.yaml configuration file.`,
 		Example: `  verikt guide
   verikt guide --target claude
   verikt guide --target cursor
+  verikt guide --target agents
   verikt guide --catalog-only`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return runGuide(target, catalogOnly)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runGuide(cmd.ErrOrStderr(), target, catalogOnly)
 		},
 	}
 
-	cmd.Flags().StringVar(&target, "target", "all", "Output target: all, claude, cursor, copilot, windsurf")
+	cmd.Flags().StringVar(&target, "target", "all", "Output target: "+strings.Join(guide.TargetNames(), ", "))
 	cmd.Flags().BoolVar(&catalogOnly, "catalog-only", false, "Generate only the capability catalog (no verikt.yaml required)")
 	_ = cmd.RegisterFlagCompletionFunc("target", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"all", "claude", "cursor", "copilot", "windsurf"}, cobra.ShellCompDirectiveNoFileComp
+		return guide.TargetNames(), cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
 }
 
-func runGuide(target string, catalogOnly bool) error {
+func runGuide(notices io.Writer, target string, catalogOnly bool) error {
 	projectDir := "."
 
 	if catalogOnly {
@@ -54,6 +65,7 @@ func runGuide(target string, catalogOnly bool) error {
 			ProjectDir:  projectDir,
 			Target:      target,
 			CatalogOnly: true,
+			Notices:     notices,
 		}
 		if provErr == nil {
 			opts.TemplateFS = p.GetTemplateFS()
@@ -84,16 +96,15 @@ func runGuide(target string, catalogOnly bool) error {
 		return err
 	}
 
-	// Look up the language provider to get the template FS for pattern extraction.
-	p, provErr := provider.Get(cfg.Language)
-	if provErr == nil {
-		if err := guide.GenerateFromConfig(projectDir, cfg, target, p.GetTemplateFS()); err != nil {
-			return err
-		}
-	} else {
-		if err := guide.GenerateFromConfig(projectDir, cfg, target); err != nil {
-			return err
-		}
+	opts := guide.OptionsFromConfig(projectDir, cfg, target)
+	opts.Notices = notices
+	// The language provider's template FS enables pattern extraction; without
+	// it the guide is still generated, just without capability patterns.
+	if p, provErr := provider.Get(cfg.Language); provErr == nil {
+		opts.TemplateFS = p.GetTemplateFS()
+	}
+	if err := guide.Generate(opts); err != nil {
+		return err
 	}
 
 	fmt.Printf("Guide generated for target: %s\n", target)

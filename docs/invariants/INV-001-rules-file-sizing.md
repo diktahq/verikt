@@ -13,29 +13,30 @@ Generated rules files (from `verikt guide`) MUST stay within these bounds:
 - Each instruction paired with **motivation** (why, not just what)
 - **3-5 code examples** included (most reliable steering mechanism)
 
-### The two output shapes
+### Always-loaded files and on-demand references
 
-`verikt guide` emits two shapes, and the bound above applies per file:
+`verikt guide` writes two tiers, and the bound above applies to every file in the
+first:
 
-| Output | Target | Bound |
+| Tier | Files | Bound |
 |---|---|---|
-| `.claude/rules/verikt-index.md` + `verikt-<category>.md` | Claude Code | 500–1,500 tokens each |
-| A single composite file | cursor, copilot, windsurf | **3,100 tokens** |
+| Always loaded | `.claude/rules/verikt-index.md` and the per-category `verikt-<category>.md`, `.cursor/rules/verikt.mdc`, `.github/copilot-instructions.md`, `.windsurfrules`, the verikt section of `AGENTS.md` | ≤30 instructions, ≤1,500 tokens each |
+| On demand | `.verikt/references/architecture.md`, `capabilities.md`, `review.md`, and `interview.md` in catalog-only output | not budgeted: read only when the task calls for it |
 
-The sentinel targets accept one file only, so their output necessarily carries what
-the Claude path distributes across several: usage preamble, governance checkpoint,
-codebase mapping, smart suggestions, interaction warnings, design questions and the
-verification checklist. That composite is bounded at 3,100 tokens rather than 1,500
-and enforced by `TestGuideTokenCompliance`.
-
-This exception was previously recorded only in a comment on that test, so a reader
-of this invariant would conclude the guide violated it. The bound is stated here so
-the invariant and its enforcement agree.
+The single-file targets (cursor, copilot, windsurf, AGENTS.md) used to receive one
+composite file carrying everything the Claude path spreads across several, bounded at
+3,100 tokens as an exception. Measured as bytes/4, that composite reached ~3,600
+tokens for a 16-capability hexagonal config, over its own exception. Every target now receives
+the same compact writer rules, which name the reference to read for each kind of
+task; the capability catalog, smart suggestions, verification checklist, interaction
+warnings, design questions, full layer detail and anti-patterns moved to the
+references. The exception is gone: every always-loaded file meets 1,500.
 
 ### Onboarding content does not belong in a normative guide
 
 The scaffold interview is emitted **only** in catalog-only output — the shape a
-project without a `verikt.yaml` receives. A guide generated *from* a `verikt.yaml`
+project without a `verikt.yaml` receives — and there as the on-demand
+`.verikt/references/interview.md`. A guide generated *from* a `verikt.yaml`
 describes an architecture that already exists, so instructions for scaffolding a new
 service steer nothing.
 
@@ -68,6 +69,8 @@ Research on LLM instruction following (2025-2026 frontier models) shows:
 
 ## Enforcement
 
-- Review generated output token count in `internal/guide/guide.go`
-- Count instructions in generated content during tests
-- Add test: `TestGuideOutput_InstructionCount` that fails if >30 instructions generated
+- `TestGuideOutput_InstructionCount` (`internal/guide/budget_test.go`) fails if any always-loaded file has more than 30 instructions. An instruction is a bullet, numbered item, or table body row outside frontmatter and code fences; prose directives are not counted, so the count is a floor.
+- `TestGuideOutput_TokenBudget` (same file) fails if any always-loaded file exceeds 1,500 tokens, approximated as `ceil(bytes / 4)`, which over-counts multi-byte characters and so errs toward failing.
+- Both generate every target across minimal (flat), typical (hexagonal, four capabilities), capability-heavy (27 capabilities, every language feature, open decisions and proxy rules, in passive, audit and prompted modes) and catalog-only configs.
+- `TestGuideOutput_CriticalRulesAtStartAndEnd` checks that each always-loaded file opens with its usage instructions and closes with a `## Before You Finish` section naming `verikt check`.
+- `TestBudget_FailsClosedOnBloatedOutput` proves the budget tests can fail: the former monolithic guide exceeds both limits.

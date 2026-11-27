@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -125,6 +127,14 @@ type Target interface {
 	Write(projectDir, content string) error
 }
 
+// targetNames lists every valid --target selector, in output order.
+var targetNames = []string{"all", "claude", "cursor", "copilot", "windsurf", "agents"}
+
+// TargetNames returns the valid values for `verikt guide --target`.
+func TargetNames() []string {
+	return append([]string(nil), targetNames...)
+}
+
 // resolveTargets returns the targets matching the given selector.
 //
 // "all" means every agent the project actually uses, detected from the file each
@@ -138,9 +148,12 @@ type Target interface {
 func resolveTargets(selector, projectDir string) ([]Target, error) {
 	all := []Target{
 		&claudeTarget{},
-		&sentinelTarget{name: "cursor", relPath: ".cursorrules"},
+		&cursorTarget{},
 		&sentinelTarget{name: "copilot", relPath: filepath.Join(".github", "copilot-instructions.md")},
 		&sentinelTarget{name: "windsurf", relPath: ".windsurfrules"},
+		// AGENTS.md is the cross-agent instructions file read by Codex,
+		// Antigravity, OpenCode and others.
+		&sentinelTarget{name: "agents", relPath: "AGENTS.md"},
 	}
 
 	if selector == "" || selector == "all" {
@@ -161,23 +174,32 @@ func resolveTargets(selector, projectDir string) ([]Target, error) {
 			return []Target{t}, nil
 		}
 	}
-	return nil, fmt.Errorf("unknown guide target %q (valid: all, claude, cursor, copilot, windsurf)", selector)
+	return nil, fmt.Errorf("unknown guide target %q (valid: %s)", selector, strings.Join(targetNames, ", "))
 }
 
-// targetInUse reports whether the project already carries the file or directory
-// that identifies this agent.
+// targetInUse reports whether the project already carries a file or directory
+// that identifies this agent. These are agent configuration markers at fixed
+// paths, not a scan of the source tree (ADR-008).
 func targetInUse(t Target, projectDir string) bool {
-	var rel string
+	var markers []string
 	switch target := t.(type) {
 	case *claudeTarget:
-		rel = ".claude"
+		markers = []string{".claude"}
+	case *cursorTarget:
+		// .cursorrules is the legacy format; a project still carrying it uses
+		// Cursor and needs verikt's section migrated out of it.
+		markers = []string{".cursor", legacyCursorRules}
 	case *sentinelTarget:
-		rel = target.relPath
+		markers = []string{target.relPath}
 	default:
 		return false
 	}
-	_, err := os.Stat(filepath.Join(projectDir, rel))
-	return err == nil
+	for _, rel := range markers {
+		if _, err := os.Stat(filepath.Join(projectDir, rel)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // claudeTarget writes directly to .claude/rules/verikt.md.
@@ -511,7 +533,12 @@ func writeGuideHash(projectDir string) error {
 	return nil
 }
 
-// sentinelTarget uses sentinel-based merging for shared files.
+// sentinelTarget writes verikt's section into a file the user may share with
+// other content (AGENTS.md, copilot-instructions.md, .windsurfrules). Only the
+// text between GuideMarkers is replaced; everything else is preserved. When the
+// markers are malformed the file is left untouched and an error is returned:
+// appending a second section, as an earlier version did, left the agent reading
+// two conflicting copies.
 type sentinelTarget struct {
 	name    string
 	relPath string
@@ -522,40 +549,99 @@ func (t *sentinelTarget) Name() string { return t.name }
 func (t *sentinelTarget) Write(projectDir, content string) error {
 	path := filepath.Join(projectDir, t.relPath)
 
+	existing, err := os.ReadFile(path) //nolint:gosec // projectDir joined with a fixed relative path
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read %s: %w", t.relPath, err)
+	}
+
+	merged, err := ReplaceSection(string(existing), GuideMarkers, content)
+	if err != nil {
+		return fmt.Errorf("%s: %w; fix or remove the verikt markers by hand, verikt will not overwrite the file", t.relPath, err)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create dir for %s: %w", t.name, err)
 	}
-
-	wrapped := sentinelStart + "\n" + content + sentinelEnd + "\n"
-
-	existing, err := os.ReadFile(path)
-	if err != nil {
-		// No existing file: create with sentinels.
-		return os.WriteFile(path, []byte(wrapped), 0o644)
-	}
-
-	merged := mergeSentinels(string(existing), wrapped)
-	return os.WriteFile(path, []byte(merged), 0o644)
+	return WriteFileAtomic(path, []byte(merged))
 }
 
-// mergeSentinels replaces content between sentinels, or appends if none found.
-func mergeSentinels(existing, wrapped string) string {
-	startIdx := strings.Index(existing, sentinelStart)
-	endIdx := strings.Index(existing, sentinelEnd)
+// cursorRulesPath is Cursor's project rules location (MDC format). The legacy
+// single-file .cursorrules is deprecated by Cursor.
+var cursorRulesPath = filepath.Join(".cursor", "rules", "verikt.mdc")
 
-	if startIdx < 0 || endIdx < 0 || endIdx < startIdx {
-		// No sentinels found: append.
-		if !strings.HasSuffix(existing, "\n") && existing != "" {
-			existing += "\n"
+const legacyCursorRules = ".cursorrules"
+
+// cursorFrontmatter marks the rule as always applied, matching the other
+// always-loaded targets. An empty globs value is what Cursor writes for an
+// always-applied rule.
+const cursorFrontmatter = "---\n" +
+	"description: Architecture rules for this project, generated by verikt guide from verikt.yaml\n" +
+	"globs:\n" +
+	"alwaysApply: true\n" +
+	"---\n"
+
+// cursorTarget writes .cursor/rules/verikt.mdc, a file verikt owns entirely,
+// then migrates verikt's section out of a legacy .cursorrules file.
+type cursorTarget struct {
+	notices io.Writer
+}
+
+func (t *cursorTarget) Name() string { return "cursor" }
+
+func (t *cursorTarget) Write(projectDir, content string) error {
+	path := filepath.Join(projectDir, cursorRulesPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create cursor rules dir: %w", err)
+	}
+	if err := WriteFileAtomic(path, []byte(cursorFrontmatter+claudeHeader+content)); err != nil {
+		return fmt.Errorf("write %s: %w", cursorRulesPath, err)
+	}
+	return t.migrateLegacy(projectDir)
+}
+
+// migrateLegacy removes verikt's sentinel section from .cursorrules so Cursor
+// does not load the rules twice. User content is never removed: a file with no
+// verikt section is left alone, a file with malformed markers is left alone
+// with a notice, and the file is deleted only when nothing but whitespace
+// remains after removing verikt's section.
+func (t *cursorTarget) migrateLegacy(projectDir string) error {
+	path := filepath.Join(projectDir, legacyCursorRules)
+	data, err := os.ReadFile(path) //nolint:gosec // projectDir joined with a fixed relative path
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", legacyCursorRules, err)
+	}
+
+	remaining, removed, err := RemoveSection(string(data), GuideMarkers)
+	if err != nil {
+		t.notify("verikt: left %s untouched (%v). Cursor now reads %s; remove verikt's old section from %s by hand.",
+			legacyCursorRules, err, cursorRulesPath, legacyCursorRules)
+		return nil
+	}
+	if !removed {
+		return nil
+	}
+	if strings.TrimSpace(remaining) == "" {
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove %s: %w", legacyCursorRules, err)
 		}
-		return existing + "\n" + wrapped
+		t.notify("verikt: removed legacy %s (it held only verikt's section); Cursor now reads %s.", legacyCursorRules, cursorRulesPath)
+		return nil
 	}
+	if err := WriteFileAtomic(path, []byte(remaining)); err != nil {
+		return fmt.Errorf("write %s: %w", legacyCursorRules, err)
+	}
+	t.notify("verikt: moved verikt's section from %s to %s; your own content in %s was kept.", legacyCursorRules, cursorRulesPath, legacyCursorRules)
+	return nil
+}
 
-	// Replace between sentinels (inclusive).
-	after := endIdx + len(sentinelEnd)
-	// Consume trailing newline if present.
-	if after < len(existing) && existing[after] == '\n' {
-		after++
+func (t *cursorTarget) notify(format string, args ...any) {
+	if t.notices == nil {
+		return
 	}
-	return existing[:startIdx] + wrapped + existing[after:]
+	// Notices are informational; a failed write to the notice stream must not
+	// fail guide generation, whose files are already written.
+	_, _ = fmt.Fprintf(t.notices, format+"\n", args...)
 }

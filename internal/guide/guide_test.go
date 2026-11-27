@@ -37,6 +37,45 @@ func TestBuildContent_Hexagonal(t *testing.T) {
 	assert.Contains(t, content, "mysql")
 }
 
+func TestBuildContent_MarksOptionalComponents(t *testing.T) {
+	opts := GenerateOptions{
+		Architecture: "hexagonal",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
+			{Name: "platform", In: []string{"platform/**"}, MayDependOn: []string{"domain"}, Optional: true},
+		},
+	}
+
+	content := buildContent(opts)
+
+	assert.Contains(t, content, "### platform (optional: may be absent)\n")
+	assert.Contains(t, content, "### domain\n")
+}
+
+// The always-loaded writer rules and the architecture reference both name an
+// optional component as such, so an agent does not treat its absence as drift.
+func TestGenerate_MarksOptionalComponentsInWriterRulesAndReference(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, Generate(GenerateOptions{
+		ProjectDir:   dir,
+		Target:       "agents",
+		Architecture: "hexagonal",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
+			{Name: "platform", In: []string{"platform/**"}, MayDependOn: []string{"domain"}, Optional: true},
+		},
+	}))
+
+	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(agents), "- **platform** (optional: may be absent): depends on domain\n")
+	assert.Contains(t, string(agents), "- **domain**: depends on nothing (innermost)\n")
+
+	ref, err := os.ReadFile(filepath.Join(dir, ".verikt", "references", "architecture.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(ref), "### platform (optional: may be absent)\n")
+}
+
 func TestBuildContent_Layered(t *testing.T) {
 	opts := GenerateOptions{
 		Architecture: "layered",
@@ -226,12 +265,13 @@ func TestResolveTargets(t *testing.T) {
 		count    int
 		wantErr  bool
 	}{
-		{"all", 4, false},
-		{"", 4, false},
+		{"all", 5, false},
+		{"", 5, false},
 		{"claude", 1, false},
 		{"cursor", 1, false},
 		{"copilot", 1, false},
 		{"windsurf", 1, false},
+		{"agents", 1, false},
 		{"invalid", 0, true},
 	}
 	for _, tt := range tests {
@@ -277,6 +317,43 @@ func TestResolveTargets_AllHonoursEveryMarkerPresent(t *testing.T) {
 		names = append(names, target.Name())
 	}
 	assert.ElementsMatch(t, []string{"claude", "cursor"}, names)
+}
+
+// AGENTS.md marks the agents target in use; Cursor is in use when the project has
+// a .cursor directory or the legacy .cursorrules file it still migrates from.
+func TestResolveTargets_AllDetectsAgentsAndCursorMarkers(t *testing.T) {
+	cases := map[string]struct {
+		setup func(dir string) error
+		want  []string
+	}{
+		"AGENTS.md": {
+			setup: func(dir string) error { return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("x\n"), 0o644) },
+			want:  []string{"agents"},
+		},
+		".cursor dir": {
+			setup: func(dir string) error { return os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755) },
+			want:  []string{"cursor"},
+		},
+		"legacy .cursorrules": {
+			setup: func(dir string) error { return os.WriteFile(filepath.Join(dir, ".cursorrules"), []byte("x\n"), 0o644) },
+			want:  []string{"cursor"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, tc.setup(dir))
+
+			targets, err := resolveTargets("all", dir)
+			require.NoError(t, err)
+
+			names := make([]string, 0, len(targets))
+			for _, target := range targets {
+				names = append(names, target.Name())
+			}
+			assert.ElementsMatch(t, tc.want, names)
+		})
+	}
 }
 
 // An explicit --target still writes that agent even with no marker: the user asked
@@ -573,9 +650,12 @@ scope:
 	assert.Contains(t, indexContent, "mysql")
 	assert.Contains(t, indexContent, "auth-jwt")
 
-	// Rule summaries in index.
+	// Rule summaries in index (compact), full table in the review reference.
 	assert.Contains(t, indexContent, "## Active Rules")
 	assert.Contains(t, indexContent, "domain-isolation")
+	reviewData, err := os.ReadFile(filepath.Join(dir, ".verikt", "references", "review.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(reviewData), "| domain-isolation | grep | error |")
 
 	// Category files exist.
 	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-http.md"))
@@ -607,46 +687,24 @@ func TestGuideIntegration_CatalogOnlyMode(t *testing.T) {
 	err := Generate(opts)
 	require.NoError(t, err)
 
-	// CatalogOnly uses monolithic output even for Claude.
+	// CatalogOnly writes a single always-loaded file even for Claude.
 	data, err := os.ReadFile(filepath.Join(dir, ".claude", "rules", "verikt.md"))
 	require.NoError(t, err)
 	content := string(data)
 
-	// Should have catalog.
-	assert.Contains(t, content, "## Capability Catalog")
+	// The catalog dump is on-demand: the always-loaded file points to it.
+	assert.NotContains(t, content, "## Capability Catalog")
+	assert.Contains(t, content, ".verikt/references/capabilities.md")
+	catalogData, err := os.ReadFile(filepath.Join(dir, ".verikt", "references", "capabilities.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(catalogData), "## Capability Catalog")
+	// No architecture reference in catalog-only mode.
+	assert.NoFileExists(t, filepath.Join(dir, ".verikt", "references", "architecture.md"))
 
 	// Should NOT have architecture sections.
 	assert.NotContains(t, content, "## Layer Rules")
 	assert.NotContains(t, content, "## Dependency Direction")
 	assert.NotContains(t, content, "## Anti-patterns to Avoid")
-}
-
-func TestGuideTokenCompliance(t *testing.T) {
-	opts := GenerateOptions{
-		Architecture: "hexagonal",
-		Capabilities: []string{
-			"http-api", "mysql", "redis", "docker", "ci-github",
-			"observability", "health", "cors", "auth-jwt", "rate-limiting",
-		},
-		TemplateFS: testCapFS(),
-		Components: []config.Component{
-			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
-			{Name: "ports", In: []string{"port/**"}, MayDependOn: []string{"domain"}},
-			{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "ports"}},
-			{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"ports", "domain"}},
-		},
-	}
-
-	content := buildContent(opts)
-	words := len(strings.Fields(content))
-	approxTokens := int(float64(words) * 1.3)
-
-	// 3,100 tokens is the composite bound recorded in INV-001: the sentinel targets
-	// (cursor, copilot, windsurf) accept one file, so it carries what the Claude path
-	// splits across several. Per-file rules stay within 500-1,500.
-	if approxTokens > 3100 {
-		t.Errorf("guide output too large: ~%d tokens (%d words); consider trimming", approxTokens, words)
-	}
 }
 
 func TestForbiddenDeps_ComponentWithNoForbidden(t *testing.T) {
@@ -701,17 +759,24 @@ func TestFullGuideWithDecisions(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-data.md"))
 	assert.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-security.md"))
 
-	// Monolithic output for non-Claude targets includes decisions.
+	// Non-Claude targets name the open decisions in the always-loaded file.
 	err = GenerateFromConfig(dir, cfg, "cursor")
 	require.NoError(t, err)
-	cursorData, err := os.ReadFile(filepath.Join(dir, ".cursorrules"))
+	cursorData, err := os.ReadFile(filepath.Join(dir, ".cursor", "rules", "verikt.mdc"))
 	require.NoError(t, err)
 	cursorContent := string(cursorData)
 	assert.Contains(t, cursorContent, "hexagonal")
-	assert.Contains(t, cursorContent, "Decision Status")
-	assert.Contains(t, cursorContent, "architecture-pattern")
+	assert.Contains(t, cursorContent, "## Open Decisions")
 	assert.Contains(t, cursorContent, "tenant-isolation")
-	assert.Contains(t, cursorContent, "UNDECIDED")
+	assert.NotContains(t, cursorContent, "`architecture-pattern`", "decided topics stay out of the always-loaded file")
+
+	// The full decision status lives in the review reference.
+	reviewData, err := os.ReadFile(filepath.Join(dir, ".verikt", "references", "review.md"))
+	require.NoError(t, err)
+	reviewContent := string(reviewData)
+	assert.Contains(t, reviewContent, "Decision Status")
+	assert.Contains(t, reviewContent, "architecture-pattern")
+	assert.Contains(t, reviewContent, "UNDECIDED")
 }
 
 func TestOutputTargetPaths(t *testing.T) {
@@ -726,13 +791,21 @@ func TestOutputTargetPaths(t *testing.T) {
 
 	expected := []string{
 		filepath.Join(dir, ".claude", "rules", "verikt-index.md"),
-		filepath.Join(dir, ".cursorrules"),
+		filepath.Join(dir, ".cursor", "rules", "verikt.mdc"),
 		filepath.Join(dir, ".github", "copilot-instructions.md"),
 		filepath.Join(dir, ".windsurfrules"),
+		filepath.Join(dir, "AGENTS.md"),
+		filepath.Join(dir, ".verikt", "references", "architecture.md"),
+		filepath.Join(dir, ".verikt", "references", "capabilities.md"),
+		filepath.Join(dir, ".verikt", "references", "review.md"),
 	}
 	for _, path := range expected {
 		assert.FileExists(t, path)
 	}
+	// The scaffold interview is catalog-only onboarding (INV-001).
+	assert.NoFileExists(t, filepath.Join(dir, ".verikt", "references", "interview.md"))
+	// Cursor no longer writes the deprecated single-file format.
+	assert.NoFileExists(t, filepath.Join(dir, ".cursorrules"))
 }
 
 // --- Tests for Smart Suggestions, Interaction Warnings, Design Questions ---

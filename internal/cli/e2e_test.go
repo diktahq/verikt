@@ -11,6 +11,19 @@ import (
 	_ "github.com/diktahq/verikt/providers/golang"
 )
 
+// requireGoToolchain skips the test when no go binary is on PATH. It is the
+// only environmental reason the e2e tests skip: once the toolchain is present,
+// a failing go mod tidy, check, or analyze is a real failure.
+func requireGoToolchain(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skipf("go toolchain not found on PATH: %v", err)
+	}
+}
+
+// goModTidy resolves the scaffolded project's dependencies. It needs network
+// access (or a warm module cache) and fails the test when tidy fails, because
+// a broken import in a template looks exactly like that.
 func goModTidy(t *testing.T, dir string) {
 	t.Helper()
 	cmd := exec.CommandContext(context.Background(), "go", "mod", "tidy")
@@ -18,8 +31,23 @@ func goModTidy(t *testing.T, dir string) {
 	cmd.Env = append(os.Environ(), "GOFLAGS=")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("go mod tidy output: %s", string(out))
-		t.Skipf("go mod tidy failed (requires network): %v", err)
+		t.Fatalf("go mod tidy in %s failed: %v\n%s", dir, err, out)
+	}
+}
+
+// runCommandInDir runs a verikt command in dir and fails the test with
+// everything it printed when it returns an error. check and analyze write
+// their reports to os.Stdout, so stdout is captured alongside cobra's buffer.
+func runCommandInDir(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	chdir(t, dir)
+	var cobraOut string
+	var err error
+	stdout := captureStdout(t, func() {
+		cobraOut, err = executeCommand(t, args...)
+	})
+	if err != nil {
+		t.Fatalf("verikt %s failed: %v\n%s%s", strings.Join(args, " "), err, stdout, cobraOut)
 	}
 }
 
@@ -27,6 +55,7 @@ func TestE2E_ScaffoldCheckAnalyzeGuide(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
 	}
+	requireGoToolchain(t)
 
 	tmp := t.TempDir()
 	svcDir := scaffoldHexagonal(t, tmp, "e2e-hex")
@@ -34,30 +63,20 @@ func TestE2E_ScaffoldCheckAnalyzeGuide(t *testing.T) {
 	// go mod tidy so check/analyze can parse Go code.
 	goModTidy(t, svcDir)
 
-	// Check.
-	chdir(t, svcDir)
-	_, err := executeCommand(t, "check", "--path", ".")
-	if err != nil {
-		t.Skip("requires go toolchain in scaffolded project")
-	}
-
-	// Analyze — verify it succeeds (output goes to os.Stdout, not captured by cobra).
-	chdir(t, svcDir)
-	_, err = executeCommand(t, "analyze", "--path", ".")
-	if err != nil {
-		t.Skip("requires go toolchain in scaffolded project")
-	}
+	runCommandInDir(t, svcDir, "check", "--path", ".")
+	runCommandInDir(t, svcDir, "analyze", "--path", ".")
 
 	// Guide.
 	chdir(t, svcDir)
-	_, err = executeCommand(t, "guide")
+	_, err := executeCommand(t, "guide")
 	if err != nil {
 		t.Fatalf("guide command failed: %v", err)
 	}
 
 	for _, p := range []string{
 		filepath.Join(".claude", "rules", "verikt-index.md"),
-		".cursorrules",
+		filepath.Join(".cursor", "rules", "verikt.mdc"),
+		"AGENTS.md",
 		filepath.Join(".github", "copilot-instructions.md"),
 		".windsurfrules",
 	} {
@@ -84,29 +103,19 @@ func TestE2E_FlatPipeline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
 	}
+	requireGoToolchain(t)
 
 	tmp := t.TempDir()
 	svcDir := scaffoldFlat(t, tmp, "e2e-flat")
 
 	goModTidy(t, svcDir)
 
-	// Check.
-	chdir(t, svcDir)
-	_, err := executeCommand(t, "check", "--path", ".")
-	if err != nil {
-		t.Skip("requires go toolchain in scaffolded project")
-	}
-
-	// Analyze — verify it succeeds.
-	chdir(t, svcDir)
-	_, err = executeCommand(t, "analyze", "--path", ".")
-	if err != nil {
-		t.Skip("requires go toolchain in scaffolded project")
-	}
+	runCommandInDir(t, svcDir, "check", "--path", ".")
+	runCommandInDir(t, svcDir, "analyze", "--path", ".")
 
 	// Guide.
 	chdir(t, svcDir)
-	_, err = executeCommand(t, "guide")
+	_, err := executeCommand(t, "guide")
 	if err != nil {
 		t.Fatalf("guide command failed: %v", err)
 	}
@@ -127,6 +136,7 @@ func TestE2E_MultipleCapabilities(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
 	}
+	requireGoToolchain(t)
 
 	tmp := t.TempDir()
 	chdir(t, tmp)
@@ -146,12 +156,7 @@ func TestE2E_MultipleCapabilities(t *testing.T) {
 	svcDir := filepath.Join(tmp, "e2e-multi")
 	goModTidy(t, svcDir)
 
-	// Check.
-	chdir(t, svcDir)
-	_, err = executeCommand(t, "check", "--path", ".")
-	if err != nil {
-		t.Skip("requires go toolchain in scaffolded project")
-	}
+	runCommandInDir(t, svcDir, "check", "--path", ".")
 
 	// Guide.
 	chdir(t, svcDir)

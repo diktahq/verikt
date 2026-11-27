@@ -9,21 +9,34 @@ import (
 
 // AIAgent represents a supported AI coding agent that verikt can register with.
 type AIAgent struct {
-	Name      string // "Claude Code", "Cursor", "Windsurf"
+	Name      string // "Claude Code", "Cursor", "Windsurf", "Codex", "Antigravity"
 	ConfigDir string // expanded path to ~/.claude etc.
 	RulesDir  string // expanded path to ~/.claude/rules etc.
-	RulesFile string // "verikt.md"
+	RulesFile string // "verikt.md", or the agent's shared global file ("AGENTS.md")
+	// Shared is true when RulesFile is the agent's single global instructions
+	// file, which the user also edits. verikt then only writes, checks and
+	// removes the section between globalMarkers and never touches the rest.
+	Shared bool
 }
 
-var supportedAgents = []struct {
+// agentSpec describes where an agent keeps its global configuration, relative
+// to the user's home directory.
+type agentSpec struct {
 	name      string
-	configDir string
+	flag      string // opt-in flag name (without "--"); empty for auto-detected agents
+	configDir string // presence of this dir means the agent is installed
 	rulesDir  string
 	rulesFile string
+	shared    bool
 	// configDirEnv names an environment variable that overrides the
 	// home-relative configDir when set. Empty means no override.
 	configDirEnv string
-}{
+}
+
+// optIn reports whether the agent is only configured when explicitly requested.
+func (a agentSpec) optIn() bool { return a.flag != "" }
+
+var supportedAgents = []agentSpec{
 	{
 		name:         "Claude Code",
 		configDir:    ".claude",
@@ -42,6 +55,28 @@ var supportedAgents = []struct {
 		configDir: ".windsurf",
 		rulesDir:  filepath.Join(".windsurf", "rules"),
 		rulesFile: "verikt.md",
+	},
+	// Opt-in agents. Their global instructions live in one file the user also
+	// edits, so verikt writes a marked section and requires an explicit flag:
+	// an existing directory alone never causes verikt to edit that file.
+	//
+	// These locations have not yet been checked against each vendor's current
+	// documentation; https://github.com/diktahq/verikt/issues/19 tracks that.
+	{
+		name:      "Codex",
+		flag:      "codex",
+		configDir: ".codex",
+		rulesDir:  ".codex",
+		rulesFile: "AGENTS.md",
+		shared:    true,
+	},
+	{
+		name:      "Antigravity",
+		flag:      "antigravity",
+		configDir: filepath.Join(".gemini", "antigravity"),
+		rulesDir:  ".gemini",
+		rulesFile: "GEMINI.md",
+		shared:    true,
 	},
 }
 
@@ -72,15 +107,27 @@ func resolveConfigDirEnv(envVar, home, fallback string) string {
 	return dir
 }
 
-// detectInstalledAgents returns agents whose ConfigDir exists. Agents with no
-// existing ConfigDir are skipped — we never create config dirs.
-func detectInstalledAgents() ([]AIAgent, error) {
+// agentDetection is the result of looking for agents under the home directory.
+type agentDetection struct {
+	// Selected are the agents setup acts on: every installed auto-detected
+	// agent plus every requested opt-in agent that is installed.
+	Selected []AIAgent
+	// OptInAvailable are installed opt-in agents the user did not request.
+	OptInAvailable []agentSpec
+	// OptInMissing are requested opt-in agents whose config dir does not exist.
+	OptInMissing []agentSpec
+}
+
+// detectAgents finds installed agents under the user's home. optIn holds the
+// flag names of opt-in agents the user explicitly requested. Agents with no
+// existing config dir are never selected — verikt never creates config dirs.
+func detectAgents(optIn map[string]bool) (agentDetection, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolving home directory: %w", err)
+		return agentDetection{}, fmt.Errorf("resolving home directory: %w", err)
 	}
 
-	found := make([]AIAgent, 0, len(supportedAgents))
+	var det agentDetection
 	for _, a := range supportedAgents {
 		configPath := filepath.Join(home, a.configDir)
 		rulesPath := filepath.Join(home, a.rulesDir)
@@ -90,16 +137,24 @@ func detectInstalledAgents() ([]AIAgent, error) {
 				rulesPath = filepath.Join(override, "rules")
 			}
 		}
-		if _, statErr := os.Stat(configPath); statErr != nil {
-			continue
-		}
-		found = append(found, AIAgent{
-			Name:      a.name,
-			ConfigDir: configPath,
-			RulesDir:  rulesPath,
-			RulesFile: a.rulesFile,
-		})
-	}
+		_, statErr := os.Stat(configPath)
+		installed := statErr == nil
+		requested := !a.optIn() || optIn[a.flag]
 
-	return found, nil
+		switch {
+		case installed && requested:
+			det.Selected = append(det.Selected, AIAgent{
+				Name:      a.name,
+				ConfigDir: configPath,
+				RulesDir:  rulesPath,
+				RulesFile: a.rulesFile,
+				Shared:    a.shared,
+			})
+		case installed && a.optIn():
+			det.OptInAvailable = append(det.OptInAvailable, a)
+		case !installed && requested && a.optIn():
+			det.OptInMissing = append(det.OptInMissing, a)
+		}
+	}
+	return det, nil
 }
