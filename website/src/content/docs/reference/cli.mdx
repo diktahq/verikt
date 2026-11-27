@@ -190,12 +190,122 @@ array, at warning severity, so neither fails the check unless you raise it with
 `severity_overrides`. `live_dot_claude_fixture` names the directory; with
 `--diff` it is kept when any file inside that directory changed.
 
+### CI, Script and Container Files
+
+Two more checks read the files that run your build rather than your source code.
+Both are always on, apply to every language, and report at warning severity under
+**STRUCTURE VIOLATIONS** with `file:line`.
+
+They read `.github/workflows/*.yml` and `*.yaml`, `lefthook.yml` and
+`.lefthook.yml`, `scripts/**/*.sh`, `.claude/hooks/**/*.sh`, every `Makefile`,
+`GNUmakefile` and `*.mk`, and every `Dockerfile`, `Dockerfile.*` and
+`*.Dockerfile` (except template files such as `Dockerfile.tmpl`). Comments are
+ignored, and a command continued with a trailing `\` is read as one command,
+reported at the line where it starts. `.git`, `node_modules`, `vendor` and
+`testdata` are not searched, symlinks are not followed, and `check.exclude`
+applies.
+
+**`silent_ci_swallow`** reports a failure turned into a pass. `migrate-up || true`
+in a deploy script, `RESULT=$(verikt check) || true` in a hook and
+`continue-on-error: true` on a lint job each stay green while the thing they ran
+is broken. It reports:
+
+- `continue-on-error: true` on any job or step of a workflow. Only the literal
+  value counts; `continue-on-error: ${{ matrix.experimental }}` is not reported.
+- `|| true` or `|| :` followed by a read of `$?`, on the same line or the next
+  command, for any command. After the swallow `$?` is always 0. Capture the
+  status with `set +e; cmd; rc=$?; set -e` instead.
+- `|| true`, `|| :` or `|| exit 0` after a verification command: test runners,
+  linters, type checkers, scanners and migration tools (`go test`, `go vet`,
+  `pytest`, `golangci-lint`, `eslint`, `tsc`, `npm run lint`, `make test`,
+  `rails db:migrate`, `alembic` and others), a script or target whose name has a
+  `test`, `lint`, `check`, `verify` or `migrate` part (`./scripts/run-tests.sh`,
+  `migrate-up`, `make test-short`), and captures such as
+  `OUT=$(go test ./...) || true`.
+
+Cleanup is never reported, whatever its arguments mention: `rm -rf .pytest_cache || true`,
+`docker rm -f test-db || true` and `kill $PID || true` are ordinary best-effort
+steps, and so are scripts named for setup or teardown (`./scripts/clean-test-db.sh`).
+A bare snake_case word such as `cmd_check` is read as a shell function and not
+reported. Add your own verification commands with
+[`check.silent_ci_swallow.extra_commands`](/reference/verikt-yaml/#check).
+
+**`mutable_install_url`** reports a download whose content can change under the
+same reference, so the build you reviewed is not the build that runs:
+
+- a download piped or substituted into a shell: `curl ... | bash`,
+  `wget -qO- ... | sudo sh`, `curl ... | VERSION=v1 bash`, `bash <(curl ...)`,
+  `sh -c "$(curl ...)"`. Piping into `shasum`, `sha256sum` or `tar` is not
+  reported, and neither is a pipe inside a quoted string, such as an `echo` that
+  prints install instructions.
+- `/releases/latest/download/` anywhere.
+- `raw.githubusercontent.com/<owner>/<repo>/main/...`, or `master`, `HEAD` or
+  `refs/heads/main`. Image files (`.png`, `.svg` and similar) are skipped.
+- in workflows, `uses:` pinned to `main`, `master` or `HEAD`. Version tags and
+  commit SHAs pass.
+- in Dockerfiles, a `FROM` image that is untagged or tagged `:latest` without an
+  `@sha256:` digest. `FROM scratch`, earlier build stages, `FROM $BASE_IMAGE` and
+  registry ports (`localhost:5000/app:1.2`) are handled.
+
+Documentation is not scanned unless you set
+[`check.mutable_install_url.include_docs: true`](/reference/verikt-yaml/#check).
+Install docs routinely show a convenience one-liner, and a page that explains the
+anti-pattern has to quote it. With the key set, fenced code blocks in `README.md`
+and `docs/**/*.md` are scanned for pipe-to-shell and `/releases/latest/download/`,
+also at warning severity.
+
+verikt's own test suite runs both checks over every Dockerfile, CI config and
+Makefile template it ships, so `verikt new` does not scaffold a project that fails
+them.
+
+#### Allowing One Line
+
+Some swallows are deliberate: a notification that must not block a release, a
+lint job in advisory mode during a migration. Mark that line instead of waiving
+the whole file:
+
+```yaml
+      - name: Notify Slack
+        # verikt:allow silent_ci_swallow reason="Slack outages must not block a release"
+        continue-on-error: true
+```
+
+The marker is a comment holding exactly `verikt:allow <rule_id> reason="<text>"`,
+in `#`, `//` or `<!-- ... -->` form, for `silent_ci_swallow` or
+`mutable_install_url`. It covers the finding on its own line, or the next command
+when it sits in the comment lines directly above it; a blank line in between
+breaks the link. One marker allows one rule. For a command split over several
+lines, it may sit above the first line or trail any of them. In opted-in
+Markdown, a `<!-- verikt:allow ... -->` directly above a code fence covers that
+block.
+
+```sh
+golangci-lint run ./... || true  # verikt:allow silent_ci_swallow reason="advisory until the v2 config lands (#412)"
+```
+
+Markers fail closed. A comment that mentions `verikt:allow` but has no `reason`, a
+blank reason, single quotes, extra text, more than one rule, or a rule that does
+not take markers allows nothing: the finding is still reported, and the marker
+itself is reported as `invalid_allow_directive`, also a warning. All of these are
+rejected:
+
+```yaml
+continue-on-error: true # verikt:allow silent_ci_swallow
+continue-on-error: true # verikt:allow silent_ci_swallow reason="  "
+continue-on-error: true # verikt:allow silent_ci_swalow reason="known flaky"
+continue-on-error: true # verikt:allow-continue-on-error reason="known flaky"
+```
+
+For a whole file or directory, use `severity_overrides` with the rule id and
+`paths`: `severity: ignore` waives it, `severity: must` makes it fail the check.
+`--diff` and `--staged` keep a finding when its file changed.
+
 ### Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | No finding at or above the fail threshold. Warnings may be present. |
-| 1 | A finding at or above the fail threshold was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability or an invalid `check.fail_on` in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
+| 1 | A finding at or above the fail threshold was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability, an invalid `check.fail_on` or an invalid `check.silent_ci_swallow.extra_commands` entry in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
 
 One rule decides pass or fail for every finding — built-in detectors,
 anti-patterns, proxy rules and decision gates alike — after `severity_overrides`

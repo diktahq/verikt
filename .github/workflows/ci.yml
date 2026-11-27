@@ -139,6 +139,7 @@ jobs:
           # `check` exits non-zero on error-severity findings, which the previous
           # step already gates on; this step only measures, so the exit code is
           # deliberately ignored under `set -e`.
+          # verikt:allow silent_ci_swallow reason="measurement only; the Check architecture step gates on the exit code"
           /tmp/verikt check --output json > verikt-check.json || true
           baseline=$(grep -vE '^\s*#|^\s*$' .github/verikt-debt-baseline | head -1)
           # `// []` guards the arrays: they were omitempty, so this job crashed

@@ -31,6 +31,21 @@ existing pipeline sees.
   the module root that the list does not name. Waive a specific finding with a
   `severity_overrides` entry under the detector's name (`severity: ignore`, a
   `reason`, and `paths`), or make one blocking with `severity: must`.
+- **Two new checks read CI, script and container files, both at warning
+  severity** and on for every project and language. `silent_ci_swallow` reports
+  `continue-on-error: true` in GitHub workflows, `|| true` or `|| :` followed by a
+  read of `$?`, and `|| true` / `|| :` / `|| exit 0` after a test, lint, check or
+  migration command. `mutable_install_url` reports `curl | sh`,
+  `/releases/latest/download/`, `raw.githubusercontent.com` URLs on a branch,
+  workflow `uses:` pinned to a branch, and Dockerfile `FROM` images that are untagged
+  or `:latest`. They read `.github/workflows/`, lefthook files, `scripts/**/*.sh`,
+  `.claude/hooks/**/*.sh`, Makefiles and Dockerfiles. Neither changes the exit code
+  unless you raise it. A `PostToolUse` hook written by an older `verikt guide` is
+  reported (it ran `verikt check ... || true`); re-run `verikt guide` to replace it.
+  To accept one line, add `# verikt:allow <rule> reason="..."` on it or in the
+  comment lines directly above it; a malformed marker allows nothing and is itself
+  reported as `invalid_allow_directive`. To waive or raise a rule for a path, use
+  `severity_overrides` under the rule id with `severity: ignore` or `severity: must`.
 - **Cursor's rules moved to `.cursor/rules/verikt.mdc`.** Cursor deprecated
   `.cursorrules`. The next `verikt guide` moves verikt's section out of `.cursorrules`,
   keeps your own content there, and deletes the file only if verikt's section was all
@@ -75,6 +90,15 @@ existing pipeline sees.
   the verdict and the reason (`0 errors, 3 warnings — passed (use --strict to fail on
   warnings)`), and `-o json` adds `fail_on`, `error_count`, `warning_count` and
   `info_count` beside `result`. (#21)
+- **`silent_ci_swallow` and `mutable_install_url` checks**, at warning severity, with
+  a shared inline marker, `verikt:allow <rule_id> reason="..."` in `#`, `//` or
+  `<!-- -->` comments. `check.silent_ci_swallow.extra_commands` adds your own
+  verification commands; `check.mutable_install_url.include_docs: true` also scans
+  fenced code in `README.md` and `docs/**/*.md`. The template security test runs both
+  checks over every shipped Dockerfile, CI config and Makefile template; it found the
+  GitLab CI and devcontainer templates piping golangci-lint's `install.sh` from
+  `master` into `sh`, and both now `go install` a pinned v1.64.8, matching the v1
+  `.golangci.yaml` the linting capability writes. (#15)
 - **`optional: true` on a component** skips the missing-component check for it. The
   guide labels optional components. (#18)
 - **`platform` and `app` components** in every scaffolded Go architecture except flat:

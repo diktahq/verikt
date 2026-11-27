@@ -113,6 +113,8 @@ Optional settings for `verikt check`:
 | `exclude` | string[] | [] | Path globs the checker ignores: generated code, vendored trees, tooling directories. Does not apply to `allowed_entrypoints` |
 | `allowed_entrypoints` | string[] | absent | The Go binaries this project is meant to have. Turns on the `cmd_allowlist` detector |
 | `fail_on` | string | `error` | The lowest finding severity that fails `verikt check`: `error` or `warning` |
+| `silent_ci_swallow.extra_commands` | string[] | [] | Your own verification commands. `silent_ci_swallow` reports `\|\| true` after them, like the built-in list |
+| `mutable_install_url.include_docs` | bool | `false` | Also scan fenced code blocks in `README.md` and `docs/**/*.md` for `mutable_install_url` |
 
 Agents asked to refactor or migrate code tend to add a new `cmd/` binary rather than change the one that exists, and a repository collects helper mains and `_v2` copies nobody asked for. `allowed_entrypoints` declares the binary surface, and `verikt check` reports any `package main` outside it:
 
@@ -128,6 +130,20 @@ Each entry is a project-relative directory. Use `.` for a `main.go` in the proje
 Leaving the key out leaves the detector off. An empty list, `allowed_entrypoints: []`, turns it on with nothing approved, so every entrypoint is reported. `check.exclude` is not applied to this detector: excluding `cmd/**` from orphan detection is common, and it would otherwise switch the check off in the projects it is for. To accept one specific entrypoint without listing it, waive it with `severity_overrides` under the key `cmd_allowlist`.
 
 Findings are reported at warning severity and do not fail the check. Raise them to blocking with `severity_overrides` (`severity: must`).
+
+#### `silent_ci_swallow` and `mutable_install_url`
+
+Both checks are always on; these keys tune them. `silent_ci_swallow` knows common test runners, linters and migration tools. If your project verifies with its own command, list it, and `<command> || true` is reported too. An entry is a command name or a command followed by fixed arguments, matched against the start of the command:
+
+```yaml
+check:
+  silent_ci_swallow:
+    extra_commands: [db-up, "deno test"]
+  mutable_install_url:
+    include_docs: true
+```
+
+`include_docs` adds fenced code blocks in `README.md` and `docs/**/*.md` to what `mutable_install_url` reads. It is off by default because install docs show convenience one-liners on purpose. See [CI, script and container files](/reference/cli/#ci-script-and-container-files) for what each check reports and how to allow one line.
 
 #### `fail_on`
 
@@ -189,9 +205,10 @@ The structural rules are enforced when verikt writes the file — `verikt new`, 
 - Every `may_depend_on` entry names an existing component
 - Every `check.allowed_entrypoints` entry is a non-empty, project-relative path that stays inside the project
 - `check.fail_on` is empty, `error` or `warning`
+- Every `check.silent_ci_swallow.extra_commands` entry is a command name, optionally followed by fixed arguments (`deno test`). Blank entries, duplicates and shell syntax (`|`, `;`, `$(`, quotes, `=`) are rejected
 - Every `severity_overrides` entry has a known severity and a reason, and no catch-all shadows entries after it
 
-`verikt check` does not re-run these structural rules on a file you edited by hand, except `check.fail_on`, which it validates before running, and nothing validates `in` patterns as globs.
+`verikt check` does not re-run these structural rules on a file you edited by hand, except `check.fail_on` and `check.silent_ci_swallow.extra_commands`, which it validates before running, and nothing validates `in` patterns as globs.
 
 <Aside type="tip">
 You can add `verikt check` to your CI pipeline to catch dependency violations before merge.

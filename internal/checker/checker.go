@@ -263,12 +263,15 @@ func detectArchitectureShape(cfg *config.VeriktConfig, projectPath string) []Vio
 }
 
 // detectStructure runs the language-agnostic repository-structure checks: the
-// declared required and forbidden directories, and live agent configuration
-// under fixture paths. cmd_allowlist is also a structure finding, but is added
-// separately because check.exclude must not apply to it.
+// declared required and forbidden directories, live agent configuration under
+// fixture paths, and the line-based guards over CI, script, build and
+// container files (silent_ci_swallow, mutable_install_url). cmd_allowlist is
+// also a structure finding, but is added separately because check.exclude
+// must not apply to it.
 func detectStructure(cfg *config.VeriktConfig, projectPath string) []Violation {
 	violations := checkStructure(cfg.Rules.Structure, projectPath)
-	return append(violations, detectLiveAgentFixtures(projectPath, cfg.Check.Exclude)...)
+	violations = append(violations, detectLiveAgentFixtures(projectPath, cfg.Check.Exclude)...)
+	return append(violations, detectScriptGuards(projectPath, cfg.Check)...)
 }
 
 // detectMissingComponents finds components declared in verikt.yaml that have

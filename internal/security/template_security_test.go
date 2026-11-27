@@ -2,11 +2,13 @@ package security_test
 
 import (
 	"io/fs"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/diktahq/verikt/internal/checker/scriptguard"
 	"github.com/diktahq/verikt/internal/provider"
 
 	// Register providers so provider.Get works in tests.
@@ -100,6 +102,59 @@ func TestTemplates_NoInsecurePatterns(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTemplates_NoMutableInstallURLs runs the line-based verikt check guards
+// (mutable_install_url and silent_ci_swallow) over every Dockerfile, CI
+// config, Makefile and script template, so verikt never scaffolds a project
+// that fails its own check (INV-003: no unpinned dependencies). The guards
+// ship at warning severity in verikt check; here any finding fails.
+func TestTemplates_NoMutableInstallURLs(t *testing.T) {
+	for _, lang := range []string{"go", "typescript"} {
+		t.Run(lang, func(t *testing.T) {
+			tmplFS := mustGetProvider(t, lang).GetTemplateFS()
+			scanned := 0
+			err := fs.WalkDir(tmplFS, ".", func(p string, d fs.DirEntry, walkErr error) error {
+				if walkErr != nil || d.IsDir() || !strings.HasSuffix(p, ".tmpl") {
+					return walkErr
+				}
+				kind, ok := templateScriptKind(p)
+				if !ok {
+					return nil
+				}
+				data, err := fs.ReadFile(tmplFS, p)
+				if err != nil {
+					return err
+				}
+				scanned++
+				for _, v := range scriptguard.Scan(p, kind, data, scriptguard.Options{}) {
+					t.Errorf("[SECURITY] %s:%d [%s] %s", p, v.Line, v.Rule, v.Message)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("walking %s templates: %v", lang, err)
+			}
+			if scanned == 0 {
+				t.Fatalf("no %s Dockerfile/CI/Makefile templates scanned; template layout changed?", lang)
+			}
+		})
+	}
+}
+
+// templateScriptKind classifies a template by the path it renders to: the
+// part after ".../files/", without ".tmpl". GitLab and Bitbucket CI configs,
+// which the project walk does not read, are scanned as generic CI config.
+func templateScriptKind(tmplPath string) (scriptguard.Kind, bool) {
+	out := strings.TrimSuffix(tmplPath, ".tmpl")
+	if _, after, ok := strings.Cut(out, "/files/"); ok {
+		out = after
+	}
+	switch path.Base(out) {
+	case ".gitlab-ci.yml", "bitbucket-pipelines.yml":
+		return scriptguard.KindCIConfig, true
+	}
+	return scriptguard.Classify(out, false)
 }
 
 func mustGetProvider(t *testing.T, lang string) provider.LanguageProvider {

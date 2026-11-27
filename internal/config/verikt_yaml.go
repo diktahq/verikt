@@ -28,7 +28,8 @@ type SeverityOverride struct {
 //   - Dependency violations:   violation.Rule  → "dependency", "arch/domain", "arch/handler", …
 //   - Architecture violations: violation.Rule  → "orphan_package", "missing_component"
 //   - Structure violations:    violation.Rule  → "required_dir", "forbidden_dir",
-//     "cmd_allowlist", "live_dot_claude_fixture"
+//     "cmd_allowlist", "live_dot_claude_fixture", "silent_ci_swallow",
+//     "mutable_install_url", "invalid_allow_directive"
 //   - Function violations:     violation.Rule  → "max_lines", "max_params", "max_return_values"
 //   - Proxy rules:             violation.RuleID → user-defined IDs from .verikt/rules/ YAML files
 //   - Anti-patterns:           antipattern.Name → "sql_concatenation", "god_package", …
@@ -71,6 +72,29 @@ type CheckConfig struct {
 	// (the default, also when empty) or "warning". The --strict flag sets
 	// "warning" for one run and takes precedence over this field.
 	FailOn string `yaml:"fail_on,omitempty" json:"fail_on,omitempty"`
+
+	// SilentCISwallow tunes the silent_ci_swallow check, which is always on.
+	SilentCISwallow SilentCISwallowConfig `yaml:"silent_ci_swallow,omitempty" json:"silent_ci_swallow,omitempty"`
+
+	// MutableInstallURL tunes the mutable_install_url check, which is always
+	// on for CI, script, build and container files.
+	MutableInstallURL MutableInstallURLConfig `yaml:"mutable_install_url,omitempty" json:"mutable_install_url,omitempty"`
+}
+
+// SilentCISwallowConfig tunes the silent_ci_swallow check.
+type SilentCISwallowConfig struct {
+	// ExtraCommands are command names, or a command followed by fixed
+	// arguments ("deno test"), treated as verification commands in addition
+	// to the built-in list, so `<command> || true` on them is reported.
+	ExtraCommands []string `yaml:"extra_commands,omitempty" json:"extra_commands,omitempty"`
+}
+
+// MutableInstallURLConfig tunes the mutable_install_url check.
+type MutableInstallURLConfig struct {
+	// IncludeDocs also scans fenced code blocks in README.md and
+	// docs/**/*.md. Off by default: install docs routinely show a
+	// convenience one-liner.
+	IncludeDocs bool `yaml:"include_docs,omitempty" json:"include_docs,omitempty"`
 }
 
 // EntrypointAllowlist returns the normalised allowed entrypoints and whether
@@ -238,7 +262,30 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 	if err := ValidateFailOn(cfg.Check.FailOn); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, ValidateSilentCISwallow(cfg.Check.SilentCISwallow)...)
 	errs = append(errs, validateSeverityOverrides(cfg.SeverityOverrides)...)
+	return errs
+}
+
+// ValidateSilentCISwallow rejects check.silent_ci_swallow.extra_commands
+// entries that are blank, duplicated, or contain shell syntax. An entry is a
+// command name ("migrate-db") or a command followed by fixed arguments
+// ("deno test"), never a pipeline or a quoted string.
+func ValidateSilentCISwallow(c SilentCISwallowConfig) []error {
+	var errs []error
+	seen := map[string]bool{}
+	for i, raw := range c.ExtraCommands {
+		cmd := strings.Join(strings.Fields(raw), " ")
+		switch {
+		case cmd == "":
+			errs = append(errs, fmt.Errorf("check.silent_ci_swallow.extra_commands[%d] is empty", i))
+		case strings.ContainsAny(cmd, "|;&$()<>`'\"\\#="):
+			errs = append(errs, fmt.Errorf("check.silent_ci_swallow.extra_commands[%d] %q must be a command name, not shell syntax", i, raw))
+		case seen[cmd]:
+			errs = append(errs, fmt.Errorf("check.silent_ci_swallow.extra_commands[%d] %q is duplicated", i, raw))
+		}
+		seen[cmd] = true
+	}
 	return errs
 }
 

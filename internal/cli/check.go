@@ -129,13 +129,7 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 		return err
 	}
 
-	if err := validateConfigCapabilities(cfg); err != nil {
-		return err
-	}
-
-	// An invalid threshold is a configuration error. Running anyway would report
-	// a verdict at a threshold the user did not ask for.
-	if err := config.ValidateFailOn(cfg.Check.FailOn); err != nil {
+	if err := validateCheckConfig(cfg, veriktPath); err != nil {
 		return err
 	}
 
@@ -240,6 +234,25 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 		Rules:     ruleResult,
 		Decisions: decisionViolations,
 	}, cfg, flags, opts.Output)
+}
+
+// validateCheckConfig rejects configuration that would make the run check
+// something other than what the user asked for.
+func validateCheckConfig(cfg *config.VeriktConfig, veriktPath string) error {
+	if err := validateConfigCapabilities(cfg); err != nil {
+		return err
+	}
+	// An invalid threshold is a configuration error. Running anyway would report
+	// a verdict at a threshold the user did not ask for.
+	if err := config.ValidateFailOn(cfg.Check.FailOn); err != nil {
+		return err
+	}
+	// Same for extra commands: a pipeline or quoted string could never match,
+	// so silent_ci_swallow would quietly check less than the user asked for.
+	if errs := config.ValidateSilentCISwallow(cfg.Check.SilentCISwallow); len(errs) > 0 {
+		return fmt.Errorf("%s: %w", veriktPath, errors.Join(errs...))
+	}
+	return nil
 }
 
 // resolveCheckEngine extracts the engine and decides whether the built-in
