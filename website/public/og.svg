@@ -39,7 +39,7 @@
   <!-- Two columns — equal width, centered at 450 and 750 -->
   <!-- Go -->
   <text x="450" y="340" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Go</text>
-  <text x="450" y="370" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="600" fill="#E8913A" text-anchor="middle">63 capabilities</text>
+  <text x="450" y="370" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="600" fill="#E8913A" text-anchor="middle">65 capabilities</text>
   <text x="450" y="396" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" fill="#A8A29E" text-anchor="middle">hexagonal · clean · layered · flat</text>
 
   <!-- Column divider -->
