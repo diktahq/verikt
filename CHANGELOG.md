@@ -142,10 +142,12 @@ existing pipeline sees.
   `gh attestation verify <archive> --repo diktahq/verikt`. (#11)
 - **Local enforcement for contributors.** GitHub Actions does not run for this
   repository, so nothing checks a change after it is pushed. `lefthook` runs gofmt,
-  golangci-lint and race tests on staged packages at pre-commit, and `mise run verify`
-  at pre-push; `mise run verify` adds `go mod tidy -diff`, `go test -race`, shellcheck
-  and the installer tests. golangci-lint is 2.15.0, with gosec, errorlint, nilerr and
-  exhaustive enabled. See `CONTRIBUTING.md`. (#12)
+  golangci-lint and short tests on staged packages at pre-commit, and `mise run verify`
+  (build, vet, format, `go mod tidy -diff`, tests, lint, shellcheck, installer tests) at
+  pre-push. `mise run release-check` is the full suite before a release: engine gates, a
+  freshly built engine, the race detector, compiled scaffolds and the debt baseline.
+  golangci-lint is 2.15.0, with gosec, errorlint, nilerr and exhaustive enabled. See
+  `CONTRIBUTING.md`. (#12)
 
 ### Fixed
 
@@ -260,7 +262,7 @@ existing pipeline sees.
 
 ### Changed
 
-- **`mise run verify` compiles generated projects.** It now runs
+- **`mise run release-check` compiles generated projects.** It runs
   `TestScaffoldBuilds`, which scaffolds every architecture with several capability
   sets (including the orderings, the `ddd`/`event-bus` pair and the renamed adapter
   packages above) and runs `go build` and `go vet` on each. `verikt check` compiles

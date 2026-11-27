@@ -17,8 +17,9 @@ mise exec -- lefthook install # git hooks, once per clone
 
 GitHub Actions does not run for this repository, so nothing checks a change after it
 leaves your machine. The hooks in `lefthook.yml` are the enforcement: pre-commit runs
-gofmt, golangci-lint and `go test -race -short` on the packages you staged (a few
-seconds with a warm cache), and pre-push runs `mise run verify`. Install them.
+gofmt, golangci-lint and `go test -short` on the packages you staged (a few seconds
+with a warm cache), and pre-push runs `mise run verify`. Install them. The heavy suite
+runs before a release, not on every push.
 
 ### Why the second step is required
 
@@ -40,19 +41,28 @@ all (`embed_other.go`), not a local checkout that has not produced one.
 
 ## Verifying a change
 
-Run one command:
+During development, run the fast gates (pre-push runs the same):
 
 ```bash
 mise run verify
 ```
 
-It runs every gate — engine checks, build, vet, gofmt, `go mod tidy -diff`,
-`go test -race`, a compile of freshly scaffolded projects, golangci-lint, shellcheck and
-the installer tests, and verikt's check of itself — **against a freshly built engine**.
-That last part matters. Verifying against a stale embedded engine produces a passing run
-that measures the wrong binary, which has already happened twice on this repository: once
-with an older golangci-lint reporting no issues on code a newer one rejected, once with a
-debt baseline measured four findings short. `make check` delegates to the same task.
+It builds, vets, checks formatting and `go mod tidy -diff`, runs `go test ./...` and
+golangci-lint, and lints and tests the installer. It takes seconds with a warm cache.
+
+Before tagging a release, run the full suite:
+
+```bash
+mise run release-check
+```
+
+It rebuilds the engine and runs its own gates (fmt, clippy, tests), re-embeds it, runs
+`verify`, the race detector, a compile of freshly scaffolded projects, and verikt's check
+of itself against the debt baseline. The engine is rebuilt first because measuring
+against a stale embedded engine produces a passing run of the wrong binary, which has
+already happened twice here: once with an older golangci-lint reporting no issues on code
+a newer one rejected, once with a debt baseline measured four findings short. Nothing
+else runs this suite, so a release must not skip it. `make check` runs `verify`.
 
 The individual gates, if you need them separately:
 
@@ -73,7 +83,7 @@ needs network access and is skipped unless `VERIKT_BUILD_SCAFFOLDS=1` is set.
 
 `verikt check` exits non-zero only for **error**-severity findings. Warning-level
 findings are real debt and are ratcheted: `.github/verikt-debt-baseline` holds the
-current count, and `mise run verify` fails if it rises. Lower it when you pay debt down. Raising it
+current count, and `mise run release-check` fails if it rises. Lower it when you pay debt down. Raising it
 needs a reason in the commit message.
 
 The docs site is separate:
