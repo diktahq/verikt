@@ -112,6 +112,7 @@ Optional settings for `verikt check`:
 |-------|------|---------|-------------|
 | `exclude` | string[] | [] | Path globs the checker ignores: generated code, vendored trees, tooling directories. Does not apply to `allowed_entrypoints` |
 | `allowed_entrypoints` | string[] | absent | The Go binaries this project is meant to have. Turns on the `cmd_allowlist` detector |
+| `fail_on` | string | `error` | The lowest finding severity that fails `verikt check`: `error` or `warning` |
 
 Agents asked to refactor or migrate code tend to add a new `cmd/` binary rather than change the one that exists, and a repository collects helper mains and `_v2` copies nobody asked for. `allowed_entrypoints` declares the binary surface, and `verikt check` reports any `package main` outside it:
 
@@ -127,6 +128,19 @@ Each entry is a project-relative directory. Use `.` for a `main.go` in the proje
 Leaving the key out leaves the detector off. An empty list, `allowed_entrypoints: []`, turns it on with nothing approved, so every entrypoint is reported. `check.exclude` is not applied to this detector: excluding `cmd/**` from orphan detection is common, and it would otherwise switch the check off in the projects it is for. To accept one specific entrypoint without listing it, waive it with `severity_overrides` under the key `cmd_allowlist`.
 
 Findings are reported at warning severity and do not fail the check. Raise them to blocking with `severity_overrides` (`severity: must`).
+
+#### `fail_on`
+
+By default only error-severity findings fail `verikt check`; warnings are reported and the run passes. `fail_on: warning` makes every warning fail it too, for a project that has paid its warnings down and wants to keep them at zero:
+
+```yaml
+check:
+  fail_on: warning
+```
+
+It applies to every category the same way: built-in detectors, anti-patterns, proxy rules and decision gates. Info findings and findings waived with `severity_overrides` never fail. The `--strict` flag sets the same threshold for one run and takes precedence over this field, so `fail_on: error` with `--strict` still fails on warnings. To make one rule blocking rather than all warnings, use `severity_overrides` with `severity: must`.
+
+Any other value, including `info` or the override words `must` and `should`, is rejected: `verikt check` stops with an error naming `check.fail_on` instead of running at a threshold you did not ask for. See [exit codes](/reference/cli/#exit-codes) for the full table.
 
 ## Feature-Gated Manifests
 
@@ -174,9 +188,10 @@ The structural rules are enforced when verikt writes the file — `verikt new`, 
 - No component lists itself in `may_depend_on`
 - Every `may_depend_on` entry names an existing component
 - Every `check.allowed_entrypoints` entry is a non-empty, project-relative path that stays inside the project
+- `check.fail_on` is empty, `error` or `warning`
 - Every `severity_overrides` entry has a known severity and a reason, and no catch-all shadows entries after it
 
-`verikt check` does not re-run these structural rules on a file you edited by hand, and nothing validates `in` patterns as globs.
+`verikt check` does not re-run these structural rules on a file you edited by hand, except `check.fail_on`, which it validates before running, and nothing validates `in` patterns as globs.
 
 <Aside type="tip">
 You can add `verikt check` to your CI pipeline to catch dependency violations before merge.

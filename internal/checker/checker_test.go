@@ -135,6 +135,34 @@ func TestCheckResult_ComplianceZeroRulesChecked(t *testing.T) {
 	}
 }
 
+// Passed is severity-aware: it counted every violation, so a run whose only
+// findings were warnings — function metrics, naked_goroutine, the warning-level
+// structure detectors — did not pass.
+func TestCheckResult_PassedIgnoresWarningsAndInfo(t *testing.T) {
+	result := &CheckResult{
+		FunctionViolations:    []Violation{{Rule: "function_params", Severity: "warning"}},
+		StructureViolations:   []Violation{{Rule: RuleCmdAllowlist, Severity: "warning"}},
+		AntiPatternViolations: []AntiPattern{{Name: "naked_goroutine", Severity: "warning"}, {Name: "x", Severity: "info"}},
+	}
+	if !result.Passed() {
+		t.Error("Passed() must be true when every finding is a warning or info")
+	}
+	if !result.Fails(config.FailOnWarning) {
+		t.Error("Fails(warning) must be true when there are warnings")
+	}
+}
+
+func TestCheckResult_PassedFailsOnErrorOrUnsetSeverity(t *testing.T) {
+	withError := &CheckResult{AntiPatternViolations: []AntiPattern{{Name: "sql_concatenation", Severity: "error"}}}
+	if withError.Passed() {
+		t.Error("Passed() must be false with an error-severity finding")
+	}
+	unset := &CheckResult{StructureViolations: []Violation{{Rule: "required_dir"}}}
+	if unset.Passed() {
+		t.Error("a finding with no severity counts as an error")
+	}
+}
+
 func TestDetectOrphanPackages_FlagsUnmatchedPackage(t *testing.T) {
 	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",

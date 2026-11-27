@@ -90,7 +90,7 @@ func TestAntiPatternSeverityCanBeRaised(t *testing.T) {
 
 	require.Len(t, result.AntiPatternViolations, 1)
 	assert.Equal(t, "error", result.AntiPatternViolations[0].Severity)
-	assert.True(t, hasBlockingFindings(result), "a raised anti-pattern fails the build")
+	assert.True(t, evaluateCheck(checkOutcome{Checker: result}, config.FailOnError).Failed, "a raised anti-pattern fails the build")
 }
 
 // Waived findings must not reach the exit code — that is the whole point.
@@ -109,7 +109,7 @@ func TestWaivedFindingsDoNotBlock(t *testing.T) {
 		}},
 	})
 
-	assert.False(t, hasBlockingFindings(result), "a waived finding does not fail the build")
+	assert.False(t, evaluateCheck(checkOutcome{Checker: result}, config.FailOnError).Failed, "a waived finding does not fail the build")
 	require.Len(t, result.WaivedFindings, 1)
 }
 

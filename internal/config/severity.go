@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/diktahq/verikt/internal/pathglob"
 )
 
@@ -65,4 +67,59 @@ func matchesPaths(filePath string, paths []string) bool {
 		return true
 	}
 	return pathglob.MatchAny(filePath, paths)
+}
+
+// Thresholds for check.fail_on and --strict: the lowest finding severity that
+// fails `verikt check`.
+const (
+	FailOnError   = "error"   // the default: only error-severity findings fail
+	FailOnWarning = "warning" // --strict, or check.fail_on: warning
+)
+
+// ValidateFailOn rejects check.fail_on values other than "", "error" and
+// "warning". The severity_overrides vocabulary (must, should) does not apply:
+// fail_on names a finding severity, not an override.
+func ValidateFailOn(failOn string) error {
+	switch failOn {
+	case "", FailOnError, FailOnWarning:
+		return nil
+	default:
+		return fmt.Errorf("check.fail_on %q is invalid (must be one of: error, warning)", failOn)
+	}
+}
+
+// NormalizeSeverity maps a finding severity, after severity_overrides have been
+// applied, to "error", "warning", "info" or "ignore". An empty or unrecognised
+// severity becomes "error": a finding whose severity was never set keeps failing
+// the check rather than passing silently.
+func NormalizeSeverity(severity string) string {
+	switch severity {
+	case "error", "warning", "info", "ignore":
+		return severity
+	default:
+		return "error"
+	}
+}
+
+// SeverityFails is the single pass/fail rule for every finding `verikt check`
+// reports — built-in detectors, anti-patterns, proxy rules and decision gates.
+// It reports whether a finding of the given severity fails the run at threshold
+// failOn (FailOnError or FailOnWarning; empty means FailOnError).
+//
+//	error, empty, unknown → fail
+//	warning               → fail only at FailOnWarning
+//	info, ignore          → never fail
+//
+// Warnings never fail by default because detectors ship at warning until they
+// have shown their precision on real repositories (INV-005); a warning that
+// blocked would make that distinction meaningless.
+func SeverityFails(severity, failOn string) bool {
+	switch NormalizeSeverity(severity) {
+	case "error":
+		return true
+	case "warning":
+		return failOn == FailOnWarning
+	default:
+		return false
+	}
 }

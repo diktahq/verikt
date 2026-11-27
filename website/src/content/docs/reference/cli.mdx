@@ -127,6 +127,7 @@ verikt check [flags]
 | `--rule <id>` | Run a single proxy rule | none |
 | `--decisions` | Run only decision gate validation | `false` |
 | `--allow-degraded` | If the analysis engine is unavailable, skip the built-in detectors with a warning instead of failing | `false` |
+| `--strict` | Fail on warning-severity findings too. Takes precedence over `check.fail_on` | `false` |
 
 `--detectors`, `--proxy-rules`, `--rule` and `--decisions` each narrow the run to one kind of check, so they cannot be combined.
 
@@ -193,12 +194,41 @@ array, at warning severity, so neither fails the check unless you raise it with
 
 | Code | Meaning |
 |------|---------|
-| 0 | No error-severity violations. Warnings may be present. |
-| 1 | An error-severity violation was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
+| 0 | No finding at or above the fail threshold. Warnings may be present. |
+| 1 | A finding at or above the fail threshold was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability or an invalid `check.fail_on` in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
 
-Warnings never affect the exit code, so a finding you have chosen to live with
-cannot block a pipeline. The exit code is the same in every output format —
-`--output json` reports the same verdict it prints.
+One rule decides pass or fail for every finding — built-in detectors,
+anti-patterns, proxy rules and decision gates alike — after `severity_overrides`
+have been applied:
+
+| Severity | Default | `--strict` or `check.fail_on: warning` |
+|----------|---------|----------------------------------------|
+| `error` | fails | fails |
+| `warning` | passes | fails |
+| `info` | passes | passes |
+| waived (`ignore`) | passes | passes |
+| none, or unrecognised | fails | fails |
+
+Warnings do not affect the exit code by default. New detectors ship at warning
+severity until they have shown their precision on real repositories, so a
+warning is a finding to review, not a verdict. Raise the threshold for one run
+with `--strict`, or for the project with
+[`check.fail_on: warning`](/reference/verikt-yaml/#check). To make one rule
+blocking without the others, set it to `must` in `severity_overrides` instead.
+A finding with no severity counts as an error, so a detector that forgets to set
+one cannot pass silently.
+
+The last line of terminal output gives the counts, the verdict and the reason:
+
+```
+0 errors, 3 warnings — passed (use --strict to fail on warnings)
+0 errors, 3 warnings — failed (warnings fail: --strict)
+1 error, 0 warnings — failed
+0 errors, 0 warnings — failed (1 proxy rule did not run)
+```
+
+The exit code is the same in every output format — `--output json` reports the
+same verdict it prints.
 
 A proxy rule whose scope matches no files is reported as **stale** and fails the
 check: a rule that did not run has not passed. A rule that ran and found nothing
@@ -231,10 +261,20 @@ names are stable within a version, not across them.
 `violations[]`, `anti_patterns[]` and `waived[]` are always present and always
 arrays, so they are safe to iterate on a passing project.
 
+`fail_on` is the threshold the run was decided at (`error`, or `warning` under
+`--strict` or `check.fail_on: warning`). `error_count`, `warning_count` and
+`info_count` count findings by severity across every category, proxy rules and
+decision gates included; waived findings are in none of them, and a finding
+with no severity is counted as an error.
+
 ```json
 {
   "schema_version": 2,
   "result": "fail",
+  "fail_on": "error",
+  "error_count": 2,
+  "warning_count": 0,
+  "info_count": 0,
   "violations": [
     { "severity": "error", "file": "domain/order.go", "rule": "dependency", "message": "..." }
   ],
@@ -263,12 +303,10 @@ built-in detector findings only. An error-severity proxy-rule violation lives in
 `decision_violations[]`. A gate built from the two top-level arrays passes on all
 three.
 
-To count findings by severity — for a debt report rather than a gate — include
-every source:
+For a debt report rather than a gate, read the counts:
 
 ```bash
-jq '[(.violations // [])[], (.anti_patterns // [])[], (.proxy_rules.violations // [])[]]
-    | group_by(.severity) | map({severity: .[0].severity, count: length})' verikt.json
+jq '{errors: .error_count, warnings: .warning_count, info: .info_count}' verikt.json
 ```
 
 ### Example Output
@@ -286,7 +324,7 @@ Function Issues: 0
 Component Coverage: 100% (4/4)
 Compliance: 100%
 
-✓ All checks passed
+0 errors, 0 warnings — passed
 ```
 
 ## `verikt analyze`

@@ -66,6 +66,11 @@ type CheckConfig struct {
 	// list turns it on with nothing approved, so every entrypoint is reported.
 	// The pointer is what keeps those two apart through a save and load.
 	AllowedEntrypoints *[]string `yaml:"allowed_entrypoints,omitempty" json:"allowed_entrypoints,omitempty"`
+
+	// FailOn is the lowest finding severity that fails `verikt check`: "error"
+	// (the default, also when empty) or "warning". The --strict flag sets
+	// "warning" for one run and takes precedence over this field.
+	FailOn string `yaml:"fail_on,omitempty" json:"fail_on,omitempty"`
 }
 
 // EntrypointAllowlist returns the normalised allowed entrypoints and whether
@@ -230,6 +235,9 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 		}
 	}
 	errs = append(errs, validateAllowedEntrypoints(cfg.Check)...)
+	if err := ValidateFailOn(cfg.Check.FailOn); err != nil {
+		errs = append(errs, err)
+	}
 	errs = append(errs, validateSeverityOverrides(cfg.SeverityOverrides)...)
 	return errs
 }

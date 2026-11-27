@@ -21,12 +21,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ErrCheckFailed is returned when architecture check finds error-severity
-// violations, or when a proxy rule could not run (stale or invalid).
+// ErrCheckFailed is returned when architecture check finds a finding at or above
+// the fail threshold (error by default, warning with --strict or
+// check.fail_on: warning), or when a proxy rule could not run (stale or invalid).
 var ErrCheckFailed = errors.New("architecture check failed")
 
 // checkJSONSchemaVersion is the version of the `verikt check -o json` document.
-// Bump it on any breaking change to the output shape or key names.
+// Bump it on any breaking change to the output shape or key names. Adding keys
+// (fail_on and the *_count fields) is not one.
 const checkJSONSchemaVersion = 2
 
 // enginePathFn resolves the embedded engine binary. It is a variable so tests
@@ -46,6 +48,7 @@ type checkFlags struct {
 	staged        bool
 	diff          string
 	allowDegraded bool
+	strict        bool
 }
 
 // checkLongHelp is the long help for `verikt check`.
@@ -53,8 +56,13 @@ const checkLongHelp = `Check validates an existing project against its verikt.ya
 
 Reports dependency violations, structure issues, and function complexity.
 Runs both built-in detectors and proxy rules by default.
-Exits with code 1 if any error-severity violations are found, or if a proxy rule
-could not run (stale or invalid). Warnings do not affect the exit code.
+Exits with code 1 if any error-severity finding is reported, or if a proxy rule
+could not run (stale or invalid). Warnings do not affect the exit code unless
+--strict is set or verikt.yaml sets check.fail_on: warning. Info findings and
+findings waived with severity_overrides never fail. A finding with no severity
+counts as an error. The last line of terminal output says why the run passed or
+failed; -o json carries the same verdict in result, fail_on and the
+error_count, warning_count and info_count fields.
 
 Test files (_test.go) are not analysed, by any check — including dependency
 rules. A test legitimately reaches across layers to assemble a fixture, so its
@@ -79,7 +87,8 @@ func newCheckCommand(opts *globalOptions) *cobra.Command {
   verikt check --proxy-rules
   verikt check --staged
   verikt check --rule cap-sql-parameterized
-  verikt check --decisions`,
+  verikt check --decisions
+  verikt check --strict`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCheck(opts, flags)
 		},
@@ -94,6 +103,8 @@ func newCheckCommand(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&flags.diff, "diff", "", "Only report violations in files changed vs. a git ref (e.g., main, HEAD~1)")
 	cmd.Flags().BoolVar(&flags.allowDegraded, "allow-degraded", false,
 		"If the analysis engine is unavailable, skip the built-in detectors (warning on stderr) instead of failing")
+	cmd.Flags().BoolVar(&flags.strict, "strict", false,
+		"Fail on warning-severity findings too (takes precedence over check.fail_on)")
 
 	// Each of these narrows the run to one kind of check, so combining them
 	// narrows it to nothing: `--detectors --rule x` skipped the detectors (because
@@ -119,6 +130,12 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 	}
 
 	if err := validateConfigCapabilities(cfg); err != nil {
+		return err
+	}
+
+	// An invalid threshold is a configuration error. Running anyway would report
+	// a verdict at a threshold the user did not ask for.
+	if err := config.ValidateFailOn(cfg.Check.FailOn); err != nil {
 		return err
 	}
 
@@ -279,39 +296,135 @@ type checkOutcome struct {
 	Decisions []checker.DecisionViolation
 }
 
-// blocks reports whether anything in the outcome should fail the build: an
-// error-severity finding in any category, or a proxy rule that could not run.
-func (o checkOutcome) blocks() bool {
-	if hasBlockingFindings(o.Checker) || ruleResultBlocks(o.Rules) {
-		return true
+// checkVerdict is the pass/fail decision for one run, with the counts that
+// explain it.
+type checkVerdict struct {
+	FailOn       string // config.FailOnError or config.FailOnWarning
+	FailOnSource string // what set a warning threshold: "--strict" or "check.fail_on"
+	Errors       int
+	Warnings     int
+	Infos        int
+	UnrunRules   int // proxy rules that were stale or invalid
+	Failed       bool
+}
+
+// add counts one finding and applies config.SeverityFails to it.
+func (v *checkVerdict) add(severity string) {
+	switch config.NormalizeSeverity(severity) {
+	case "error":
+		v.Errors++
+	case "warning":
+		v.Warnings++
+	case "info":
+		v.Infos++
 	}
-	for _, v := range o.Decisions {
-		if v.Severity == "error" {
-			return true
+	if config.SeverityFails(severity, v.FailOn) {
+		v.Failed = true
+	}
+}
+
+// evaluateCheck decides whether the run fails at threshold failOn. Every
+// finding source — built-in detectors, anti-patterns, proxy rules, decision
+// gates — goes through config.SeverityFails. They used to answer "does this
+// fail?" three ways: checker findings by their own loop, proxy rules by
+// RunResult.ErrorCount, decision gates by comparing to "error". A proxy rule or
+// decision with no severity therefore passed while a checker finding with none
+// failed.
+//
+// A proxy rule that could not run fails at every threshold: it checked nothing,
+// so it cannot pass.
+func evaluateCheck(outcome checkOutcome, failOn string) checkVerdict {
+	v := checkVerdict{FailOn: failOn}
+	if outcome.Checker != nil {
+		for _, sev := range outcome.Checker.Severities() {
+			v.add(sev)
 		}
 	}
-	return false
+	if outcome.Rules != nil {
+		for _, rv := range outcome.Rules.Violations {
+			v.add(rv.Severity)
+		}
+		v.UnrunRules = outcome.Rules.StaleRuleCount() + outcome.Rules.InvalidRuleCount()
+		if v.UnrunRules > 0 {
+			v.Failed = true
+		}
+	}
+	for _, d := range outcome.Decisions {
+		v.add(d.Severity)
+	}
+	return v
+}
+
+// resolveFailOn returns the fail threshold for this run and what set it.
+// --strict takes precedence over check.fail_on.
+func resolveFailOn(cfg *config.VeriktConfig, strict bool) (failOn, source string) {
+	if strict {
+		return config.FailOnWarning, "--strict"
+	}
+	if cfg != nil && cfg.Check.FailOn == config.FailOnWarning {
+		return config.FailOnWarning, "check.fail_on"
+	}
+	return config.FailOnError, ""
+}
+
+// summaryLine is the last line of terminal output: the counts, the verdict, and
+// why. A run that exits 1 with no reason on screen sends the reader looking for
+// a failure in the wrong place.
+func (v checkVerdict) summaryLine() string {
+	counts := pluralize(v.Errors, "error") + ", " + pluralize(v.Warnings, "warning")
+	if v.Infos > 0 {
+		counts += fmt.Sprintf(", %d info", v.Infos)
+	}
+
+	if !v.Failed {
+		if v.Warnings > 0 && v.FailOn != config.FailOnWarning {
+			return counts + " — passed (use --strict to fail on warnings)"
+		}
+		return counts + " — passed"
+	}
+
+	var reasons []string
+	if v.UnrunRules > 0 {
+		reasons = append(reasons, pluralize(v.UnrunRules, "proxy rule")+" did not run")
+	}
+	if v.FailOn == config.FailOnWarning && v.Warnings > 0 {
+		reasons = append(reasons, "warnings fail: "+v.FailOnSource)
+	}
+	if len(reasons) == 0 {
+		return counts + " — failed"
+	}
+	return counts + " — failed (" + strings.Join(reasons, "; ") + ")"
+}
+
+// pluralize formats a count with its noun, adding "s" unless n is 1.
+func pluralize(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // reportCheck renders the outcome in the requested format and returns
-// ErrCheckFailed if anything blocking was found.
+// ErrCheckFailed if the verdict is a failure.
 //
 // The verdict is independent of the format. The JSON branch used to return as
 // soon as it had printed, so a document saying "result": "fail" still exited 0 —
 // and every CI example writes JSON to a file, so a pipeline gating on the exit
 // code passed on precisely the runs that found something.
 func reportCheck(outcome checkOutcome, cfg *config.VeriktConfig, flags *checkFlags, output string) error {
-	hasErrors := outcome.blocks()
+	failOn, source := resolveFailOn(cfg, flags.strict)
+	verdict := evaluateCheck(outcome, failOn)
+	verdict.FailOnSource = source
 
 	if output == "json" {
-		if err := printCombinedJSON(outcome.Checker, outcome.Rules, outcome.Decisions, hasErrors); err != nil {
+		if err := printCombinedJSON(outcome, verdict); err != nil {
 			return err
 		}
 	} else {
-		printCombinedTerminal(outcome.Checker, outcome.Rules, outcome.Decisions, cfg, flags)
+		printCombinedTerminal(outcome, cfg, flags, verdict)
 	}
 
-	if hasErrors {
+	if verdict.Failed {
 		return ErrCheckFailed
 	}
 	return nil
@@ -637,7 +750,8 @@ func filterRuleResult(r *rules.RunResult, ruleID string) (*rules.RunResult, erro
 	return filtered, nil
 }
 
-func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, cfg *config.VeriktConfig, flags *checkFlags) {
+func printCombinedTerminal(outcome checkOutcome, cfg *config.VeriktConfig, flags *checkFlags, verdict checkVerdict) {
+	checkerResult, ruleResult := outcome.Checker, outcome.Rules
 	projectName := cfg.Architecture
 	if projectName == "" {
 		projectName = "project"
@@ -672,11 +786,12 @@ func printCombinedTerminal(checkerResult *checker.CheckResult, ruleResult *rules
 
 	// Decision gate results.
 	if len(cfg.Decisions) > 0 {
-		printDecisionGateSection(cfg.Decisions, decisionViolations)
+		printDecisionGateSection(cfg.Decisions, outcome.Decisions)
 	}
 
 	fmt.Println()
 	fmt.Println(strings.Repeat("═", 55))
+	fmt.Printf("\n%s\n", verdict.summaryLine())
 
 	if flags.staged {
 		fmt.Println("\nTip: Add to .git/hooks/pre-commit:")
@@ -722,7 +837,7 @@ func printProxyRuleSection(result *rules.RunResult) {
 
 	printProxyRuleViolations(result.Violations)
 
-	// Report invalid/stale rules. These fail the build (see ruleResultBlocks), so
+	// Report invalid/stale rules. These fail the build (see evaluateCheck), so
 	// they take the failure marker — a run can otherwise exit 1 with no ✗ on
 	// screen, which is the same "looks fine, isn't" problem as the inverse case.
 	for _, s := range result.Statuses {
@@ -731,49 +846,6 @@ func printProxyRuleSection(result *rules.RunResult) {
 			fmt.Printf("  ✗ [%s] %s: %s\n", s.Filename, s.Status, s.Error)
 		}
 	}
-}
-
-// hasBlockingFindings reports whether the checker found anything that should
-// fail the build: an error-severity finding in any category.
-//
-// It deliberately ignores warnings. CheckResult.Passed() counts every violation,
-// and because anti-patterns are exempt from severity_overrides, one
-// warning-level anti-pattern (god_package on a deliberately large domain
-// package) made exit 0 unreachable with no waiver available. check --help and
-// ErrCheckFailed both document error severity as the gate.
-func hasBlockingFindings(result *checker.CheckResult) bool {
-	if result == nil {
-		return false
-	}
-
-	for _, group := range [][]checker.Violation{
-		result.DependencyViolations,
-		result.StructureViolations,
-		result.FunctionViolations,
-		result.NamingViolations,
-	} {
-		for _, v := range group {
-			if v.Severity == "error" {
-				return true
-			}
-		}
-	}
-	for _, ap := range result.AntiPatternViolations {
-		if ap.Severity == "error" {
-			return true
-		}
-	}
-
-	return false
-}
-
-// ruleResultBlocks reports whether proxy rules should fail the build: an
-// error-severity violation, or a rule that could not run at all.
-func ruleResultBlocks(result *rules.RunResult) bool {
-	if result == nil {
-		return false
-	}
-	return result.ErrorCount() > 0 || result.StaleRuleCount() > 0 || result.InvalidRuleCount() > 0
 }
 
 // splitByCategory splits violations into those matching category and the rest.
@@ -805,12 +877,14 @@ func printProxyRuleViolations(violations []rules.RuleViolation) {
 
 // severityMarker returns the glyph for a finding's severity.
 //
-// Only error severity fails the check, so warnings must not carry the failure
-// marker: 51 warning-level findings rendered as ✗ read as 51 failures in a run
-// that exits 0. This lived inline in three print functions and was corrected in
-// one of them, which is why the other two kept printing the wrong glyph.
+// Only error severity fails the check by default, so warnings must not carry the
+// failure marker: 51 warning-level findings rendered as ✗ read as 51 failures in
+// a run that exits 0. This lived inline in three print functions and was
+// corrected in one of them, which is why the other two kept printing the wrong
+// glyph. A finding with no severity fails (config.SeverityFails), so it takes ✗.
+// Under --strict a warning keeps ⚠; the summary line says that warnings fail.
 func severityMarker(severity string) string {
-	if severity == "error" {
+	if config.NormalizeSeverity(severity) == "error" {
 		return "✗"
 	}
 	return "⚠"
@@ -896,11 +970,7 @@ func printDecisionGateSection(decisions []config.Decision, violations []checker.
 		}
 
 		if v, ok := undecided[d.Topic]; ok {
-			if v.Severity == "error" {
-				fmt.Printf("  ✗ %s: UNDECIDED (Tier %d)\n", d.Topic, d.Tier)
-			} else {
-				fmt.Printf("  ⚠ %s: UNDECIDED (Tier %d)\n", d.Topic, d.Tier)
-			}
+			fmt.Printf("  %s %s: UNDECIDED (Tier %d)\n", severityMarker(v.Severity), d.Topic, d.Tier)
 		} else {
 			if d.Tier == 1 {
 				tier1Decided++
@@ -950,9 +1020,18 @@ func allViolationsOf(result *checker.CheckResult) []checker.Violation {
 // key and the gate published in the docs — jq '[.violations[], .anti_patterns[]]
 // | …' — failed with "Cannot iterate over null" on exactly the projects that had
 // nothing wrong with them.
+//
+// result is the verdict the exit code carries. fail_on is the threshold it was
+// decided at, and the *_count fields count findings by severity after
+// severity_overrides, across every category including proxy rules and decision
+// gates; waived findings are in none of them.
 type jsonOutput struct {
 	SchemaVersion      int                         `json:"schema_version"`
 	Result             string                      `json:"result"`
+	FailOn             string                      `json:"fail_on"`
+	ErrorCount         int                         `json:"error_count"`
+	WarningCount       int                         `json:"warning_count"`
+	InfoCount          int                         `json:"info_count"`
 	Violations         []checker.Violation         `json:"violations"`
 	AntiPatterns       []checker.AntiPattern       `json:"anti_patterns"`
 	Waived             []checker.WaivedFinding     `json:"waived"`
@@ -960,20 +1039,25 @@ type jsonOutput struct {
 	DecisionViolations []checker.DecisionViolation `json:"decision_violations,omitempty"`
 }
 
-func printCombinedJSON(checkerResult *checker.CheckResult, ruleResult *rules.RunResult, decisionViolations []checker.DecisionViolation, hasErrors bool) error {
+func printCombinedJSON(outcome checkOutcome, verdict checkVerdict) error {
 	status := "pass"
-	if hasErrors {
+	if verdict.Failed {
 		status = "fail"
 	}
 
+	checkerResult := outcome.Checker
 	out := jsonOutput{
 		SchemaVersion:      checkJSONSchemaVersion,
 		Result:             status,
+		FailOn:             verdict.FailOn,
+		ErrorCount:         verdict.Errors,
+		WarningCount:       verdict.Warnings,
+		InfoCount:          verdict.Infos,
 		Violations:         []checker.Violation{},
 		AntiPatterns:       []checker.AntiPattern{},
 		Waived:             []checker.WaivedFinding{},
-		ProxyRules:         ruleResult,
-		DecisionViolations: decisionViolations,
+		ProxyRules:         outcome.Rules,
+		DecisionViolations: outcome.Decisions,
 	}
 
 	if checkerResult != nil {

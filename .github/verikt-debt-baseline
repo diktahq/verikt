@@ -6,7 +6,8 @@
 # fail the build, because only error severity does — but without a ceiling they accumulate
 # unnoticed, and "warnings we live with" quietly becomes the baseline.
 #
-# The self-check CI job fails if the count rises above this number. Lower it when you pay
+# `mise run verify` fails if the count rises above this number (GitHub Actions does
+# not run for this repository, so that local gate is the only enforcement). Lower it when you pay
 # debt down; raising it should be a deliberate, reviewed decision with a reason in the
 # commit message.
 #
@@ -28,4 +29,8 @@
 # split.go's index builder came under 50 lines while porting #13 and #15;
 # checkWithEngineOnly, DefaultVeriktConfig and newCheckCommand were kept
 # under the limit as they grew.
-44
+#
+# 44 -> 40: paid down. Porting #21 and #23 brought renderFilesDir,
+# RenderCapabilityFiles, PreviewCapabilityFiles, RenderComposition and the check
+# verdict logic under the limits.
+40

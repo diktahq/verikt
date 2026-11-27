@@ -67,6 +67,14 @@ existing pipeline sees.
   file alone. These locations have not yet been checked against the vendors'
   documentation (#19). (#13)
 - **`verikt check --allow-degraded`.** (#9)
+- **`verikt check --strict` and `check.fail_on: warning`** make warning-severity
+  findings fail the check, for every category: built-in detectors, anti-patterns,
+  proxy rules and decision gates. `--strict` takes precedence over `fail_on`; any
+  `fail_on` other than `error` or `warning` stops the check with an error. Without
+  either, warnings still pass. The last line of terminal output now gives the counts,
+  the verdict and the reason (`0 errors, 3 warnings — passed (use --strict to fail on
+  warnings)`), and `-o json` adds `fail_on`, `error_count`, `warning_count` and
+  `info_count` beside `result`. (#21)
 - **`optional: true` on a component** skips the missing-component check for it. The
   guide labels optional components. (#18)
 - **`platform` and `app` components** in every scaffolded Go architecture except flat:
@@ -88,6 +96,12 @@ existing pipeline sees.
 
 ### Fixed
 
+- `verikt add` places capability files where the project's architecture puts them,
+  using the same path mappings, `ArchPaths` and partials as `verikt new`. Before, clean,
+  layered and flat projects got hexagonal paths (`adapter/`, `service/`, `domain/`) and
+  failed their own `verikt check`. `add --dry-run` reports the same paths, `add` no
+  longer leaves empty directories behind, and a `verikt.yaml` with a missing or unknown
+  `architecture:` is rejected before anything is written. (#23)
 - **The install script downloads an archive that exists.** It requested
   `verikt_<os>_<arch>.tar.gz`; releases publish `verikt_<version>_<os>_<arch>.tar.gz`.
   `latest` is now resolved to a concrete tag first. (#8)
@@ -140,6 +154,12 @@ existing pipeline sees.
 
 ### Changed
 
+- **One pass/fail rule for every finding.** Proxy rules and decision gates failed
+  only on the literal severity `error`, while built-in detectors had their own
+  loop. All four now go through the same decision: `error` fails, `warning` fails
+  only under `--strict` or `check.fail_on: warning`, `info` and waived findings never
+  fail, and a finding with no severity counts as an error. No shipped rule or
+  detector produces an empty severity, so no existing run changes outcome. (#21)
 - **Scaffolded Go code and verikt itself use `go.yaml.in/yaml/v3`** instead of
   `gopkg.in/yaml.v3`. (#12)
 

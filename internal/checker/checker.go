@@ -61,9 +61,42 @@ func (r *CheckResult) TotalViolations() int {
 		len(r.AntiPatternViolations)
 }
 
-// Passed returns true if no violations were found.
+// Severities returns the severity of every finding, in the order dependency,
+// structure, function, naming, anti-pattern. TotalViolations stays the raw
+// count; pass/fail is config.SeverityFails over these.
+func (r *CheckResult) Severities() []string {
+	out := make([]string, 0, r.TotalViolations())
+	for _, group := range [][]Violation{
+		r.DependencyViolations, r.StructureViolations, r.FunctionViolations, r.NamingViolations,
+	} {
+		for _, v := range group {
+			out = append(out, v.Severity)
+		}
+	}
+	for _, ap := range r.AntiPatternViolations {
+		out = append(out, ap.Severity)
+	}
+	return out
+}
+
+// Fails reports whether any finding fails the check at threshold failOn
+// (config.FailOnError or config.FailOnWarning).
+func (r *CheckResult) Fails(failOn string) bool {
+	for _, sev := range r.Severities() {
+		if config.SeverityFails(sev, failOn) {
+			return true
+		}
+	}
+	return false
+}
+
+// Passed reports whether the result passes at the default threshold: no
+// error-severity (or unset-severity) finding. Warnings and info pass.
+//
+// It used to be TotalViolations() == 0, so a result holding only warnings did
+// not pass — while `verikt check` itself, gating on severity, exited 0 for it.
 func (r *CheckResult) Passed() bool {
-	return r.TotalViolations() == 0
+	return !r.Fails(config.FailOnError)
 }
 
 // RecalculateMetrics re-derives RulesPassing from the current slice lengths.

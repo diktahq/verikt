@@ -57,7 +57,7 @@ func TestPrintProxyRuleSection_MarkerFollowsSeverity(t *testing.T) {
 	assert.Contains(t, out, "✗ [err-rule] internal/b.go:7")
 }
 
-// A stale or invalid rule did not run, and ruleResultBlocks exits 1 for it. It
+// A stale or invalid rule did not run, and evaluateCheck fails the run for it. It
 // must therefore print as a failure: otherwise the build fails with no ✗ visible
 // anywhere on screen, and the operator goes looking for a problem that is not
 // where the output points.
