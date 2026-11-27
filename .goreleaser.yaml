@@ -23,16 +23,17 @@ builds:
     # the platform can never execute.
     tags:
       - verikt_release
+    # Only platforms with an engine build. A Windows binary was published with no
+    # engine embedded, so `verikt check` could only fail with ErrEngineRequired:
+    # an artefact that installs and then cannot do its main job. Add windows back
+    # together with a Windows target in release.yml and its
+    # embed_engine_release_windows_*.go file.
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
     ldflags:
       - -s -w
       - -X github.com/diktahq/verikt/internal/cli.version={{.Version}}
@@ -42,9 +43,6 @@ builds:
 archives:
   - id: default
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
@@ -89,7 +87,13 @@ brews:
     license: Elastic-2.0
     install: |
       bin.install "verikt"
-    post_install: |
-      system "#{bin}/verikt", "setup"
+    # Installing a CLI must not rewrite the user's agent configuration. The
+    # formula used to run `verikt setup` in post_install, which registered verikt
+    # with every detected agent as a side effect of `brew install`, with no way to
+    # opt out. The install script already leaves that to --setup; this matches it.
+    caveats: |
+      verikt does not change your agent configuration on install.
+      To register verikt with your coding agents, run:
+        verikt setup
     test: |
       system "#{bin}/verikt", "version"
