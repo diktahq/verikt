@@ -58,6 +58,12 @@ func runAdd(capabilities []string, dryRun bool) error {
 	}
 	tFS := providerImpl.GetTemplateFS()
 
+	// The architecture's path mappings decide where capability files go, so an
+	// unknown or missing architecture is rejected before anything is rendered.
+	if err := validateArchitecture(tFS, cfg.Architecture); err != nil {
+		return err
+	}
+
 	toAdd, autoDeps, err := resolveCapabilitiesToAdd(tFS, cfg, capabilities)
 	if err != nil {
 		return err
@@ -99,9 +105,9 @@ func runAdd(capabilities []string, dryRun bool) error {
 	}
 
 	if dryRun {
-		return previewAdd(tFS, toAdd, projectDir, plan.Vars, autoDeps)
+		return previewAdd(tFS, plan, toAdd, projectDir, autoDeps)
 	}
-	return applyAdd(tFS, cfg, cfgPath, projectDir, toAdd, finalCaps, plan.Vars, autoDeps)
+	return applyAdd(tFS, plan, cfg, cfgPath, projectDir, toAdd, finalCaps, autoDeps)
 }
 
 // resolveCapabilitiesToAdd validates the requested capabilities, rejects
@@ -223,28 +229,20 @@ func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]int
 }
 
 // previewAdd reports what applyAdd would do without writing anything.
-func previewAdd(tFS fs.FS, toAdd []string, projectDir string, vars map[string]interface{}, autoDeps []string) error {
-	renderer := scaffold.NewRenderer(tFS)
-	var totalCreated, totalSkipped int
-
-	for _, c := range toAdd {
-		capDir := path.Join("templates", "capabilities", c)
-		created, skipped, previewErr := renderer.PreviewCapabilityFiles(capDir, projectDir, vars)
-		if previewErr != nil {
-			return fmt.Errorf("preview capability %q: %w", c, previewErr)
-		}
-		for _, f := range created {
-			fmt.Printf("  Would create: %s\n", f)
-			totalCreated++
-		}
-		for _, f := range skipped {
-			fmt.Printf("  Would skip (exists): %s\n", f)
-			totalSkipped++
-		}
+func previewAdd(tFS fs.FS, plan *scaffold.CompositionPlan, toAdd []string, projectDir string, autoDeps []string) error {
+	created, skipped, err := scaffold.NewRenderer(tFS).PreviewAddedCapabilities(plan, projectDir, toAdd)
+	if err != nil {
+		return fmt.Errorf("preview capabilities: %w", err)
+	}
+	for _, f := range created {
+		fmt.Printf("  Would create: %s\n", f)
+	}
+	for _, f := range skipped {
+		fmt.Printf("  Would skip (exists): %s\n", f)
 	}
 
 	fmt.Printf("\nDry run: %d files would be created, %d skipped, %d capabilities added\n",
-		totalCreated, totalSkipped, len(toAdd))
+		len(created), len(skipped), len(toAdd))
 	fmt.Println("verikt.yaml and the generated guides were not modified.")
 	if len(autoDeps) > 0 {
 		fmt.Printf("Auto-resolved dependencies: %s\n", strings.Join(autoDeps, ", "))
@@ -254,26 +252,19 @@ func previewAdd(tFS fs.FS, toAdd []string, projectDir string, vars map[string]in
 }
 
 // applyAdd renders the new capabilities, records them in verikt.yaml, and
-// regenerates the guides.
-func applyAdd(tFS fs.FS, cfg *config.VeriktConfig, cfgPath, projectDir string, toAdd, finalCaps []string, vars map[string]interface{}, autoDeps []string) error {
-	renderer := scaffold.NewRenderer(tFS)
-	var totalCreated, totalSkipped int
-
-	// Only render files from newly-added capabilities.
-	for _, c := range toAdd {
-		capDir := path.Join("templates", "capabilities", c)
-		result, skipped, renderErr := renderer.RenderCapabilityFiles(capDir, projectDir, vars)
-		if renderErr != nil {
-			return fmt.Errorf("render capability %q: %w", c, renderErr)
-		}
-		for _, f := range result.FilesCreated {
-			fmt.Printf("  Created: %s\n", f)
-			totalCreated++
-		}
-		for _, f := range skipped {
-			fmt.Printf("  Skipped (exists): %s\n", f)
-			totalSkipped++
-		}
+// regenerates the guides. Only the newly added capabilities are rendered,
+// through the same path as `verikt new`: the architecture's path mappings,
+// ArchPaths and partials all apply.
+func applyAdd(tFS fs.FS, plan *scaffold.CompositionPlan, cfg *config.VeriktConfig, cfgPath, projectDir string, toAdd, finalCaps, autoDeps []string) error {
+	result, skipped, err := scaffold.NewRenderer(tFS).RenderAddedCapabilities(plan, projectDir, toAdd)
+	if err != nil {
+		return fmt.Errorf("render capabilities: %w", err)
+	}
+	for _, f := range result.FilesCreated {
+		fmt.Printf("  Created: %s\n", f)
+	}
+	for _, f := range skipped {
+		fmt.Printf("  Skipped (exists): %s\n", f)
 	}
 
 	// Update verikt.yaml with new capabilities.
@@ -289,12 +280,32 @@ func applyAdd(tFS fs.FS, cfg *config.VeriktConfig, cfgPath, projectDir string, t
 	}
 
 	fmt.Printf("\nDone: %d files created, %d files skipped, %d capabilities added\n",
-		totalCreated, totalSkipped, len(toAdd))
+		len(result.FilesCreated), len(skipped), len(toAdd))
 	if len(autoDeps) > 0 {
 		fmt.Printf("Auto-resolved dependencies: %s\n", strings.Join(autoDeps, ", "))
 	}
 
 	return nil
+}
+
+// validateArchitecture fails with a clear error when verikt.yaml names no
+// architecture, or one the provider does not ship.
+func validateArchitecture(tFS fs.FS, architecture string) error {
+	archs, err := listArchitectures(tFS)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(archs))
+	for _, a := range archs {
+		if a.name == architecture {
+			return nil
+		}
+		names = append(names, a.name)
+	}
+	if strings.TrimSpace(architecture) == "" {
+		return fmt.Errorf("verikt.yaml declares no architecture — set `architecture:` to one of: %s", strings.Join(names, ", "))
+	}
+	return fmt.Errorf("unknown architecture %q in verikt.yaml — available: %s", architecture, strings.Join(names, ", "))
 }
 
 // listAvailableCapabilities returns the names of all capabilities in the template FS.

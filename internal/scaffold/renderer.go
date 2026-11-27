@@ -181,310 +181,310 @@ func (r *Renderer) RenderTemplate(templateDir, outputDir string, vars map[string
 
 // RenderComposition renders an architecture + capability composition into the output directory.
 func (r *Renderer) RenderComposition(plan *CompositionPlan, outputDir string) (*RenderResult, error) {
-	// Inject partials into vars so templates can use {{range .Partials.main_imports}}.
-	vars := plan.Vars
-	vars["Partials"] = plan.Partials
-
-	// Build path mapper from architecture manifest and inject ArchPaths for templates.
-	pm := NewPathMapper(plan.Manifest.PathMappings)
-	vars["ArchPaths"] = pm.ArchPaths()
-
-	// Set boolean flags for each capability (e.g., HasHTTPAPI = true).
-	capSet := map[string]bool{}
-	for _, c := range plan.Capabilities {
-		capSet[c] = true
-	}
-	vars["SelectedCapabilities"] = plan.Capabilities
-
-	// Extract resolved features from vars for conditional file inclusion.
-	var features map[string]bool
-	if f, ok := vars["Features"].(map[string]bool); ok {
-		features = f
-	}
-
+	vars, features, pm := prepareCompositionVars(plan)
 	result := &RenderResult{}
 
 	// Render architecture files — no path mapping needed (arch templates use native paths).
-	archConditionals := plan.Manifest.Conditional
-	archResult, err := r.renderFilesDir(path.Join(plan.ArchDir, "files"), outputDir, vars, archConditionals, features, nil)
+	archOut, err := r.renderFilesDir(path.Join(plan.ArchDir, "files"), outputDir, vars, filesDirOptions{
+		conditionals: plan.Manifest.Conditional,
+		features:     features,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("render architecture: %w", err)
 	}
-	result.FilesCreated = append(result.FilesCreated, archResult.FilesCreated...)
+	result.FilesCreated = append(result.FilesCreated, archOut.created...)
 
 	// Render each capability's files with path mapping applied.
-	for i, capDir := range plan.CapDirs {
-		var capConditionals map[string]ConditionalRule
-		if i < len(plan.CapManifests) {
-			capConditionals = plan.CapManifests[i].Conditional
-		}
-		capResult, err := r.renderFilesDir(path.Join(capDir, "files"), outputDir, vars, capConditionals, features, pm)
+	for i := range plan.CapDirs {
+		capOut, err := r.renderPlanCapability(plan, i, outputDir, vars, filesDirOptions{features: features, pm: pm})
 		if err != nil {
-			return nil, fmt.Errorf("render capability %s: %w", capDir, err)
+			return nil, err
 		}
-		result.FilesCreated = append(result.FilesCreated, capResult.FilesCreated...)
+		result.FilesCreated = append(result.FilesCreated, capOut.created...)
 	}
 
 	removeEmptyDirs(outputDir)
 	return result, nil
 }
 
-// renderFilesDir walks a files/ directory and renders templates into outputDir.
-// conditionals and features control file-level inclusion; nil values include all files.
-func (r *Renderer) renderFilesDir(filesRoot, outputDir string, vars map[string]interface{}, conditionals map[string]ConditionalRule, features map[string]bool, pm *PathMapper) (*RenderResult, error) {
-	result := &RenderResult{}
+// RenderAddedCapabilities renders only the named capabilities of plan into an
+// existing project. It is the `verikt add` counterpart of RenderComposition
+// and shares its rendering path: the same template vars (ArchPaths, Partials,
+// SelectedCapabilities), the same conditional rules and the same architecture
+// path mappings. Files that already exist are never overwritten; they are
+// returned in the skipped list instead.
+func (r *Renderer) RenderAddedCapabilities(plan *CompositionPlan, outputDir string, capabilities []string) (*RenderResult, []string, error) {
+	out, err := r.renderAdded(plan, outputDir, capabilities, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &RenderResult{FilesCreated: out.created}, out.skipped, nil
+}
 
-	// Check if the directory exists.
-	if _, err := fs.Stat(r.fs, filesRoot); err != nil {
-		return result, nil // no files directory
+// PreviewAddedCapabilities reports the files RenderAddedCapabilities would
+// create and skip, without writing anything. It backs `verikt add --dry-run`.
+func (r *Renderer) PreviewAddedCapabilities(plan *CompositionPlan, outputDir string, capabilities []string) (created, skipped []string, err error) {
+	out, err := r.renderAdded(plan, outputDir, capabilities, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out.created, out.skipped, nil
+}
+
+// renderAdded renders (or, with dryRun, previews) the named capabilities of
+// plan with skip-existing semantics. Every name is checked against the plan
+// before anything is written.
+func (r *Renderer) renderAdded(plan *CompositionPlan, outputDir string, capabilities []string, dryRun bool) (*filesDirOutcome, error) {
+	indexes, err := planCapabilityIndexes(plan, capabilities)
+	if err != nil {
+		return nil, err
+	}
+	vars, features, pm := prepareCompositionVars(plan)
+
+	total := &filesDirOutcome{}
+	for _, i := range indexes {
+		out, err := r.renderPlanCapability(plan, i, outputDir, vars, filesDirOptions{
+			features:     features,
+			pm:           pm,
+			skipExisting: true,
+			dryRun:       dryRun,
+		})
+		if err != nil {
+			return nil, err
+		}
+		total.created = append(total.created, out.created...)
+		total.skipped = append(total.skipped, out.skipped...)
+	}
+	return total, nil
+}
+
+// planCapabilityIndexes returns the position of each named capability in
+// plan.CapDirs, in the order given.
+func planCapabilityIndexes(plan *CompositionPlan, capabilities []string) ([]int, error) {
+	position := make(map[string]int, len(plan.CapDirs))
+	for i, capDir := range plan.CapDirs {
+		position[path.Base(capDir)] = i
+	}
+	indexes := make([]int, 0, len(capabilities))
+	for _, c := range capabilities {
+		i, ok := position[c]
+		if !ok {
+			return nil, fmt.Errorf("capability %q is not part of the composition plan", c)
+		}
+		indexes = append(indexes, i)
+	}
+	return indexes, nil
+}
+
+// prepareCompositionVars injects the render-time variables every composition
+// render needs and returns the plan's vars, resolved features and the
+// architecture's path mapper.
+func prepareCompositionVars(plan *CompositionPlan) (map[string]interface{}, map[string]bool, *PathMapper) {
+	vars := plan.Vars
+	// Partials let templates use {{range .Partials.main_imports}}.
+	vars["Partials"] = plan.Partials
+
+	// The path mapper rewrites capability paths (written for hexagonal) to the
+	// target architecture; ArchPaths exposes the same mapping to templates.
+	pm := NewPathMapper(plan.Manifest.PathMappings)
+	vars["ArchPaths"] = pm.ArchPaths()
+	vars["SelectedCapabilities"] = plan.Capabilities
+
+	// Resolved features control conditional file inclusion.
+	var features map[string]bool
+	if f, ok := vars["Features"].(map[string]bool); ok {
+		features = f
+	}
+	return vars, features, pm
+}
+
+// renderPlanCapability renders the capability at index i of plan, adding the
+// capability's own conditional rules to opts.
+func (r *Renderer) renderPlanCapability(plan *CompositionPlan, i int, outputDir string, vars map[string]interface{}, opts filesDirOptions) (*filesDirOutcome, error) {
+	capDir := plan.CapDirs[i]
+	if i < len(plan.CapManifests) {
+		opts.conditionals = plan.CapManifests[i].Conditional
+	}
+	out, err := r.renderFilesDir(path.Join(capDir, "files"), outputDir, vars, opts)
+	if err != nil {
+		return nil, fmt.Errorf("render capability %s: %w", capDir, err)
+	}
+	return out, nil
+}
+
+// filesDirOptions controls how renderFilesDir renders a files/ directory.
+type filesDirOptions struct {
+	// conditionals and features control file-level inclusion; nil includes all files.
+	conditionals map[string]ConditionalRule
+	features     map[string]bool
+	// pm maps capability paths to the target architecture; nil leaves them as-is.
+	pm *PathMapper
+	// skipExisting leaves files already on disk untouched and reports them as skipped.
+	skipExisting bool
+	// dryRun computes the outcome without creating any file or directory.
+	dryRun bool
+}
+
+// filesDirOutcome lists the absolute paths a render created (or, in a dry
+// run, would create) and the existing files it left untouched.
+type filesDirOutcome struct {
+	created []string
+	skipped []string
+}
+
+// filesDirRender holds the state shared by every file of one renderFilesDir walk.
+type filesDirRender struct {
+	r      *Renderer
+	root   *os.Root // nil in a dry run
+	absOut string
+	vars   map[string]interface{}
+	opts   filesDirOptions
+	out    filesDirOutcome
+}
+
+// renderFilesDir walks a files/ directory and renders its templates into
+// outputDir. It is the single file walker behind `verikt new` and `verikt add`.
+func (r *Renderer) renderFilesDir(filesRoot, outputDir string, vars map[string]interface{}, opts filesDirOptions) (*filesDirOutcome, error) {
+	_, statErr := fs.Stat(r.fs, filesRoot)
+	if errors.Is(statErr, fs.ErrNotExist) {
+		return &filesDirOutcome{}, nil // no files directory
+	}
+	if statErr != nil {
+		return nil, fmt.Errorf("stat %s: %w", filesRoot, statErr)
 	}
 
 	absOutputDir, err := filepath.Abs(outputDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve output dir: %w", err)
 	}
+	w := &filesDirRender{r: r, absOut: absOutputDir, vars: vars, opts: opts}
 
-	if err := os.MkdirAll(absOutputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create output dir: %w", err)
+	if !opts.dryRun {
+		if err := os.MkdirAll(absOutputDir, 0o755); err != nil {
+			return nil, fmt.Errorf("create output dir: %w", err)
+		}
+		root, err := os.OpenRoot(absOutputDir)
+		if err != nil {
+			return nil, fmt.Errorf("open root %s: %w", absOutputDir, err)
+		}
+		defer func() { _ = root.Close() }()
+		w.root = root
 	}
-
-	root, err := os.OpenRoot(absOutputDir)
-	if err != nil {
-		return nil, fmt.Errorf("open root %s: %w", absOutputDir, err)
-	}
-	defer func() { _ = root.Close() }()
 
 	if err := fs.WalkDir(r.fs, filesRoot, func(current string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if current == filesRoot {
-			return nil
-		}
-		rel := strings.TrimPrefix(current, filesRoot+"/")
-
-		// Check conditional rules before rendering.
-		if !d.IsDir() && !shouldIncludeFile(rel, conditionals, features) {
-			return nil
-		}
-
-		renderedRel, err := RenderPath(rel, vars)
-		if err != nil {
-			return fmt.Errorf("render path %q: %w", rel, err)
-		}
-
-		// Apply architecture path mapping to capability files.
-		if pm != nil {
-			renderedRel = pm.Map(renderedRel)
-		}
-
-		// Defense-in-depth: validate before os.Root (which provides the primary defense).
-		dstPath := filepath.Join(absOutputDir, filepath.FromSlash(renderedRel))
-		if err := validatePathWithinDir(dstPath, absOutputDir); err != nil {
-			return err
-		}
-
-		relDst := filepath.FromSlash(renderedRel)
-
+		// Directories are never created up front: each written file creates its
+		// own parents. Creating them here would leave the unmapped hexagonal
+		// parents (adapter/ for adapter/httphandler) and the directories of
+		// skipped or excluded files behind as empty directories.
 		if d.IsDir() {
-			// A directory mapped to "" is the project root (flat maps service/
-			// there), which already exists; os.Root rejects the empty path.
-			if relDst == "" || relDst == "." {
-				return nil
-			}
-			return root.MkdirAll(relDst, 0o755)
+			return nil
 		}
-
-		srcBytes, err := fs.ReadFile(r.fs, current)
-		if err != nil {
-			return err
-		}
-
-		if strings.HasSuffix(relDst, ".tmpl") {
-			relDst = strings.TrimSuffix(relDst, ".tmpl")
-			rendered, err := executeTemplate(string(srcBytes), vars)
-			if err != nil {
-				return fmt.Errorf("render template %q: %w", rel, err)
-			}
-			if len(strings.TrimSpace(string(rendered))) == 0 {
-				return nil
-			}
-			if err := writeToRoot(root, relDst, rendered); err != nil {
-				return err
-			}
-		} else {
-			if err := writeToRoot(root, relDst, srcBytes); err != nil {
-				return err
-			}
-		}
-		result.FilesCreated = append(result.FilesCreated, filepath.Join(absOutputDir, relDst))
-		return nil
+		return w.renderFile(current, strings.TrimPrefix(current, filesRoot+"/"))
 	}); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return &w.out, nil
 }
 
-// RenderCapabilityFiles renders files from a capability directory into outputDir,
-// skipping files that already exist on disk. Returns the render result (created files)
-// and a list of skipped files.
-func (r *Renderer) RenderCapabilityFiles(capDir, outputDir string, vars map[string]interface{}) (*RenderResult, []string, error) {
-	filesRoot := path.Join(capDir, "files")
-	result := &RenderResult{}
-	var skipped []string
-
-	if _, err := fs.Stat(r.fs, filesRoot); err != nil {
-		return result, skipped, nil
+// renderFile renders the template file src (rel is its path inside files/)
+// to its mapped destination.
+func (w *filesDirRender) renderFile(src, rel string) error {
+	if !shouldIncludeFile(rel, w.opts.conditionals, w.opts.features) {
+		return nil
 	}
-
-	absOutputDir, err := filepath.Abs(outputDir)
+	relDst, err := w.destinationPath(rel)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve output dir: %w", err)
+		return err
 	}
-
-	if err := os.MkdirAll(absOutputDir, 0o755); err != nil {
-		return nil, nil, fmt.Errorf("create output dir: %w", err)
-	}
-
-	root, err := os.OpenRoot(absOutputDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open root %s: %w", absOutputDir, err)
-	}
-	defer func() { _ = root.Close() }()
-
-	if err := fs.WalkDir(r.fs, filesRoot, func(current string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if current == filesRoot {
+	finalRel := strings.TrimSuffix(relDst, ".tmpl")
+	finalPath := filepath.Join(w.absOut, finalRel)
+	if w.opts.skipExisting {
+		if _, statErr := os.Stat(finalPath); statErr == nil {
+			w.out.skipped = append(w.out.skipped, finalPath)
 			return nil
 		}
-		rel := strings.TrimPrefix(current, filesRoot+"/")
+	}
 
-		renderedRel, renderErr := RenderPath(rel, vars)
-		if renderErr != nil {
-			return fmt.Errorf("render path %q: %w", rel, renderErr)
-		}
-
-		// Defense-in-depth: validate before os.Root (which provides the primary defense).
-		dstPath := filepath.Join(absOutputDir, filepath.FromSlash(renderedRel))
-		if err := validatePathWithinDir(dstPath, absOutputDir); err != nil {
+	content, ok, err := w.r.fileContent(src, rel, relDst != finalRel, w.vars)
+	if err != nil || !ok {
+		return err
+	}
+	if !w.opts.dryRun {
+		if err := writeToRoot(w.root, finalRel, content); err != nil {
 			return err
 		}
+	}
+	w.out.created = append(w.out.created, finalPath)
+	return nil
+}
 
-		relDst := filepath.FromSlash(renderedRel)
-
-		if d.IsDir() {
-			return root.MkdirAll(relDst, 0o755)
-		}
-
-		// Compute final relative path (strip .tmpl suffix) before checking existence.
-		finalRel := strings.TrimSuffix(relDst, ".tmpl")
-		finalPath := filepath.Join(absOutputDir, finalRel)
-
-		// Skip if file already exists on disk.
-		if _, statErr := os.Stat(finalPath); statErr == nil {
-			skipped = append(skipped, finalPath)
-			return nil
-		}
-
-		srcBytes, readErr := fs.ReadFile(r.fs, current)
-		if readErr != nil {
-			return readErr
-		}
-
-		if strings.HasSuffix(relDst, ".tmpl") {
-			rendered, tmplErr := executeTemplate(string(srcBytes), vars)
-			if tmplErr != nil {
-				return fmt.Errorf("render template %q: %w", rel, tmplErr)
-			}
-			if len(strings.TrimSpace(string(rendered))) == 0 {
-				return nil
-			}
-			if err := writeToRoot(root, finalRel, rendered); err != nil {
-				return err
-			}
-		} else {
-			if err := writeToRoot(root, finalRel, srcBytes); err != nil {
-				return err
-			}
-		}
-		result.FilesCreated = append(result.FilesCreated, finalPath)
-		return nil
-	}); err != nil {
-		return nil, nil, err
+// destinationPath renders a template-relative path, applies the architecture
+// path mapping and checks the result stays inside the output directory. It
+// returns the OS-specific path relative to the output directory.
+func (w *filesDirRender) destinationPath(rel string) (string, error) {
+	renderedRel, err := RenderPath(rel, w.vars)
+	if err != nil {
+		return "", fmt.Errorf("render path %q: %w", rel, err)
+	}
+	if w.opts.pm != nil {
+		renderedRel = w.opts.pm.Map(renderedRel)
 	}
 
-	return result, skipped, nil
+	// Defense-in-depth: validate before os.Root (which provides the primary defense).
+	relDst := filepath.FromSlash(renderedRel)
+	if err := validatePathWithinDir(filepath.Join(w.absOut, relDst), w.absOut); err != nil {
+		return "", err
+	}
+	return relDst, nil
+}
+
+// fileContent reads the template file src and, when isTemplate is set,
+// executes it. ok is false for a template that renders to whitespace only:
+// such a file is not written (conditional inclusion via a wrapping {{if}}).
+func (r *Renderer) fileContent(src, rel string, isTemplate bool, vars map[string]interface{}) (content []byte, ok bool, err error) {
+	srcBytes, err := fs.ReadFile(r.fs, src)
+	if err != nil {
+		return nil, false, err
+	}
+	if !isTemplate {
+		return srcBytes, true, nil
+	}
+	rendered, err := executeTemplate(string(srcBytes), vars)
+	if err != nil {
+		return nil, false, fmt.Errorf("render template %q: %w", rel, err)
+	}
+	if len(strings.TrimSpace(string(rendered))) == 0 {
+		return nil, false, nil
+	}
+	return rendered, true, nil
+}
+
+// RenderCapabilityFiles renders files from a single capability directory into
+// outputDir without any architecture path mapping, skipping files that already
+// exist on disk. Returns the render result (created files) and the skipped
+// files. To add capabilities to a project, use RenderAddedCapabilities, which
+// applies the architecture's path mappings.
+func (r *Renderer) RenderCapabilityFiles(capDir, outputDir string, vars map[string]interface{}) (*RenderResult, []string, error) {
+	out, err := r.renderFilesDir(path.Join(capDir, "files"), outputDir, vars, filesDirOptions{skipExisting: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	return &RenderResult{FilesCreated: out.created}, out.skipped, nil
 }
 
 // PreviewCapabilityFiles reports the files RenderCapabilityFiles would create
-// and skip, without writing anything. It backs `verikt add --dry-run`.
-//
-// Templates are still executed, because a template that renders to empty
-// content is not written — the preview would otherwise overreport.
+// and skip, without writing anything. Templates are still executed, because a
+// template that renders to empty content is not written — the preview would
+// otherwise overreport. To preview an add, use PreviewAddedCapabilities.
 func (r *Renderer) PreviewCapabilityFiles(capDir, outputDir string, vars map[string]interface{}) (created, skipped []string, err error) {
-	filesRoot := path.Join(capDir, "files")
-	_, statErr := fs.Stat(r.fs, filesRoot)
-	if errors.Is(statErr, fs.ErrNotExist) {
-		return nil, nil, nil
-	}
-	if statErr != nil {
-		return nil, nil, fmt.Errorf("stat %s: %w", filesRoot, statErr)
-	}
-
-	absOutputDir, err := filepath.Abs(outputDir)
+	out, err := r.renderFilesDir(path.Join(capDir, "files"), outputDir, vars, filesDirOptions{skipExisting: true, dryRun: true})
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve output dir: %w", err)
+		return nil, nil, err
 	}
-
-	walkErr := fs.WalkDir(r.fs, filesRoot, func(current string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if current == filesRoot || d.IsDir() {
-			return nil
-		}
-		rel := strings.TrimPrefix(current, filesRoot+"/")
-
-		renderedRel, renderErr := RenderPath(rel, vars)
-		if renderErr != nil {
-			return fmt.Errorf("render path %q: %w", rel, renderErr)
-		}
-
-		relDst := filepath.FromSlash(renderedRel)
-		if err := validatePathWithinDir(filepath.Join(absOutputDir, relDst), absOutputDir); err != nil {
-			return err
-		}
-
-		finalPath := filepath.Join(absOutputDir, strings.TrimSuffix(relDst, ".tmpl"))
-		if _, statErr := os.Stat(finalPath); statErr == nil {
-			skipped = append(skipped, finalPath)
-			return nil
-		}
-
-		if strings.HasSuffix(relDst, ".tmpl") {
-			srcBytes, readErr := fs.ReadFile(r.fs, current)
-			if readErr != nil {
-				return readErr
-			}
-			rendered, tmplErr := executeTemplate(string(srcBytes), vars)
-			if tmplErr != nil {
-				return fmt.Errorf("render template %q: %w", rel, tmplErr)
-			}
-			if len(strings.TrimSpace(string(rendered))) == 0 {
-				return nil
-			}
-		}
-
-		created = append(created, finalPath)
-		return nil
-	})
-	if walkErr != nil {
-		return nil, nil, walkErr
-	}
-
-	return created, skipped, nil
+	return out.created, out.skipped, nil
 }
 
 // removeEmptyDirs walks bottom-up and removes directories that contain no files.
