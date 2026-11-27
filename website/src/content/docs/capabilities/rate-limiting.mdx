@@ -20,7 +20,7 @@ Use `rate-limiting` on any public-facing API to prevent abuse, brute-force attac
 
 ## Requirements & Suggestions
 
-**Requires:** [`http-api`](/capabilities/http-api/)
+**Requires:** [`http-api`](/capabilities/http-api/), and chi v5.5.0 or later for `middleware.GetClientIP`. A new project resolves a current chi; when you `verikt add rate-limiting` to a project that pins an older one, run `go get github.com/go-chi/chi/v5@latest` first.
 
 ## Add to Your Service
 

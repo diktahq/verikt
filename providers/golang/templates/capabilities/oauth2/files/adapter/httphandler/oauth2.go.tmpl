@@ -1,12 +1,12 @@
 package {{index .ArchPaths "HTTPHandlerPkg"}}
 
 import (
+	"container/list"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -126,14 +126,35 @@ const (
 	maxPendingOAuth2States = 10_000
 )
 
-var errTooManyPendingStates = errors.New("too many pending oauth2 logins")
-
 // oauth2StateStore holds issued state values until they are used once or
 // expire. Replace it with Redis or a database when running more than one
 // instance, since the callback may reach a different instance than Login.
+//
+// When the store is full, issuing a new state evicts the oldest pending one.
+// Refusing new logins instead would let an unauthenticated flood of
+// /auth/login requests lock every user out for oauth2StateTTL. With eviction,
+// a flood of more than maxPendingOAuth2States logins within oauth2StateTTL can
+// still push out a login in progress: that user's callback fails with 400 and
+// they start the login again. A flood cannot forge or reuse a state, and
+// memory stays bounded. Put the rate-limiting capability in front of Login to
+// make that flood expensive.
+//
+// Every state has the same TTL, so issue order is also expiry order: expired
+// states are dropped from the front of the list and the oldest pending state
+// is always at the front. No operation scans the whole store.
 type oauth2StateStore struct {
 	mu      sync.Mutex
-	entries map[string]time.Time
+	entries map[string]*list.Element // state -> element holding a pendingState
+	order   *list.List               // pendingStates, oldest first
+}
+
+type pendingState struct {
+	value  string
+	expiry time.Time
+}
+
+func newOAuth2StateStore() *oauth2StateStore {
+	return &oauth2StateStore{entries: make(map[string]*list.Element), order: list.New()}
 }
 
 // issue creates a random state value and records it.
@@ -146,15 +167,13 @@ func (s *oauth2StateStore) issue(now time.Time) (string, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for k, expiry := range s.entries {
-		if now.After(expiry) {
-			delete(s.entries, k)
-		}
+	for front := s.order.Front(); front != nil && !now.Before(front.Value.(pendingState).expiry); front = s.order.Front() {
+		s.remove(front)
 	}
-	if len(s.entries) >= maxPendingOAuth2States {
-		return "", errTooManyPendingStates
+	if s.order.Len() >= maxPendingOAuth2States {
+		s.remove(s.order.Front())
 	}
-	s.entries[state] = now.Add(oauth2StateTTL)
+	s.entries[state] = s.order.PushBack(pendingState{value: state, expiry: now.Add(oauth2StateTTL)})
 	return state, nil
 }
 
@@ -163,12 +182,18 @@ func (s *oauth2StateStore) issue(now time.Time) (string, error) {
 func (s *oauth2StateStore) consume(state string, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	expiry, ok := s.entries[state]
+	elem, ok := s.entries[state]
 	if !ok {
 		return false
 	}
-	delete(s.entries, state)
-	return now.Before(expiry)
+	s.remove(elem)
+	return now.Before(elem.Value.(pendingState).expiry)
+}
+
+// remove drops one pending state. The caller holds s.mu.
+func (s *oauth2StateStore) remove(elem *list.Element) {
+	delete(s.entries, elem.Value.(pendingState).value)
+	s.order.Remove(elem)
 }
 
 // OAuth2Flow runs the authorization code flow: Login sends the browser to the
@@ -189,7 +214,7 @@ type OAuth2Flow struct {
 
 // NewOAuth2Flow creates the login and callback handlers for cfg.
 func NewOAuth2Flow(cfg OAuth2Config) *OAuth2Flow {
-	return &OAuth2Flow{cfg: cfg, states: &oauth2StateStore{entries: make(map[string]time.Time)}}
+	return &OAuth2Flow{cfg: cfg, states: newOAuth2StateStore()}
 }
 
 // Login starts the authorization code flow.
@@ -201,7 +226,7 @@ func (f *OAuth2Flow) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	state, err := f.states.issue(time.Now())
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 

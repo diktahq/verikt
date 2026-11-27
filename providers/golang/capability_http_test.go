@@ -85,8 +85,10 @@ const httpHandlerBehaviourTest = `import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -212,6 +214,30 @@ func TestIdempotencyDoesNotCacheOversizedResponse(t *testing.T) {
 	}
 }
 
+// TestIdempotencyStoreAtCapacitySweepsOnlyOnTheInterval fills the store with
+// entries that then expire. Before the sweep interval has passed a Set must
+// not scan the map, so the store still reports itself full; after it, the
+// sweep frees the space.
+func TestIdempotencyStoreAtCapacitySweepsOnlyOnTheInterval(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	s := NewMemoryIdempotencyStore().(*memoryStore)
+	s.now = func() time.Time { return now }
+	ctx := context.Background()
+	for i := 0; i < maxIdempotencyEntries; i++ {
+		if err := s.Set(ctx, strconv.Itoa(i), nil, time.Second); err != nil {
+			t.Fatalf("filling entry %d: %v", i, err)
+		}
+	}
+	now = now.Add(2 * time.Second)
+	if err := s.Set(ctx, "new", nil, time.Hour); !errors.Is(err, ErrIdempotencyStoreFull) {
+		t.Fatalf("Set at capacity swept before the interval: err %v", err)
+	}
+	now = now.Add(idempotencySweepInterval)
+	if err := s.Set(ctx, "new", nil, time.Hour); err != nil {
+		t.Fatalf("Set after the sweep interval: %v", err)
+	}
+}
+
 func corsOrigin(t *testing.T, origin string) http.Header {
 	t.Helper()
 	h := CORS(CORSConfig{AllowedOrigins: []string{"https://a.example", "https://b.example"}, AllowedMethods: []string{http.MethodGet}})(
@@ -265,9 +291,8 @@ func TestDecodeJSONRejectsBodyOverTheLimit(t *testing.T) {
 	}
 }
 
-// oauthFlow starts a login and returns the flow, the state cookie it set, the
-// state from the redirect, and how many code exchanges the IdP has seen.
-func oauthFlow(t *testing.T) (*OAuth2Flow, *http.Cookie, string, *int) {
+// newOAuthFlow returns a flow whose IdP counts code exchanges.
+func newOAuthFlow(t *testing.T) (*OAuth2Flow, *int) {
 	t.Helper()
 	exchanged := new(int)
 	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -276,8 +301,13 @@ func oauthFlow(t *testing.T) (*OAuth2Flow, *http.Cookie, string, *int) {
 		io.WriteString(w, ` + "`" + `{"access_token":"t","token_type":"bearer"}` + "`" + `)
 	}))
 	t.Cleanup(idp.Close)
-	flow := NewOAuth2Flow(OAuth2Config{ClientID: "c", AuthURL: "https://idp.example/authorize", TokenURL: idp.URL, RedirectURL: "https://app.example/cb"})
+	return NewOAuth2Flow(OAuth2Config{ClientID: "c", AuthURL: "https://idp.example/authorize", TokenURL: idp.URL, RedirectURL: "https://app.example/cb"}), exchanged
+}
 
+// login starts a login and returns the state cookie it set and the state from
+// the redirect.
+func login(t *testing.T, flow *OAuth2Flow) (*http.Cookie, string) {
+	t.Helper()
 	rec := httptest.NewRecorder()
 	flow.Login(rec, httptest.NewRequest(http.MethodGet, "/login", nil))
 	if rec.Code != http.StatusFound || len(rec.Result().Cookies()) == 0 {
@@ -287,7 +317,28 @@ func oauthFlow(t *testing.T) (*OAuth2Flow, *http.Cookie, string, *int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return flow, rec.Result().Cookies()[0], loc.Query().Get("state"), exchanged
+	return rec.Result().Cookies()[0], loc.Query().Get("state")
+}
+
+// oauthFlow starts a login and returns the flow, the state cookie it set, the
+// state from the redirect, and how many code exchanges the IdP has seen.
+func oauthFlow(t *testing.T) (*OAuth2Flow, *http.Cookie, string, *int) {
+	t.Helper()
+	flow, exchanged := newOAuthFlow(t)
+	cookie, state := login(t, flow)
+	return flow, cookie, state, exchanged
+}
+
+// floodLogins starts n anonymous logins that never come back.
+func floodLogins(t *testing.T, flow *OAuth2Flow, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		rec := httptest.NewRecorder()
+		flow.Login(rec, httptest.NewRequest(http.MethodGet, "/login", nil))
+		if rec.Code != http.StatusFound {
+			t.Fatalf("login %d of a flood: code %d", i, rec.Code)
+		}
+	}
 }
 
 func callback(flow *OAuth2Flow, state string, cookie *http.Cookie) *httptest.ResponseRecorder {
@@ -335,6 +386,28 @@ func TestOAuth2StateIsSingleUse(t *testing.T) {
 	callback(flow, state, cookie)
 	if rec := callback(flow, state, cookie); rec.Code != http.StatusBadRequest || *exchanged != 1 {
 		t.Fatalf("replayed callback: code %d, exchanges %d", rec.Code, *exchanged)
+	}
+}
+
+func TestOAuth2LoginFloodDoesNotLockOutLogins(t *testing.T) {
+	flow, _ := newOAuthFlow(t)
+	floodLogins(t, flow, maxPendingOAuth2States+1)
+	cookie, state := login(t, flow)
+	if rec := callback(flow, state, cookie); rec.Code != http.StatusOK {
+		t.Fatalf("login after a flood: callback code %d, body %s", rec.Code, rec.Body)
+	}
+}
+
+// A flood can still push out a login in progress; that user retries.
+func TestOAuth2LoginPushedOutByAFloodCanRetry(t *testing.T) {
+	flow, cookie, state, _ := oauthFlow(t)
+	floodLogins(t, flow, maxPendingOAuth2States)
+	if rec := callback(flow, state, cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("evicted state: callback code %d, want 400", rec.Code)
+	}
+	cookie, state = login(t, flow)
+	if rec := callback(flow, state, cookie); rec.Code != http.StatusOK {
+		t.Fatalf("retried login: callback code %d, body %s", rec.Code, rec.Body)
 	}
 }
 `

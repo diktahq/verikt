@@ -22,8 +22,8 @@ const (
 	maxIdempotentResponseBytes = 1 << 20 // 1 MiB
 
 	// maxIdempotencyEntries caps the in-memory store. Expired entries are swept
-	// at most every idempotencySweepInterval; when the store is still full the
-	// response is not cached.
+	// at most every idempotencySweepInterval, whether or not the store is full;
+	// while it is full, new responses are not cached.
 	maxIdempotencyEntries    = 100_000
 	idempotencySweepInterval = time.Minute
 )
@@ -60,6 +60,7 @@ type memoryStore struct {
 	mu        sync.Mutex
 	entries   map[string]memoryEntry
 	lastSweep time.Time
+	now       func() time.Time
 }
 
 type memoryEntry struct {
@@ -69,7 +70,7 @@ type memoryEntry struct {
 
 // NewMemoryIdempotencyStore creates an in-memory store (use Redis in production).
 func NewMemoryIdempotencyStore() IdempotencyStore {
-	return &memoryStore{entries: make(map[string]memoryEntry)}
+	return &memoryStore{entries: make(map[string]memoryEntry), now: time.Now}
 }
 
 func (s *memoryStore) Get(_ context.Context, key string) ([]byte, bool, error) {
@@ -79,7 +80,7 @@ func (s *memoryStore) Get(_ context.Context, key string) ([]byte, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-	if time.Now().After(entry.expiresAt) {
+	if s.now().After(entry.expiresAt) {
 		delete(s.entries, key)
 		return nil, false, nil
 	}
@@ -89,8 +90,12 @@ func (s *memoryStore) Get(_ context.Context, key string) ([]byte, bool, error) {
 func (s *memoryStore) Set(_ context.Context, key string, response []byte, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
-	if now.Sub(s.lastSweep) >= idempotencySweepInterval || len(s.entries) >= maxIdempotencyEntries {
+	now := s.now()
+	// Sweep on the interval only, even when full. Sweeping on every Set at
+	// capacity would scan the whole map under s.mu, blocking every Get, for
+	// as long as the store stays full; refusing to cache for up to one
+	// interval is the cheaper failure.
+	if now.Sub(s.lastSweep) >= idempotencySweepInterval {
 		s.evictExpired(now)
 	}
 	if _, exists := s.entries[key]; !exists && len(s.entries) >= maxIdempotencyEntries {
