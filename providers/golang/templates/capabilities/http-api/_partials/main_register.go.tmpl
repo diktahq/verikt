@@ -1,6 +1,6 @@
 // HTTP server.
-	router := httphandler.NewRouter(logger)
-	handler := httphandler.NewHandler(logger)
-	handler.RegisterRoutes(router)
-	httpServer := httphandler.NewHTTPServer(fmt.Sprintf(":%d", cfg.HTTP.Port), router, logger)
+	httpTimeouts := httphandler.TimeoutsFromSeconds(cfg.HTTP.ReadTimeout, cfg.HTTP.WriteTimeout)
+	apiHandler := httphandler.NewHandler(logger)
+	router := httphandler.NewRouter(logger, httpTimeouts, apiHandler.RegisterRoutes)
+	httpServer := httphandler.NewHTTPServer(fmt.Sprintf(":%d", cfg.HTTP.Port), router, httpTimeouts, logger)
 	app.Register("http-server", httpServer)

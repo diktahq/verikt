@@ -1,4 +1,4 @@
-package httphandler
+package {{index .ArchPaths "HTTPHandlerPkg"}}
 
 import (
 	"context"
@@ -10,20 +10,44 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	// wsReadTimeout is how long a connection may stay silent. Clients that need
+	// a longer quiet period should send pings.
+	wsReadTimeout = 60 * time.Second
+
+	// wsWriteTimeout bounds each write. Hijacking the connection clears the
+	// server's deadlines, so without this a client that stops reading would
+	// block a broadcast forever.
+	wsWriteTimeout = 10 * time.Second
+)
+
+// upgrader leaves CheckOrigin unset, so gorilla accepts only same-origin
+// browser requests (and clients that send no Origin header). Allowing other
+// origins exposes every cookie-authenticated user to cross-site WebSocket
+// hijacking: set CheckOrigin to an explicit allow-list when you need them.
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// Override with proper origin checking in production.
-		return true
-	},
 }
 
 // WSConn wraps a WebSocket connection with metadata.
 type WSConn struct {
-	Conn   *websocket.Conn
-	ID     string
-	cancel context.CancelFunc
+	Conn *websocket.Conn
+	ID   string
+
+	// writeMu serialises writes: a gorilla connection supports one concurrent
+	// writer, and broadcasts can overlap.
+	writeMu sync.Mutex
+}
+
+// WriteMessage sends one message with a bounded write deadline.
+func (c *WSConn) WriteMessage(messageType int, data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := c.Conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
+		return err
+	}
+	return c.Conn.WriteMessage(messageType, data)
 }
 
 // WSHub manages WebSocket connections.
@@ -41,7 +65,9 @@ func NewWSHub(logger *slog.Logger) *WSHub {
 	}
 }
 
-// HandleWS upgrades HTTP to WebSocket and manages the connection.
+// HandleWS upgrades HTTP to WebSocket and manages the connection. Register it
+// outside the request-timeout group: the connection lives until the client
+// leaves or stays silent past wsReadTimeout.
 func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -49,16 +75,13 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(r.Context())
 	id := r.Header.Get("X-Request-ID")
 	if id == "" {
 		id = conn.RemoteAddr().String()
 	}
 
-	ws := &WSConn{Conn: conn, ID: id, cancel: cancel}
-
 	h.mu.Lock()
-	h.conns[id] = ws
+	h.conns[id] = &WSConn{Conn: conn, ID: id}
 	h.mu.Unlock()
 
 	h.logger.Info("websocket connected", "id", id)
@@ -67,33 +90,36 @@ func (h *WSHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		delete(h.conns, id)
 		h.mu.Unlock()
-		cancel()
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			h.logger.Debug("websocket close", "id", id, "error", err)
+		}
 		h.logger.Info("websocket disconnected", "id", id)
 	}()
 
-	// Read loop.
-	for {
-		select {
-		case <-ctx.Done():
+	h.readLoop(r.Context(), conn, id)
+}
+
+// readLoop reads until the client disconnects, goes silent past
+// wsReadTimeout, or ctx ends.
+func (h *WSHub) readLoop(ctx context.Context, conn *websocket.Conn, id string) {
+	for ctx.Err() == nil {
+		if err := conn.SetReadDeadline(time.Now().Add(wsReadTimeout)); err != nil {
+			h.logger.Warn("websocket read deadline", "id", id, "error", err)
 			return
-		default:
-			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
+		}
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
 		}
 	}
 }
 
 // Broadcast sends a message to all connected clients.
-func (h *WSHub) Broadcast(ctx context.Context, message []byte) {
+func (h *WSHub) Broadcast(_ context.Context, message []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	for id, ws := range h.conns {
-		if err := ws.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
+		if err := ws.WriteMessage(websocket.TextMessage, message); err != nil {
 			h.logger.Warn("broadcast failed", "id", id, "error", err)
 		}
 	}

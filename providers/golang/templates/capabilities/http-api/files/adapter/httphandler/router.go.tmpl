@@ -11,14 +11,75 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
+// Default timeouts. Every one is explicit: a server with no deadlines lets one
+// slow client hold a connection, and a goroutine, for as long as it likes.
 const (
-	defaultReadTimeout    = 30 * time.Second
-	defaultWriteTimeout   = 30 * time.Second
-	serverShutdownTimeout = 10 * time.Second
+	defaultReadHeaderTimeout = 10 * time.Second
+	defaultReadTimeout       = 30 * time.Second
+	defaultWriteTimeout      = 30 * time.Second
+	defaultIdleTimeout       = 120 * time.Second
+	serverShutdownTimeout    = 10 * time.Second
 )
 
+// Timeouts bounds non-streaming traffic.
+//
+// Read and Write become http.Server.ReadTimeout and WriteTimeout. Request is
+// the context deadline for routes registered inside the API group. Streaming
+// routes (server-sent events, WebSockets) live outside that group and manage
+// their own connection deadlines, because a stream is meant to outlive any
+// per-request budget.
+type Timeouts struct {
+	Read    time.Duration
+	Write   time.Duration
+	Request time.Duration
+}
+
+// DefaultTimeouts returns the timeouts a fresh project runs with.
+func DefaultTimeouts() Timeouts {
+	return Timeouts{Read: defaultReadTimeout, Write: defaultWriteTimeout}.withDefaults()
+}
+
+// TimeoutsFromSeconds builds Timeouts from whole seconds, as config files carry
+// them. A zero or negative value falls back to its default rather than turning
+// the timeout off.
+func TimeoutsFromSeconds(read, write int) Timeouts {
+	return Timeouts{
+		Read:  time.Duration(read) * time.Second,
+		Write: time.Duration(write) * time.Second,
+	}.withDefaults()
+}
+
+// withDefaults replaces unset values. Request defaults to 90% of Write so a
+// handler that runs out of time still has a window to write its 504 before the
+// server's write deadline closes the connection.
+func (t Timeouts) withDefaults() Timeouts {
+	if t.Read <= 0 {
+		t.Read = defaultReadTimeout
+	}
+	if t.Write <= 0 {
+		t.Write = defaultWriteTimeout
+	}
+	if t.Request <= 0 || t.Request >= t.Write {
+		t.Request = t.Write * 9 / 10
+	}
+	return t
+}
+
+// readHeader is the header deadline: the default, but never past Read.
+func (t Timeouts) readHeader() time.Duration {
+	if t.Read < defaultReadHeaderTimeout {
+		return t.Read
+	}
+	return defaultReadHeaderTimeout
+}
+
 // NewRouter creates a configured Chi router with standard middleware.
-func NewRouter(logger *slog.Logger) chi.Router {
+//
+// registerAPI adds the JSON API routes. They are mounted in a group that
+// carries the request timeout; streaming routes contributed by capabilities are
+// mounted beside that group, so the timeout never cancels a stream.
+func NewRouter(logger *slog.Logger, timeouts Timeouts, registerAPI func(chi.Router)) chi.Router {
+	timeouts = timeouts.withDefaults()
 	r := chi.NewRouter()
 
 	// Standard middleware stack.
@@ -42,24 +103,43 @@ func NewRouter(logger *slog.Logger) chi.Router {
 	r.Use(otelhttp.NewMiddleware("{{.ServiceName}}"))
 	r.Use(NewRequestLogger(logger))
 	r.Use(SecurityHeaders)
-	r.Use(middleware.Timeout(defaultWriteTimeout))
 	{{- if .HasCORS}}
 	r.Use(CORS(DefaultCORSConfig()))
 	{{- end}}
 
-	{{- if not .HasHealth}}
-	// Basic health check endpoints.
-	r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	r.Group(func(r chi.Router) {
+		{{- if .HasTimeout}}
+		r.Use(Timeout(TimeoutConfig{Default: timeouts.Request}))
+		{{- else}}
+		r.Use(middleware.Timeout(timeouts.Request))
+		{{- end}}
+		{{- if not .HasHealth}}
 
-	r.Get("/health/ready", func(w http.ResponseWriter, _ *http.Request) {
-		// TODO: Add the 'health' capability for dependency-aware readiness checks.
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		// Basic health check endpoints.
+		r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+
+		r.Get("/health/ready", func(w http.ResponseWriter, _ *http.Request) {
+			// Add the 'health' capability for dependency-aware readiness checks.
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+		{{- end}}
+
+		if registerAPI != nil {
+			registerAPI(r)
+		}
 	})
-	{{- end}}
+{{- if .Partials}}{{if index .Partials "http_stream_routes"}}
+
+	// Streaming routes: outside the request-timeout group. Each handler sets its
+	// own per-write deadline instead.
+{{- range index .Partials "http_stream_routes"}}
+	{{.}}
+{{- end}}
+{{- end}}{{end}}
 
 	return r
 }
@@ -81,13 +161,20 @@ type HTTPServer struct {
 }
 
 // NewHTTPServer creates a new HTTPServer.
-func NewHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *HTTPServer {
+//
+// The server keeps explicit read and write timeouts for ordinary requests.
+// Streaming handlers extend their own connection's deadlines through
+// http.ResponseController, so these limits do not cut a stream short.
+func NewHTTPServer(addr string, handler http.Handler, timeouts Timeouts, logger *slog.Logger) *HTTPServer {
+	timeouts = timeouts.withDefaults()
 	return &HTTPServer{
 		server: &http.Server{
-			Addr:         addr,
-			Handler:      handler,
-			ReadTimeout:  defaultReadTimeout,
-			WriteTimeout: defaultWriteTimeout,
+			Addr:              addr,
+			Handler:           handler,
+			ReadHeaderTimeout: timeouts.readHeader(),
+			ReadTimeout:       timeouts.Read,
+			WriteTimeout:      timeouts.Write,
+			IdleTimeout:       defaultIdleTimeout,
 		},
 		logger: logger,
 	}

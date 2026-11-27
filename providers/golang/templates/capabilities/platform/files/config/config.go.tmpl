@@ -259,11 +259,6 @@ func loadFile(configPath string, cfg *Config) error {
 // values are reported together, so one run tells you about every typo.
 func applyEnv(cfg *Config) error {
 	var errs []error
-	fail := func(err error) {
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
 
 	setString(&cfg.App.Name, "APP_NAME")
 	setString(&cfg.App.Version, "APP_VERSION")
@@ -274,14 +269,14 @@ func applyEnv(cfg *Config) error {
 	setString(&cfg.Logger.Level, "LOG_LEVEL")
 	setString(&cfg.Logger.Format, "LOG_FORMAT")
 	{{- if .HasHTTP}}
-	fail(setInt(&cfg.HTTP.Port, "HTTP_PORT"))
-	fail(setInt(&cfg.HTTP.ReadTimeout, "HTTP_READ_TIMEOUT"))
-	fail(setInt(&cfg.HTTP.WriteTimeout, "HTTP_WRITE_TIMEOUT"))
+	collect(&errs, setInt(&cfg.HTTP.Port, "HTTP_PORT"))
+	collect(&errs, setInt(&cfg.HTTP.ReadTimeout, "HTTP_READ_TIMEOUT"))
+	collect(&errs, setInt(&cfg.HTTP.WriteTimeout, "HTTP_WRITE_TIMEOUT"))
 	{{- end}}
 	{{- if .HasGRPC}}
-	fail(setInt(&cfg.GRPC.Port, "GRPC_PORT"))
+	collect(&errs, setInt(&cfg.GRPC.Port, "GRPC_PORT"))
 	// Reflection exposes the service schema, so enabling it is deliberate (INV-003).
-	fail(setBool(&cfg.GRPC.Reflection, "GRPC_REFLECTION"))
+	collect(&errs, setBool(&cfg.GRPC.Reflection, "GRPC_REFLECTION"))
 	{{- end}}
 	{{- if .HasKafka}}
 	setStrings(&cfg.Kafka.Brokers, "KAFKA_BROKERS")
@@ -291,29 +286,39 @@ func applyEnv(cfg *Config) error {
 	{{- if .HasMySQL}}
 	// Credential: has no yaml key, so this is the only way to supply it.
 	setString(&cfg.MySQL.DSN, "MYSQL_DSN")
-	fail(setInt(&cfg.MySQL.MaxOpenConns, "MYSQL_MAX_OPEN_CONNS"))
-	fail(setInt(&cfg.MySQL.MaxIdleConns, "MYSQL_MAX_IDLE_CONNS"))
-	fail(setInt(&cfg.MySQL.ConnMaxLifetime, "MYSQL_CONN_MAX_LIFETIME"))
+	collect(&errs, setInt(&cfg.MySQL.MaxOpenConns, "MYSQL_MAX_OPEN_CONNS"))
+	collect(&errs, setInt(&cfg.MySQL.MaxIdleConns, "MYSQL_MAX_IDLE_CONNS"))
+	collect(&errs, setInt(&cfg.MySQL.ConnMaxLifetime, "MYSQL_CONN_MAX_LIFETIME"))
 	{{- end}}
 	{{- if .HasPostgreSQL}}
 	// Credential: has no yaml key, so this is the only way to supply it.
 	setString(&cfg.Postgres.URL, "POSTGRES_URL")
-	fail(setInt32(&cfg.Postgres.MaxConns, "POSTGRES_MAX_CONNS"))
-	fail(setInt32(&cfg.Postgres.MinConns, "POSTGRES_MIN_CONNS"))
+	collect(&errs, setInt32(&cfg.Postgres.MaxConns, "POSTGRES_MAX_CONNS"))
+	collect(&errs, setInt32(&cfg.Postgres.MinConns, "POSTGRES_MIN_CONNS"))
 	{{- end}}
 	{{- if .HasRedis}}
 	setString(&cfg.Redis.Addr, "REDIS_ADDR")
 	// Credential: has no yaml key, so this is the only way to supply it.
 	setString(&cfg.Redis.Password, "REDIS_PASSWORD")
-	fail(setInt(&cfg.Redis.DB, "REDIS_DB"))
+	collect(&errs, setInt(&cfg.Redis.DB, "REDIS_DB"))
 	{{- end}}
 	{{- if .HasMailpit}}
 	setString(&cfg.Mailpit.Host, "MAILPIT_HOST")
-	fail(setInt(&cfg.Mailpit.Port, "MAILPIT_PORT"))
+	collect(&errs, setInt(&cfg.Mailpit.Port, "MAILPIT_PORT"))
 	setString(&cfg.Mailpit.From, "MAILPIT_FROM")
 	{{- end}}
 
 	return errors.Join(errs...)
+}
+
+// collect appends err to errs when it is not nil. It is a function rather than
+// a closure inside applyEnv because which fields applyEnv parses depends on the
+// capabilities a project was generated with; with none of them, a closure
+// would be declared and never used, which Go refuses to compile.
+func collect(errs *[]error, err error) {
+	if err != nil {
+		*errs = append(*errs, err)
+	}
 }
 
 // setString assigns the environment variable to target when it is set.

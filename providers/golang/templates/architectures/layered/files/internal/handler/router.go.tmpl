@@ -1,10 +1,15 @@
+{{- if not .HasHTTP -}}
 package handler
 
 import "net/http"
 
 // NewRouter sets up and returns the HTTP router.
+//
+// The http-api capability replaces this file with its own router, so a project
+// has exactly one.
 func NewRouter() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", Health)
 	return mux
 }
+{{- end}}
