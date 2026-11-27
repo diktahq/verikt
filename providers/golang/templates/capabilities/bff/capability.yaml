@@ -2,6 +2,9 @@ name: bff
 description: "Backend-for-Frontend gateway — aggregates and shapes backend service responses for a specific client"
 requires:
   - http-api
+  # The gateway is wired in internal/bootstrap, the only composition root that
+  # reads capability partials; without it nothing would construct or serve it.
+  - bootstrap
 suggests:
   - circuit-breaker
   - retry

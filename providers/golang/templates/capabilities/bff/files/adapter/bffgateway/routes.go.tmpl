@@ -1,0 +1,23 @@
+package bffgateway
+
+// Routes declares the client-facing endpoints this BFF serves. Bootstrap
+// passes them to NewHandler. The list starts empty so a fresh service exposes
+// no proxy surface until you declare one; each route names exactly which
+// backend calls it aggregates. For example:
+//
+//	return []Route{
+//		{
+//			Path: "/bff/v1/dashboard",
+//			Calls: map[string]CallFunc{
+//				"users": func(ctx context.Context, c ServiceClient) (any, error) {
+//					return c.Call(ctx, http.MethodGet, "/api/v1/users/me", nil)
+//				},
+//				"orders": func(ctx context.Context, c ServiceClient) (any, error) {
+//					return c.Call(ctx, http.MethodGet, "/api/v1/orders?limit=5", nil)
+//				},
+//			},
+//		},
+//	}
+func Routes() []Route {
+	return []Route{}
+}

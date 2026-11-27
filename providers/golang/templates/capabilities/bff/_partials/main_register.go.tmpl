@@ -1,8 +1,6 @@
-// BFF gateway — register backend service clients.
-	bffClients := map[string]bffgateway.ServiceClient{
-		// TODO: Register your backend service clients here.
-		// "users":  bffgateway.NewHTTPClient("http://users-service:8080"),
-		// "orders": bffgateway.NewHTTPClient("http://orders-service:8080"),
+// BFF gateway — backends come from BFF_SERVICES, endpoints from bffgateway.Routes().
+	bffClients, err := bffgateway.ServicesFromEnv()
+	if err != nil {
+		return fmt.Errorf("bff gateway: %w", err)
 	}
-	gateway := bffgateway.NewGateway(bffClients)
-	_ = gateway // TODO: Pass gateway to your handlers.
+	bffgateway.NewHandler(bffgateway.NewGateway(bffClients), logger, bffgateway.Routes()...).RegisterRoutes(router)

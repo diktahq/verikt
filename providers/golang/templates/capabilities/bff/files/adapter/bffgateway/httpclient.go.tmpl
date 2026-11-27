@@ -1,34 +1,108 @@
 package bffgateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+{{- if .HasObservability}}
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+{{- end}}
 )
+
+const (
+	// DefaultMaxResponseBytes caps how much of an upstream response body is
+	// read. A backend that streams an unbounded body would otherwise exhaust
+	// the gateway's memory. Override per client with WithMaxResponseBytes.
+	DefaultMaxResponseBytes int64 = 1 << 20 // 1 MiB
+
+	// DefaultTimeout bounds one backend call end to end.
+	DefaultTimeout = 10 * time.Second
+)
+
+// ErrResponseTooLarge is returned when an upstream body exceeds the client's limit.
+var ErrResponseTooLarge = errors.New("upstream response exceeds size limit")
+
+// StatusError reports a backend that answered with an HTTP error status. It
+// keeps the status code so callers can map it instead of parsing a string.
+type StatusError struct {
+	Method     string
+	Path       string
+	StatusCode int
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("backend returned %d for %s %s", e.StatusCode, e.Method, e.Path)
+}
 
 // HTTPClient implements ServiceClient for HTTP-based backend services.
 type HTTPClient struct {
-	baseURL string
-	client  *http.Client
+	baseURL          string
+	client           *http.Client
+	maxResponseBytes int64
 }
 
-// NewHTTPClient creates a new HTTP service client.
-func NewHTTPClient(baseURL string) *HTTPClient {
-	return &HTTPClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+// Option configures an HTTPClient.
+type Option func(*HTTPClient)
+
+// WithMaxResponseBytes sets the largest upstream body the client will read.
+// Values below 1 keep the default.
+func WithMaxResponseBytes(n int64) Option {
+	return func(c *HTTPClient) {
+		if n > 0 {
+			c.maxResponseBytes = n
+		}
 	}
 }
 
-// Call performs an HTTP request to the backend service.
+// WithTimeout sets the end-to-end timeout for one backend call. Values below
+// 1 keep the default; a gateway call is never left without a deadline.
+func WithTimeout(d time.Duration) Option {
+	return func(c *HTTPClient) {
+		if d > 0 {
+			c.client.Timeout = d
+		}
+	}
+}
+
+// WithTransport replaces the underlying round tripper, for example to add
+// TLS configuration or a circuit breaker.
+func WithTransport(rt http.RoundTripper) Option {
+	return func(c *HTTPClient) {
+		if rt != nil {
+			c.client.Transport = rt
+		}
+	}
+}
+
+// NewHTTPClient creates a new HTTP service client.
+func NewHTTPClient(baseURL string, opts ...Option) *HTTPClient {
+	c := &HTTPClient{
+		baseURL:          strings.TrimRight(baseURL, "/"),
+		client:           &http.Client{Timeout: DefaultTimeout, Transport: http.DefaultTransport},
+		maxResponseBytes: DefaultMaxResponseBytes,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+{{- if .HasObservability}}
+	// Instrumented last so it wraps any custom transport: every backend call
+	// gets a client span and carries the caller's traceparent.
+	c.client.Transport = otelhttp.NewTransport(c.client.Transport)
+{{- end}}
+	return c
+}
+
+// Call performs an HTTP request to the backend service. A response with no
+// body decodes to nil.
 func (c *HTTPClient) Call(ctx context.Context, method, path string, body any) (any, error) {
-	url := fmt.Sprintf("%s%s", c.baseURL, path)
+	url := c.baseURL + path
 
 	var bodyReader io.Reader
 	if body != nil {
@@ -36,28 +110,57 @@ func (c *HTTPClient) Call(ctx context.Context, method, path string, body any) (a
 		if err != nil {
 			return nil, fmt.Errorf("marshal request body: %w", err)
 		}
-		bodyReader = strings.NewReader(string(data))
+		bodyReader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	// The base URL is operator configuration validated by ParseServices and the
+	// path is chosen by gateway code, not by the client request.
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader) //nolint:gosec // G704: see above
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("call %s %s: %w", method, url, err)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("backend returned %d for %s %s", resp.StatusCode, method, path)
+	resp, err := c.client.Do(req) //nolint:gosec // G704: request built from validated configuration above
+	if err != nil {
+		return nil, fmt.Errorf("call %s %s: %w", method, path, err)
+	}
+	defer func() {
+		// The body has been read or abandoned; a close error carries nothing to act on.
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, &StatusError{Method: method, Path: path, StatusCode: resp.StatusCode}
+	}
+
+	data, err := c.readBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s %s: %w", method, path, err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, nil
 	}
 
 	var result any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("decode %s %s: %w", method, path, err)
 	}
 	return result, nil
+}
+
+// readBody reads at most maxResponseBytes. It reads one byte past the limit so
+// a body of exactly the limit is accepted and anything longer is rejected.
+func (c *HTTPClient) readBody(r io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, c.maxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > c.maxResponseBytes {
+		return nil, ErrResponseTooLarge
+	}
+	return data, nil
 }

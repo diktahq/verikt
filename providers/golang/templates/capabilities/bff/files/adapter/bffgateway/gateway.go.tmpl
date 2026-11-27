@@ -2,15 +2,24 @@ package bffgateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"sync"
 )
+
+// ErrUnknownService is returned when a call names a service that has no
+// registered client. It indicates a wiring mistake, not an upstream failure.
+var ErrUnknownService = errors.New("unknown service")
 
 // ServiceClient defines the interface for calling a backend service.
 type ServiceClient interface {
 	// Call performs a request to the backend service and returns the response.
 	Call(ctx context.Context, method, path string, body any) (any, error)
 }
+
+// CallFunc performs one backend call as part of a fan-out.
+type CallFunc = func(ctx context.Context, client ServiceClient) (any, error)
 
 // Gateway aggregates responses from multiple backend services.
 type Gateway struct {
@@ -19,14 +28,18 @@ type Gateway struct {
 
 // NewGateway creates a new BFF gateway with the given service clients.
 func NewGateway(clients map[string]ServiceClient) *Gateway {
-	return &Gateway{clients: clients}
+	owned := make(map[string]ServiceClient, len(clients))
+	for name, c := range clients {
+		owned[name] = c
+	}
+	return &Gateway{clients: owned}
 }
 
 // Client returns the service client registered under the given name.
 func (g *Gateway) Client(name string) (ServiceClient, error) {
 	c, ok := g.clients[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown service: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownService, name)
 	}
 	return c, nil
 }
@@ -39,28 +52,36 @@ type AggregateResult struct {
 }
 
 // FanOut calls multiple backend services concurrently and collects results.
-// It waits for all calls to complete before returning.
-func (g *Gateway) FanOut(ctx context.Context, calls map[string]func(ctx context.Context, client ServiceClient) (any, error)) []AggregateResult {
+// It waits for all calls to complete before returning; results are sorted by
+// service name. Each call receives ctx, so cancelling it stops in-flight calls.
+func (g *Gateway) FanOut(ctx context.Context, calls map[string]CallFunc) []AggregateResult {
 	results := make([]AggregateResult, 0, len(calls))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
+	// Every write to results holds mu: unknown services are recorded on this
+	// goroutine while calls started on earlier iterations may be appending.
+	record := func(r AggregateResult) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	}
+
 	for svc, fn := range calls {
 		client, err := g.Client(svc)
 		if err != nil {
-			results = append(results, AggregateResult{Service: svc, Err: err})
+			record(AggregateResult{Service: svc, Err: err})
 			continue
 		}
 		wg.Add(1)
-		go func(svc string, client ServiceClient, fn func(context.Context, ServiceClient) (any, error)) {
+		go func(svc string, client ServiceClient, fn CallFunc) {
 			defer wg.Done()
 			data, err := fn(ctx, client)
-			mu.Lock()
-			results = append(results, AggregateResult{Service: svc, Data: data, Err: err})
-			mu.Unlock()
+			record(AggregateResult{Service: svc, Data: data, Err: err})
 		}(svc, client, fn)
 	}
 
 	wg.Wait()
+	sort.Slice(results, func(i, j int) bool { return results[i].Service < results[j].Service })
 	return results
 }

@@ -1,0 +1,106 @@
+package bffgateway
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+)
+
+// Router is the route registration the handler needs. chi.Router and
+// *http.ServeMux both satisfy it.
+type Router interface {
+	Handle(pattern string, h http.Handler)
+}
+
+// Route is one client-facing endpoint: a path and the backend calls whose
+// results it aggregates, keyed by service name.
+type Route struct {
+	Path  string
+	Calls map[string]CallFunc
+}
+
+// Handler serves the gateway's aggregate endpoints over HTTP.
+type Handler struct {
+	gateway *Gateway
+	logger  *slog.Logger
+	routes  []Route
+}
+
+// NewHandler creates a handler serving the given routes through gw.
+func NewHandler(gw *Gateway, logger *slog.Logger, routes ...Route) *Handler {
+	return &Handler{gateway: gw, logger: logger, routes: routes}
+}
+
+// RegisterRoutes mounts every route on r. With no routes nothing is exposed.
+func (h *Handler) RegisterRoutes(r Router) {
+	for _, rt := range h.routes {
+		r.Handle(rt.Path, h.aggregate(rt))
+	}
+}
+
+// upstreamError is the per-service error shape, identical across routes.
+type upstreamError struct {
+	Error  string `json:"error"`
+	Code   string `json:"code"`
+	Status int    `json:"status"`
+}
+
+type aggregateResponse struct {
+	Data   map[string]any           `json:"data"`
+	Errors map[string]upstreamError `json:"errors,omitempty"`
+}
+
+func (h *Handler) aggregate(rt Route) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+
+		resp := aggregateResponse{Data: map[string]any{}}
+		for _, res := range h.gateway.FanOut(r.Context(), rt.Calls) {
+			if res.Err == nil {
+				resp.Data[res.Service] = res.Data
+				continue
+			}
+			h.logger.WarnContext(r.Context(), "bff upstream call failed",
+				"route", rt.Path, "service", res.Service, "error", res.Err)
+			if resp.Errors == nil {
+				resp.Errors = map[string]upstreamError{}
+			}
+			resp.Errors[res.Service] = mapUpstreamError(res.Err)
+		}
+
+		status := http.StatusOK
+		if len(resp.Data) == 0 && len(resp.Errors) > 0 {
+			status = http.StatusBadGateway
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			h.logger.ErrorContext(r.Context(), "bff encode response", "route", rt.Path, "error", err)
+		}
+	})
+}
+
+// mapUpstreamError is the one place backend failures become client-facing
+// statuses. The message is fixed per category: upstream error text can carry
+// internal hosts and addresses, so it is logged, never returned.
+func mapUpstreamError(err error) upstreamError {
+	var statusErr *StatusError
+	switch {
+	case errors.As(err, &statusErr):
+		return upstreamError{Error: "upstream returned an error", Code: "UPSTREAM_STATUS", Status: statusErr.StatusCode}
+	case errors.Is(err, ErrUnknownService):
+		return upstreamError{Error: "service is not configured", Code: "BFF_MISCONFIGURED", Status: http.StatusInternalServerError}
+	case errors.Is(err, ErrResponseTooLarge):
+		return upstreamError{Error: "upstream response too large", Code: "UPSTREAM_RESPONSE_TOO_LARGE", Status: http.StatusBadGateway}
+	case errors.Is(err, context.DeadlineExceeded):
+		return upstreamError{Error: "upstream timed out", Code: "UPSTREAM_TIMEOUT", Status: http.StatusGatewayTimeout}
+	default:
+		return upstreamError{Error: "upstream unavailable", Code: "UPSTREAM_UNAVAILABLE", Status: http.StatusBadGateway}
+	}
+}

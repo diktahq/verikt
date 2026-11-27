@@ -1,0 +1,43 @@
+package bffgateway
+
+import (
+	"sort"
+	"testing"
+)
+
+func TestParseServicesBuildsOneClientPerEntry(t *testing.T) {
+	clients, err := ParseServices(" users=http://users:8080 , orders=https://orders.internal ")
+	if err != nil {
+		t.Fatalf("ParseServices: %v", err)
+	}
+	names := make([]string, 0, len(clients))
+	for n := range clients {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	if len(names) != 2 || names[0] != "orders" || names[1] != "users" {
+		t.Fatalf("services = %v, want [orders users]", names)
+	}
+}
+
+func TestParseServicesAllowsEmptySpec(t *testing.T) {
+	clients, err := ParseServices("  ")
+	if err != nil || len(clients) != 0 {
+		t.Fatalf("ParseServices(empty) = %v, %v; want no clients, no error", clients, err)
+	}
+}
+
+func TestParseServicesRejectsInvalidEntries(t *testing.T) {
+	for _, spec := range []string{
+		"users",                               // no URL
+		"=http://users:8080",                  // no name
+		"users=ftp://users",                   // unsupported scheme
+		"users=http://",                       // no host
+		"users=http://a:1,users=http://b:2",   // duplicate name
+		"users=http://user:secret@users:8080", // credentials in URL
+	} {
+		if _, err := ParseServices(spec); err == nil {
+			t.Errorf("ParseServices(%q) succeeded, want an error", spec)
+		}
+	}
+}

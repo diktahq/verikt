@@ -1,0 +1,88 @@
+package bffgateway
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+type fixedClient struct {
+	data any
+	err  error
+}
+
+func (c fixedClient) Call(context.Context, string, string, any) (any, error) {
+	return c.data, c.err
+}
+
+func serveRoute(t *testing.T, clients map[string]ServiceClient, method string) (*httptest.ResponseRecorder, aggregateResponse) {
+	t.Helper()
+	call := func(ctx context.Context, c ServiceClient) (any, error) { return c.Call(ctx, http.MethodGet, "/", nil) }
+	calls := map[string]CallFunc{}
+	for name := range clients {
+		calls[name] = call
+	}
+	calls["unregistered"] = call
+
+	mux := http.NewServeMux()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	NewHandler(NewGateway(clients), logger, Route{Path: "/bff/v1/dashboard", Calls: calls}).RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), method, "/bff/v1/dashboard", nil))
+	var body aggregateResponse
+	if rec.Code != http.StatusMethodNotAllowed {
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode response %q: %v", rec.Body.String(), err)
+		}
+	}
+	return rec, body
+}
+
+func TestHandlerAggregatesDataAndMapsUpstreamErrors(t *testing.T) {
+	rec, body := serveRoute(t, map[string]ServiceClient{
+		"users":  fixedClient{data: "ada"},
+		"orders": fixedClient{err: &StatusError{Method: http.MethodGet, Path: "/", StatusCode: http.StatusNotFound}},
+		"stock":  fixedClient{err: ErrResponseTooLarge},
+	}, http.MethodGet)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 when at least one service answered", rec.Code)
+	}
+	if body.Data["users"] != "ada" {
+		t.Fatalf("data = %v, want users=ada", body.Data)
+	}
+	want := map[string]int{"orders": http.StatusNotFound, "stock": http.StatusBadGateway, "unregistered": http.StatusInternalServerError}
+	for svc, status := range want {
+		if body.Errors[svc].Status != status {
+			t.Errorf("errors[%s].status = %d, want %d", svc, body.Errors[svc].Status, status)
+		}
+	}
+}
+
+func TestHandlerReturnsBadGatewayWhenEveryServiceFails(t *testing.T) {
+	rec, _ := serveRoute(t, map[string]ServiceClient{"users": fixedClient{err: errors.New("dial tcp: refused")}}, http.MethodGet)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rec.Code)
+	}
+}
+
+func TestHandlerRejectsNonGetMethods(t *testing.T) {
+	rec, _ := serveRoute(t, map[string]ServiceClient{"users": fixedClient{data: 1}}, http.MethodPost)
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") == "" {
+		t.Fatalf("status = %d Allow = %q, want 405 with Allow", rec.Code, rec.Header().Get("Allow"))
+	}
+}
+
+func TestHandlerDoesNotLeakUpstreamErrorText(t *testing.T) {
+	rec, _ := serveRoute(t, map[string]ServiceClient{"users": fixedClient{err: errors.New("dial tcp 10.0.0.7:8080: refused")}}, http.MethodGet)
+	if got := rec.Body.String(); strings.Contains(got, "10.0.0.7") {
+		t.Fatalf("response leaks upstream error detail: %s", got)
+	}
+}

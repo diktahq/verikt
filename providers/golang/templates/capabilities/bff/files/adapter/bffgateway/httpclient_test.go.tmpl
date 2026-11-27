@@ -1,0 +1,114 @@
+package bffgateway
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+{{- if .HasObservability}}
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+{{- end}}
+)
+
+func TestCallDecodesJSONResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"name":"ada"}`))
+	}))
+	defer srv.Close()
+
+	got, err := NewHTTPClient(srv.URL).Call(context.Background(), http.MethodGet, "/users/1", nil)
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	m, ok := got.(map[string]any)
+	if !ok || m["name"] != "ada" {
+		t.Fatalf("Call returned %#v, want map with name=ada", got)
+	}
+}
+
+func TestCallRejectsResponseOverTheLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`"` + strings.Repeat("x", 64) + `"`))
+	}))
+	defer srv.Close()
+
+	_, err := NewHTTPClient(srv.URL, WithMaxResponseBytes(32)).Call(context.Background(), http.MethodGet, "/", nil)
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("Call err = %v, want ErrResponseTooLarge", err)
+	}
+}
+
+func TestCallAcceptsResponseExactlyAtTheLimit(t *testing.T) {
+	body := `"` + strings.Repeat("x", 30) + `"` // 32 bytes
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	if _, err := NewHTTPClient(srv.URL, WithMaxResponseBytes(int64(len(body)))).Call(context.Background(), http.MethodGet, "/", nil); err != nil {
+		t.Fatalf("Call at the limit: %v", err)
+	}
+}
+
+func TestCallReturnsTypedStatusError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := NewHTTPClient(srv.URL).Call(context.Background(), http.MethodGet, "/users/9", nil)
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("Call err = %v, want *StatusError", err)
+	}
+	if statusErr.StatusCode != http.StatusNotFound || statusErr.Path != "/users/9" {
+		t.Fatalf("StatusError = %+v, want 404 for /users/9", statusErr)
+	}
+}
+
+func TestCallTreatsEmptyBodyAsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	got, err := NewHTTPClient(srv.URL).Call(context.Background(), http.MethodDelete, "/users/1", nil)
+	if err != nil || got != nil {
+		t.Fatalf("Call = %#v, %v; want nil, nil", got, err)
+	}
+}
+{{- if .HasObservability}}
+
+func TestCallPropagatesTraceContext(t *testing.T) {
+	prev := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer otel.SetTextMapPropagator(prev)
+
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("traceparent")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8},
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+
+	if _, err := NewHTTPClient(srv.URL).Call(ctx, http.MethodGet, "/", nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if !strings.Contains(got, traceID.String()) {
+		t.Fatalf("traceparent = %q, want it to carry trace %s", got, traceID)
+	}
+}
+{{- end}}

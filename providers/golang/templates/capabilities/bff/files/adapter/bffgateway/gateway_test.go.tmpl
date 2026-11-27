@@ -1,0 +1,68 @@
+package bffgateway
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+)
+
+type stubClient struct{}
+
+func (stubClient) Call(context.Context, string, string, any) (any, error) {
+	return "ok", nil
+}
+
+// TestFanOutMixedKnownAndUnknownServices runs a fan-out where known services
+// answer from goroutines while unknown services are reported from the calling
+// goroutine. Every result must arrive, and `go test -race` must stay quiet:
+// both paths write the same result slice.
+func TestFanOutMixedKnownAndUnknownServices(t *testing.T) {
+	gw := NewGateway(map[string]ServiceClient{"known": stubClient{}})
+	call := func(ctx context.Context, c ServiceClient) (any, error) {
+		return c.Call(ctx, "GET", "/", nil)
+	}
+
+	for iter := 0; iter < 50; iter++ {
+		calls := map[string]func(context.Context, ServiceClient) (any, error){"known": call}
+		for i := 0; i < 20; i++ {
+			calls[fmt.Sprintf("missing-%d", i)] = call
+		}
+
+		results := gw.FanOut(context.Background(), calls)
+		if len(results) != len(calls) {
+			t.Fatalf("FanOut returned %d results, want %d", len(results), len(calls))
+		}
+		for _, r := range results {
+			if r.Service == "known" {
+				if r.Err != nil || r.Data != "ok" {
+					t.Fatalf("known service: data=%v err=%v", r.Data, r.Err)
+				}
+				continue
+			}
+			if r.Err == nil {
+				t.Fatalf("%s: want an unknown-service error", r.Service)
+			}
+		}
+	}
+}
+
+func TestClientReportsUnknownServiceAsSentinel(t *testing.T) {
+	gw := NewGateway(map[string]ServiceClient{"known": stubClient{}})
+	if _, err := gw.Client("nope"); !errors.Is(err, ErrUnknownService) {
+		t.Fatalf("Client(nope) err = %v, want ErrUnknownService", err)
+	}
+}
+
+func TestFanOutSortsResultsByService(t *testing.T) {
+	gw := NewGateway(map[string]ServiceClient{"a": stubClient{}, "b": stubClient{}, "c": stubClient{}})
+	call := func(ctx context.Context, c ServiceClient) (any, error) { return c.Call(ctx, "GET", "/", nil) }
+	results := gw.FanOut(context.Background(), map[string]CallFunc{"c": call, "a": call, "b": call})
+	got := make([]string, 0, len(results))
+	for _, r := range results {
+		got = append(got, r.Service)
+	}
+	if fmt.Sprint(got) != "[a b c]" {
+		t.Fatalf("FanOut order = %v, want [a b c]", got)
+	}
+}

@@ -29,7 +29,11 @@ var categoryCapabilities = map[string][]string{
 
 // categoryGlobs maps split categories to file globs for Claude frontmatter.
 var categoryGlobs = map[string][]string{
-	"http":       {"internal/handler/**", "adapter/httphandler/**", "adapter/grpchandler/**", "adapter/graphql/**", "adapter/bffgateway/**", "adapter/natshandler/**", "proto/**"},
+	// The bff gateway entries mirror each architecture's adapter/bffgateway
+	// path mapping (hexagonal, clean, flat; layered's internal/handler/bff is
+	// under internal/handler/**). split_bff_glob_test.go keeps them in sync.
+	"http": {"internal/handler/**", "adapter/httphandler/**", "adapter/grpchandler/**", "adapter/graphql/**",
+		"adapter/bffgateway/**", "internal/interface/bff/**", "handler/bff/**", "adapter/natshandler/**", "proto/**"},
 	"data":       {"internal/repository/**", "adapter/*repo/**", "adapter/s3client/**", "adapter/esrepo/**", "migrations/**"},
 	"security":   {"internal/middleware/**", "internal/auth/**", "adapter/httphandler/middleware/**"},
 	"resilience": {"platform/resilience/**", "internal/circuit/**"},
