@@ -56,27 +56,6 @@ func TestConditionalFileInclusion_Integration(t *testing.T) {
 	})
 }
 
-func TestRequiredFeaturesBlockScaffold_Integration(t *testing.T) {
-	matrix := &FeatureMatrix{
-		Features: []Feature{
-			{Name: "os_root", Since: "1.24", Description: "os.OpenRoot"},
-		},
-	}
-
-	t.Run("missing required feature returns error", func(t *testing.T) {
-		resolved := map[string]bool{"os_root": false}
-		err := CheckRequiredFeatures([]string{"os_root"}, resolved, matrix, "1.22")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "os_root")
-	})
-
-	t.Run("satisfied required feature returns nil", func(t *testing.T) {
-		resolved := map[string]bool{"os_root": true}
-		err := CheckRequiredFeatures([]string{"os_root"}, resolved, matrix, "1.24")
-		require.NoError(t, err)
-	})
-}
-
 func TestFeaturesBackwardCompatible(t *testing.T) {
 	tmpl := `Hello {{.ServiceName}}`
 	vars := map[string]interface{}{

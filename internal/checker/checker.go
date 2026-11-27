@@ -61,9 +61,42 @@ func (r *CheckResult) TotalViolations() int {
 		len(r.AntiPatternViolations)
 }
 
-// Passed returns true if no violations were found.
+// Severities returns the severity of every finding, in the order dependency,
+// structure, function, naming, anti-pattern. TotalViolations stays the raw
+// count; pass/fail is config.SeverityFails over these.
+func (r *CheckResult) Severities() []string {
+	out := make([]string, 0, r.TotalViolations())
+	for _, group := range [][]Violation{
+		r.DependencyViolations, r.StructureViolations, r.FunctionViolations, r.NamingViolations,
+	} {
+		for _, v := range group {
+			out = append(out, v.Severity)
+		}
+	}
+	for _, ap := range r.AntiPatternViolations {
+		out = append(out, ap.Severity)
+	}
+	return out
+}
+
+// Fails reports whether any finding fails the check at threshold failOn
+// (config.FailOnError or config.FailOnWarning).
+func (r *CheckResult) Fails(failOn string) bool {
+	for _, sev := range r.Severities() {
+		if config.SeverityFails(sev, failOn) {
+			return true
+		}
+	}
+	return false
+}
+
+// Passed reports whether the result passes at the default threshold: no
+// error-severity (or unset-severity) finding. Warnings and info pass.
+//
+// It used to be TotalViolations() == 0, so a result holding only warnings did
+// not pass — while `verikt check` itself, gating on severity, exited 0 for it.
 func (r *CheckResult) Passed() bool {
-	return r.TotalViolations() == 0
+	return !r.Fails(config.FailOnError)
 }
 
 // RecalculateMetrics re-derives RulesPassing from the current slice lengths.
@@ -147,7 +180,7 @@ func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient Anti
 // uses the Rust engine for import graph dependency checks when a client is available.
 func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *CheckResult, _ AntiPatternClient, depClient DependencyClient, _ MetricClient) (*CheckResult, error) {
 	// Structure and coverage checks are language-agnostic.
-	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+	result.StructureViolations, result.WaivedFindings = detectStructure(cfg, projectPath)
 	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
 	result.DependencyViolations = append(result.DependencyViolations,
@@ -186,15 +219,9 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	// Component coverage via filesystem (no go/packages needed).
 	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 
-	// Architecture shape checks — both filesystem-based, no go/packages needed.
 	result.DependencyViolations = append(result.DependencyViolations,
-		detectMissingComponents(cfg, projectPath)...)
-	result.DependencyViolations = append(result.DependencyViolations,
-		detectOrphanPackagesFS(cfg, projectPath)...)
-	result.DependencyViolations = append(result.DependencyViolations,
-		detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
-
-	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+		detectArchitectureShape(cfg, projectPath)...)
+	result.StructureViolations, result.WaivedFindings = detectStructure(cfg, projectPath)
 
 	if violations, err := metricClient.CheckFunctionMetrics(projectPath, cfg.Rules.Functions); err == nil {
 		result.FunctionViolations = violations
@@ -211,6 +238,13 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	// Excludes and metrics are applied even when a check failed, so partial
 	// results a caller chooses to render still honour the configuration.
 	applyExcludes(result, cfg.Check.Exclude)
+
+	// Added after applyExcludes on purpose: projects exclude cmd/** from
+	// orphan detection (verikt's own defaults once did), and filtering by
+	// check.exclude would switch this detector off in exactly those projects.
+	// severity_overrides waives a specific entrypoint.
+	result.StructureViolations = append(result.StructureViolations,
+		detectUnapprovedEntrypoints(cfg, projectPath)...)
 	computeMetrics(cfg, result)
 
 	if len(errs) > 0 {
@@ -220,6 +254,28 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	return result, nil
 }
 
+// detectArchitectureShape runs the filesystem-based architecture checks —
+// missing components, orphan packages, unreadable paths. None needs the engine.
+func detectArchitectureShape(cfg *config.VeriktConfig, projectPath string) []Violation {
+	violations := detectMissingComponents(cfg, projectPath)
+	violations = append(violations, detectOrphanPackagesFS(cfg, projectPath)...)
+	return append(violations, detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
+}
+
+// detectStructure runs the language-agnostic repository-structure checks: the
+// declared required and forbidden directories, live agent configuration under
+// fixture paths, and the line-based guards over CI, script, build and
+// container files (silent_ci_swallow, mutable_install_url). cmd_allowlist is
+// also a structure finding, but is added separately because check.exclude
+// must not apply to it. The second result holds the line-based findings an
+// inline verikt:allow marker waived.
+func detectStructure(cfg *config.VeriktConfig, projectPath string) ([]Violation, []WaivedFinding) {
+	violations := checkStructure(cfg.Rules.Structure, projectPath)
+	violations = append(violations, detectLiveAgentFixtures(projectPath, cfg.Check.Exclude)...)
+	guards, waived := detectScriptGuards(projectPath, cfg.Check)
+	return append(violations, guards...), waived
+}
+
 // detectMissingComponents finds components declared in verikt.yaml that have
 // no Go files in their declared paths. The architecture shape is not implemented.
 // detectMissingComponents finds components declared in verikt.yaml that no
@@ -227,10 +283,13 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Violation {
 	var violations []Violation
 	for i, state := range componentCoverage(cfg, projectPath) {
-		if state == componentCovered {
+		comp := cfg.Components[i]
+		// An optional component may be absent (platform code exists only when
+		// a capability writes it). Its dependency rules still apply once it
+		// has code.
+		if state == componentCovered || comp.Optional {
 			continue
 		}
-		comp := cfg.Components[i]
 
 		// A declared component whose directory does not exist is config drift:
 		// the shape is not implemented, and error severity is earned.
@@ -301,7 +360,7 @@ func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []strin
 		// walk, and one unreadable directory anywhere under the root turned
 		// detection off entirely and reported a clean tree.
 		if err != nil {
-			return nil
+			return filepath.SkipDir
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
@@ -325,7 +384,7 @@ func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []strin
 
 		rel, err := filepath.Rel(projectPath, path)
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // path is under projectPath; Rel cannot fail
 		}
 		relSlash := filepath.ToSlash(rel)
 
@@ -340,7 +399,7 @@ func scanDirs(cfg *config.VeriktConfig, projectPath string) (source, all []strin
 		// reading it is not the same as finding nothing in it.
 		entries, err := os.ReadDir(path)
 		if err != nil {
-			return nil // reported by detectUnreadablePaths
+			return filepath.SkipDir // reported by detectUnreadablePaths
 		}
 		all = append(all, relSlash)
 		for _, e := range entries {

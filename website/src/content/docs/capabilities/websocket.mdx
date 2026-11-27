@@ -9,9 +9,17 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- WebSocket upgrader
-- Connection management
-- Message handling patterns
+- `WSHub`, which upgrades connections, tracks them, and broadcasts to every connected client
+- A `GET /ws` route on the http-api router
+- Writes serialised per connection, as gorilla/websocket allows one concurrent writer
+
+## Connection Deadlines
+
+http-api gives every JSON route a request deadline and the server a write timeout. A WebSocket must outlive both, so `/ws` is registered outside the request-timeout group. Hijacking the connection also drops the server's deadlines, so the hub sets its own: each write must finish within 10 seconds, and a connection that stays silent for 60 seconds is closed. Clients that need longer quiet periods should send pings.
+
+## Same-Origin by Default
+
+The upgrader leaves `CheckOrigin` unset, so gorilla/websocket accepts only same-origin browser requests and clients that send no `Origin` header. Accepting every origin would let any site open a WebSocket with your users' cookies (cross-site WebSocket hijacking). If browsers on other origins need access, set `CheckOrigin` to check an explicit allow-list.
 
 ## When to Use
 

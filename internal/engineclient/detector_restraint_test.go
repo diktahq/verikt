@@ -1,6 +1,7 @@
 package engineclient
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -8,6 +9,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// restraintEngine is the engine under test: VERIKT_ENGINE_BIN when set, so an
+// engine change can be checked against this fixture before it is embedded, and
+// the embedded engine otherwise.
+func restraintEngine(t *testing.T) string {
+	t.Helper()
+	if p := os.Getenv("VERIKT_ENGINE_BIN"); p != "" {
+		return p
+	}
+	enginePath, err := EnginePath()
+	if err != nil {
+		t.Skipf("embedded engine unavailable on this platform: %v", err)
+	}
+	return enginePath
+}
 
 // No detector may fire on code a careful engineer would write.
 //
@@ -22,10 +38,7 @@ import (
 // build, and adding a case is the first thing to do when a detector reports
 // something nobody would act on.
 func TestNoDetectorFiresOnCleanCode(t *testing.T) {
-	enginePath, err := EnginePath()
-	if err != nil {
-		t.Skipf("embedded engine unavailable on this platform: %v", err)
-	}
+	enginePath := restraintEngine(t)
 	client := New(enginePath)
 
 	fixture, err := filepath.Abs(filepath.Join("testdata", "detector-restraint"))
@@ -56,10 +69,7 @@ func TestNoDetectorFiresOnCleanCode(t *testing.T) {
 // The restraint fixture is only meaningful if the engine actually reads it.
 // An empty or unparsed fixture would pass the test above trivially.
 func TestRestraintFixtureIsActuallyAnalysed(t *testing.T) {
-	enginePath, err := EnginePath()
-	if err != nil {
-		t.Skipf("embedded engine unavailable on this platform: %v", err)
-	}
+	enginePath := restraintEngine(t)
 
 	fixture, err := filepath.Abs(filepath.Join("testdata", "detector-restraint"))
 	require.NoError(t, err)

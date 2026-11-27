@@ -1,28 +1,76 @@
 ---
 title: Installation
-description: Install verikt via Homebrew or install script — both set up your project and register architecture context for every AI agent automatically.
+description: Install verikt on macOS or Linux via Homebrew, the install script, or a pinned and checksum-verified download. Neither Homebrew nor the install script touches your agent configuration; verikt setup is a separate step.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Install
 
+verikt ships prebuilt binaries for macOS and Linux, on amd64 and arm64. There is no Windows build: a Windows binary used to be published without the analysis engine embedded, so `verikt check` could only fail there, and it was dropped rather than shipped broken.
+
+Installing verikt never changes your agent configuration. Registering verikt with Claude Code, Cursor or Windsurf is a separate step, `verikt setup`, which you run when you want it.
+
 <Tabs>
 <TabItem label="Homebrew">
 
 ```bash
 brew install diktahq/tap/verikt
+verikt setup   # optional: register verikt with your AI agents
 ```
+
+The formula installs the binary and nothing else. Earlier formulas ran `verikt setup` during `brew install`; this one prints a reminder instead.
 
 </TabItem>
 <TabItem label="Install Script">
 
 ```bash
-curl -sSL https://verikt.dev/install.sh | bash
+curl -fsSL https://verikt.dev/install.sh | bash
 ```
 
-Works on macOS and Linux. Installs the binary and registers verikt with
-your AI agents automatically.
+The script works on macOS and Linux, on amd64 and arm64. It resolves the latest release to a concrete tag, downloads that release's archive from GitHub, and checks it against the release's `checksums.txt` before installing. It refuses to install if the checksum entry is missing, the hash doesn't match, or neither `sha256sum` nor `shasum` is available. It installs to `/usr/local/bin` by default (with `sudo` if that directory isn't writable); set `VERIKT_INSTALL_DIR` to an absolute path to change that.
+
+`VERIKT_VERSION` pins the release the script installs:
+
+```bash
+curl -fsSL https://verikt.dev/install.sh | VERIKT_VERSION=v0.2.0 bash
+```
+
+That pins the archive, not the script. `install.sh` itself is fetched live from verikt.dev each time, so piping it into `bash` runs whatever is published there at that moment. To review it first, download it, read it, then run it:
+
+```bash
+curl -fsSLo install.sh https://verikt.dev/install.sh
+less install.sh
+VERIKT_VERSION=v0.2.0 bash install.sh
+```
+
+The script doesn't touch your agent configuration. Pass `--setup` if you want it to run `verikt setup` right after installing:
+
+```bash
+curl -fsSL https://verikt.dev/install.sh | bash -s -- --setup
+```
+
+</TabItem>
+<TabItem label="Pinned and verified">
+
+Download the archive for one release and check it against that release's `checksums.txt` yourself. Everything you run is fixed to that version. Archives are named `verikt_<version>_<os>_<arch>.tar.gz`, for `darwin` or `linux` on `amd64` or `arm64`.
+
+```bash
+VERSION=v0.2.0
+ARCHIVE="verikt_${VERSION#v}_darwin_arm64.tar.gz"
+curl -fsSLO "https://github.com/diktahq/verikt/releases/download/${VERSION}/${ARCHIVE}"
+curl -fsSLO "https://github.com/diktahq/verikt/releases/download/${VERSION}/checksums.txt"
+grep "  ${ARCHIVE}$" checksums.txt | shasum -a 256 -c -   # or: sha256sum -c -
+tar xzf "${ARCHIVE}" verikt && sudo mv verikt /usr/local/bin/
+```
+
+A checksum proves the archive matches what was published, not who built it: anyone able to replace an archive on the release page can replace its line in `checksums.txt` too. Releases built by verikt's release workflow also carry a build-provenance attestation that ties each archive in `checksums.txt` to the workflow run and commit that produced it. With the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify "${ARCHIVE}" --repo diktahq/verikt
+```
+
+The attestation step was added to the release workflow after v0.2.2, and it only runs when that GitHub Actions workflow builds the release. Releases up to v0.2.2, including the `v0.2.0` pinned above, and any release built locally have no attestation, and the command reports none found. For those, the checksum is the only check available.
 
 </TabItem>
 <TabItem label="From Source">

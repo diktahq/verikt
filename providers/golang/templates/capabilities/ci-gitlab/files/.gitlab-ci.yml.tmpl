@@ -13,7 +13,7 @@ variables:
 lint:
   stage: lint
   script:
-    - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+    - go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
     - golangci-lint run ./...
 
 test:
@@ -39,7 +39,8 @@ docker:
   stage: docker
   image: docker:27
   services:
-    - docker:dind
+    # Same major as the docker:27 client image; an untagged dind floats.
+    - docker:27-dind
   script:
     - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA

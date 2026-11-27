@@ -1,8 +1,11 @@
 package diff
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"testing"
+	"testing/fstest"
 
 	"github.com/diktahq/verikt/internal/provider"
 	"github.com/diktahq/verikt/internal/scaffold"
@@ -198,5 +201,29 @@ func TestComputeSummary(t *testing.T) {
 				t.Errorf("DriftScore: got %.2f, want %.2f", s.DriftScore, tt.wantDrift)
 			}
 		})
+	}
+}
+
+// permissionDeniedFS fails every Open with fs.ErrPermission.
+type permissionDeniedFS struct{}
+
+func (permissionDeniedFS) Open(string) (fs.File, error) { return nil, fs.ErrPermission }
+
+func TestDiffFilesDir_MissingFilesRootIsOK(t *testing.T) {
+	d, err := diffFilesDir(fstest.MapFS{}, "capabilities/x/files", t.TempDir(), nil, "x")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.Status != "ok" {
+		t.Fatalf("status = %q, want ok", d.Status)
+	}
+}
+
+// An unreadable files/ directory is not the same as an absent one: reporting
+// "ok" would claim the capability is fully present without having looked.
+func TestDiffFilesDir_UnreadableFilesRootIsAnError(t *testing.T) {
+	_, err := diffFilesDir(permissionDeniedFS{}, "capabilities/x/files", t.TempDir(), nil, "x")
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("err = %v, want fs.ErrPermission", err)
 	}
 }

@@ -22,14 +22,20 @@ verikt generates them from `verikt.yaml` — the same file that drives scaffoldi
 
 ## What verikt does
 
-`verikt guide` reads your `verikt.yaml` and generates architecture context files for every AI agent you use — Claude Code, Cursor, GitHub Copilot, Windsurf. One command. Every session starts with your architecture already loaded.
+`verikt guide` reads your `verikt.yaml` and generates architecture context files for every AI agent you use — Claude Code, Cursor, GitHub Copilot, Windsurf, and anything that reads `AGENTS.md`. One command. Every session starts with your architecture already loaded.
 
 ```bash
 verikt guide
-# Generated .claude/rules/verikt.md (1,247 tokens)
-# Generated .cursorrules (1,247 tokens)
-# Generated .github/copilot-instructions.md (1,247 tokens)
-# Generated .windsurfrules (1,247 tokens)
+# Guide generated for target: all
+#
+# Always loaded, each within 1,500 tokens:
+#   .claude/rules/verikt-index.md
+#   .cursor/rules/verikt.mdc
+#   .github/copilot-instructions.md
+#   .windsurfrules
+#   AGENTS.md
+# Read on demand:
+#   .verikt/references/
 ```
 
 The generated files tell the agent your architecture pattern, your layer boundaries, your capability stack, your dependency rules, your naming conventions. What used to live in your head — or in a `CLAUDE.md` you updated once and forgot — is now always current and always loaded.

@@ -19,27 +19,51 @@ path_mappings:
   adapter/grpchandler: internal/handler
   adapter/mysqlrepo: internal/repository
   adapter/redisrepo: internal/repository
-  adapter/esrepo: internal/repository
+  adapter/esrepo: internal/repository/elasticsearch
   adapter/kafkahandler: internal/handler
-  adapter/natshandler: internal/handler
-  adapter/bffgateway: internal/handler
-  adapter/mailpit: internal/repository
+  adapter/natshandler: internal/handler/nats
+  adapter/bffgateway: internal/handler/bff
+  adapter/mailpit: internal/repository/mailpit
+  # Templates below declare a fixed package name, so each keeps its own
+  # directory under the layer that owns it.
+  adapter/dynamorepo: internal/repository/dynamorepo
+  adapter/mongorepo: internal/repository/mongorepo
+  adapter/sqliterepo: internal/repository/sqliterepo
+  adapter/s3client: internal/repository/s3client
+  adapter/querybuilder: internal/repository/querybuilder
+  adapter/emailgateway: internal/repository/emailgateway
   domain: internal/model
   port: internal/service
   service: internal/service
 components:
   - name: handler
     in: ["internal/handler/**"]
-    may_depend_on: [service, model]
+    may_depend_on: [service, model, platform]
   - name: service
     in: ["internal/service/**"]
     may_depend_on: [repository, model]
   - name: repository
     in: ["internal/repository/**"]
-    may_depend_on: [model]
+    may_depend_on: [model, platform]
   - name: model
     in: ["internal/model/**"]
     may_depend_on: []
+  # platform: cross-cutting code written by capabilities (observability,
+  # lifecycle, resilience, event bus, config, ...). It may use only the
+  # innermost layer's types. Listed after the layers because the first
+  # matching component wins: internal/infrastructure/config must stay
+  # infrastructure, not fall to platform's config/** pattern.
+  - name: platform
+    in: ["platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"]
+    may_depend_on: [model]
+    # Only some capabilities write platform code, so it may be absent.
+    optional: true
+  # app: the composition root (cmd/ entrypoints and internal/bootstrap). It
+  # wires every other component together, so it may depend on all of them;
+  # nothing may depend on it.
+  - name: app
+    in: ["cmd/**", "internal/bootstrap/**"]
+    may_depend_on: [handler, service, repository, model, platform]
 hooks:
   - "go mod tidy"
   - "gofmt -w ."

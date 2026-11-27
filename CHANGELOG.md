@@ -2,7 +2,494 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.3.0] — 2026-11-27
+
+Issues #8 to #18, then #24, #28, #29, #30 and #32, then the findings of a
+three-lens review of this release (red team, security, agent safety; #36). Most are cases where verikt
+reported success for something it had not done: an installer that skipped verification when it could not verify, a
+hook that never reported a violation, scaffolds that failed their own
+`verikt check`. Read *Upgrade notes* before upgrading; several change what an
+existing pipeline sees.
+
+### Upgrade notes
+
+- **An unavailable engine stops `verikt check`.** If the embedded analysis engine
+  cannot be extracted — an unwritable cache directory, for example — the check now
+  fails with `analysis engine unavailable`, followed by the underlying cause, instead
+  of a generic message. Pass `--allow-degraded` to skip the built-in detectors (with a
+  warning on stderr) and check only proxy rules and decision gates. It is refused with
+  `--detectors`, which would leave nothing to check.
+- **`--diff` and `--staged` now include renamed files.** They used git's `ACM` filter,
+  so every finding in a file the branch had renamed — including renamed and then
+  edited — was filtered away. Findings that were hidden this way will now appear, and a
+  pipeline gating on `--diff main` can newly fail without any change to your code.
+- **Two new structure detectors, both at warning severity**, so neither changes the
+  exit code unless you raise it. `live_dot_claude_fixture` is always on: it reports a
+  `.claude/` directory holding `rules/` or `skills/` under a `test`, `tests`,
+  `testdata`, `fixtures`, `evals`, `examples`, `__tests__` or `__fixtures__` path, and
+  a standalone `CLAUDE.md` or `CLAUDE.local.md` inside a fixture case
+  (`testdata/<case>/CLAUDE.md`). Claude Code loads these on demand once it reads or
+  edits a file in that directory, so an agent working on the fixture takes them as
+  live instructions. `cmd_allowlist` (Go) is off until you set
+  `check.allowed_entrypoints`; it then reports any `package main` under `cmd/` or at
+  the module root that the list does not name. Waive a specific finding with a
+  `severity_overrides` entry under the detector's name (`severity: ignore`, a
+  `reason`, and `paths`), or make one blocking with `severity: must`.
+- **Two new checks read CI, script and container files, both at warning
+  severity** and on for every project and language. `silent_ci_swallow` reports
+  `continue-on-error: true` in GitHub workflows, `|| true` or `|| :` followed by a
+  read of `$?`, and `|| true` / `|| :` / `|| exit 0` after a test, lint, check or
+  migration command. `mutable_install_url` reports `curl | sh`,
+  `/releases/latest/download/`, `raw.githubusercontent.com` URLs on a branch,
+  workflow `uses:` pinned to a branch, and Dockerfile `FROM` images that are untagged
+  or `:latest`. They read `.github/workflows/`, lefthook files, `scripts/**/*.sh`,
+  `.claude/hooks/**/*.sh`, Makefiles and Dockerfiles. Neither changes the exit code
+  unless you raise it. A `PostToolUse` hook written by an older `verikt guide` is
+  reported (it ran `verikt check ... || true`); re-run `verikt guide` to replace it.
+  To accept one line, add `# verikt:allow <rule> reason="..."` on it or in the
+  comment lines directly above it; a malformed marker allows nothing and is itself
+  reported as `invalid_allow_directive`. To waive or raise a rule for a path, use
+  `severity_overrides` under the rule id with `severity: ignore` or `severity: must`.
+- **Cursor's rules moved to `.cursor/rules/verikt.mdc`.** Cursor deprecated
+  `.cursorrules`. The next `verikt guide` moves verikt's section out of `.cursorrules`,
+  keeps your own content there, and deletes the file only if verikt's section was all
+  it held. Commit the new file.
+- **Commit `AGENTS.md` and `.verikt/references/`.** `verikt guide` can now write a
+  section of `AGENTS.md` (`--target agents`), and every target's always-loaded file
+  now points to on-demand references under `.verikt/references/`. Without that
+  directory in the repository, the agent is sent to files that don't exist.
+- **Projects scaffolded with an earlier version keep their old components.**
+  `verikt new` used to write hexagonal components into `verikt.yaml` for every
+  non-flat architecture, so clean and layered projects failed their own check, and
+  `platform/` packages were orphans in every architecture. Regenerating is not needed;
+  copy `components`, `rules.structure.required_dirs` and `check` from a fresh
+  `verikt new --arch <your arch>` into your `verikt.yaml`. The new `app` component
+  classifies `cmd/` and `internal/bootstrap/`, so `check.exclude: [cmd/**]` is no
+  longer needed and can go.
+- **Generated HTTP code changed shape.** Projects scaffolded earlier keep working;
+  these notes matter when you copy code from a new scaffold into an old one or run
+  `verikt add` against one. `NewRouter(logger)` is now
+  `NewRouter(logger, timeouts, registerAPI)`: JSON routes are registered through
+  `registerAPI` inside a group that carries the request timeout, and streaming routes
+  sit outside it. `NewHTTPServer(addr, handler, logger)` is now
+  `NewHTTPServer(addr, handler, timeouts, logger)` and sets explicit read, header,
+  write and idle timeouts, taken from `http.read_timeout` and `http.write_timeout` in
+  `config.yaml`. The sse capability's `SSEHandler` function is replaced by
+  `NewSSEHandler(keepAlive)`, mounted at `/events`; websocket's hub is mounted at
+  `/ws`. (#24, #29)
+- **WebSocket upgrades are same-origin.** The websocket template accepted every
+  `Origin`, which let any site open a connection with a signed-in user's cookies. It
+  now uses gorilla/websocket's same-origin check. A browser client on another origin
+  is refused until you set `CheckOrigin` to an allow-list. (#29)
+- **`bff` requires `bootstrap`.** The gateway is constructed and mounted in
+  `internal/bootstrap`, the only composition root that wires capabilities; without it
+  the generated gateway was never served. `verikt new` and `verikt add bff` add
+  `bootstrap` (and `platform`) for you. `verikt add` never overwrites files, so in an
+  existing project `cmd/<name>/main.go` is left alone: make it call
+  `bootstrap.Run(version)` as a fresh scaffold's does. Backends now come from
+  `BFF_SERVICES` and endpoints from `Routes()`, which is empty, so the gateway serves
+  nothing until you declare a route. (#32)
+- **`go.mod` targets the Go version verikt detects.** New projects used to get
+  `go 1.22` regardless of the toolchain. They now get `--set GoVersion` when given,
+  else the installed toolchain's major.minor, else `1.22`. A project scaffolded on Go
+  1.26 says `go 1.26`, which older toolchains refuse to build; pass
+  `--set GoVersion=<older>` to target them. `verikt add` uses the version in the
+  project's `go.mod`. (#30)
+- **No Windows archives.** The Windows build shipped without the engine, so
+  `verikt check` could only fail there. Releases are macOS and Linux, amd64 and arm64.
+- **Installing no longer runs `verikt setup`.** Neither the Homebrew formula nor the
+  install script registers verikt with your agents any more. Run `verikt setup`
+  yourself, or pass `--setup` to the install script.
+
+- **`verikt check` validates `severity_overrides` and `check.allowed_entrypoints`
+  before it runs.** An override severity must be `must`, `should` or `ignore`, and
+  `ignore` needs a `reason`. `severity: info` used to turn an error into a finding
+  that passed even under `--strict` and never appeared under WAIVED; a
+  `verikt.yaml` that uses it, or another unknown value, now stops the check with a
+  message naming the entry.
+- **The engine's grep rules match the documented meaning of `must-contain`,
+  `must-not-contain` and `file-must-contain`.** The Rust engine reported the
+  compliant line or file and missed the violating one; the Go fallback was right.
+  A proxy rule that relied on the engine's behaviour, typically `must-not-contain`
+  used to exclude lines, now reports the lines it used to skip: rewrite it with
+  `must-contain`. A proxy rule with no `severity` is an error, as documented; the
+  engine ran it as `info`.
+- **`--diff` sees untracked files and works in monorepos.** `--diff` now includes
+  files git does not track yet, compares paths relative to the checked project, and
+  reads file names with non-ASCII characters verbatim. Findings these filters used
+  to drop will appear, so a `--diff` gate can newly fail without a code change.
+- **Waivers stay visible.** A `# verikt:allow` marker now lists the finding under
+  WAIVED with its reason instead of hiding it, and waivers are kept under `--diff`
+  and `--staged`.
+- **The engine cache must be private.** verikt stops with an error instead of
+  running the engine when its cache directory (`<user cache dir>/verikt`) or the
+  `engine-<hash>` directory inside it is a symlink, is not a directory, is group- or
+  world-writable, or is owned by another user. verikt has always created them as
+  `0700`, so only a hand-made or shared cache is affected. `sudo verikt` with a
+  cache owned by your user is refused for the same reason.
+- **`verikt guide` refuses symlinks.** It stops, naming the path, when a file it
+  writes or reads (`AGENTS.md`, `.cursor/rules/verikt.mdc`, `.claude/rules/*`,
+  `.claude/settings.json`, the hook scripts, `.verikt/references/*`) or a directory
+  above it inside the project is a symlink. A symlinked `AGENTS.md` was copied into
+  the repository, and a symlinked hook script overwrote the file it pointed to.
+- **`verikt guide --catalog-only` refuses in a project with `verikt.yaml`.** It
+  used to delete `.verikt/references/architecture.md` and strip the layer rules
+  from every target.
+- **Claude Code rule files use `paths:` frontmatter.** Claude Code ignores `globs:`,
+  so every `verikt-<category>.md` loaded in every session. The index now has no
+  frontmatter and loads at launch; category files load when Claude works on a
+  matching path. `verikt guide` removes generated `verikt*.md` files the current
+  run did not write; files without verikt's generated header are never touched.
+- **Generated security defaults changed (new projects and `verikt add` only).**
+  Existing generated code is yours and is not rewritten. In new code:
+  `middleware.RealIP` is gone from the router (it trusted client-supplied
+  `X-Forwarded-For`); `decodeJSON(w, r, dst)` caps bodies at 1 MiB;
+  `RateLimiter(ctx, rps, burst, logger)` stops with `ctx` and tracks at most
+  100,000 clients; `Idempotency(store, scope, logger)` scopes replays to the caller,
+  method and path; `Tenant(resolver)` resolves the tenant from verified auth and
+  starts with `tenant.NotConfigured`, which refuses every request until you replace
+  it; oauth2's `HandleOAuth2Callback` is replaced by `OAuth2Flow` (`Login`,
+  `Callback`); CORS panics at startup on `*` with credentials; `docker-compose.yml`
+  publishes ports on `127.0.0.1` only. The other generated changes are listed under
+  *Security*. The new rate limiter reads chi's `middleware.GetClientIP`, added in
+  chi v5.5.0: `verikt add rate-limiting` in a project that pins an older chi needs
+  `go get github.com/go-chi/chi/v5@latest` before it compiles.
+
+### Added
+
+- **`AGENTS.md` target** (`verikt guide --target agents`), for Codex, Antigravity and
+  other agents that read it. verikt writes only the section between its markers. (#13)
+- **Two-tier guide output.** Always-loaded files hold compact writer rules; layer
+  detail, the capability catalog, the review checklist and (with `--catalog-only`) the
+  scaffold interview move to `.verikt/references/`. `TestGuideOutput_InstructionCount`
+  (at most 30) and `TestGuideOutput_TokenBudget` (at most 1,500) enforce INV-001 on every
+  target, replacing the 3,100-token exception the combined file needed. (#13)
+- **`verikt setup --codex` and `--antigravity`.** Opt-in: verikt writes a marked
+  section of `~/.codex/AGENTS.md` or `~/.gemini/GEMINI.md` and leaves the rest of the
+  file alone. These locations have not yet been checked against the vendors'
+  documentation (#19). (#13)
+- **`verikt check --allow-degraded`.** (#9)
+- **`verikt check --strict` and `check.fail_on: warning`** make warning-severity
+  findings fail the check, for every category: built-in detectors, anti-patterns,
+  proxy rules and decision gates. `--strict` takes precedence over `fail_on`; any
+  `fail_on` other than `error` or `warning` stops the check with an error. Without
+  either, warnings still pass. The last line of terminal output now gives the counts,
+  the verdict and the reason (`0 errors, 3 warnings — passed (use --strict to fail on
+  warnings)`), and `-o json` adds `fail_on`, `error_count`, `warning_count` and
+  `info_count` beside `result`. (#21)
+- **`silent_ci_swallow` and `mutable_install_url` checks**, at warning severity, with
+  a shared inline marker, `verikt:allow <rule_id> reason="..."` in `#`, `//` or
+  `<!-- -->` comments. `check.silent_ci_swallow.extra_commands` adds your own
+  verification commands; `check.mutable_install_url.include_docs: true` also scans
+  fenced code in `README.md` and `docs/**/*.md`. The template security test runs both
+  checks over every shipped Dockerfile, CI config and Makefile template; it found the
+  GitLab CI and devcontainer templates piping golangci-lint's `install.sh` from
+  `master` into `sh`, and both now `go install` a pinned v1.64.8, matching the v1
+  `.golangci.yaml` the linting capability writes. (#15)
+- **`optional: true` on a component** skips the missing-component check for it. The
+  guide labels optional components. (#18)
+- **`platform` and `app` components** in every scaffolded Go architecture except flat:
+  `platform` for capability-written cross-cutting code (optional; depends only on the
+  innermost layer), `app` for the composition root. (#18)
+- **`cmd_allowlist` and `live_dot_claude_fixture` structure detectors**, at warning
+  severity. (#15)
+- **Build-provenance attestation step** in the GitHub Actions release workflow, for
+  every archive in `checksums.txt`. It only runs when that workflow builds the release;
+  GitHub Actions does not currently run for this repository, so a release built
+  locally carries no attestation. Verify one with
+  `gh attestation verify <archive> --repo diktahq/verikt`. (#11)
+- **Local enforcement for contributors.** GitHub Actions does not run for this
+  repository, so nothing checks a change after it is pushed. `lefthook` runs gofmt,
+  golangci-lint and short tests on staged packages at pre-commit, and `mise run verify`
+  (build, vet, format, `go mod tidy -diff`, tests, lint, shellcheck, installer tests) at
+  pre-push. `mise run release-check` is the full suite before a release: engine gates, a
+  freshly built engine, the race detector, compiled scaffolds and the debt baseline.
+  golangci-lint is 2.15.0, with gosec, errorlint, nilerr and exhaustive enabled. See
+  `CONTRIBUTING.md`. (#12)
+
+### Fixed
+
+- **The PostToolUse hook checks files the agent just created.** It runs
+  `verikt check --diff HEAD`, and `git diff` never lists untracked files, so every
+  finding in a new file was filtered away and the hook stayed silent. `--diff` now
+  includes untracked, non-ignored files. Paths are relative to the checked project,
+  so `--diff` and `--staged` work in a subdirectory of the repository, where every
+  finding used to be dropped; names git would quote are read verbatim; a symlink
+  replaced by a regular file counts as changed; and `--staged -o json` with nothing
+  staged prints JSON. (#36)
+- **The hooks say what went wrong.** The PostToolUse hook names proxy rules that
+  could not run (stale or invalid) instead of reporting an unreadable report, and
+  the SessionStart hook tells the agent when regenerating the guide fails instead of
+  exiting silently. (#36)
+- **A proxy rule with no `severity` fails the check on the default engine.** The
+  documented default of `error` was applied to a copy and never reached the engine,
+  which read the empty severity as `info`. An unknown severity maps to error in both
+  directions. (#36)
+- **The engine's grep rules are no longer inverted.** `must-contain`,
+  `must-not-contain` and `file-must-contain` reported compliant lines and missed
+  violations on the Rust engine. It now matches the Go implementation, and the
+  parity test covers all three fields and the match text, which is cut at 120 bytes
+  on a character boundary in both. A `file-must-contain` rule with no `pattern` no
+  longer flags every line. The generated `cap-tracing-context` rule is written with
+  `must-contain`. (#36)
+- **Waived findings are reported.** `verikt:allow` markers record the finding under
+  WAIVED (`waived[]`) with the marker's reason, waived proxy-rule findings are
+  reported under `--proxy-rules`, `--rule` and `--allow-degraded`, and `--diff` /
+  `--staged` keep the waivers in the changed files. (#36)
+- **`cmd_allowlist` is not hidden by `//go:build !ignore`.** Any constraint that
+  mentioned `ignore` excluded the file; now only one that cannot be true without
+  `ignore` does. (#36)
+- **`verikt guide` and `verikt setup` write only regular files inside the
+  project.** See *Upgrade notes*. Writes are atomic. (#36)
+- **`verikt guide` refuses content that contains its own section markers**, for
+  example from a component name, so a later run is never locked out of the file. (#36)
+- **`invalid_allow_directive` quotes at most 80 bytes** of the offending comment. (#36)
+- **The guide's HTTP middleware table matches the router**: Recoverer first, and no
+  RealIP. (#36)
+- **Inline waivers and override waivers are reported together.** When a
+  `severity_overrides` waiver matched, the run reported only those and dropped
+  every `verikt:allow` waiver from WAIVED and `waived[]`. (#36)
+- **A grep rule with a regex the engine cannot compile is invalid**, whichever
+  field holds it. A bad `must-contain`, `must-not-contain` or `file-must-contain`
+  was dropped, so the rule ran without that check and reported Valid. (#36)
+- **`--staged -o json` with nothing staged reports the configured `fail_on`**, not
+  always `error`. (#36)
+- **Generated `idempotency` and `oauth2` stores stay fast when full.** The
+  idempotency store sweeps expired entries at most once a minute instead of scanning
+  every entry on every write once full. The oauth2 state store keeps pending logins
+  oldest-first and never scans them all; when it is full a new login evicts the
+  oldest pending one, so a flood of `/auth/login` requests can make one user retry
+  instead of locking every user out for 10 minutes. (#36)
+- **Website docs match 0.3.0 output.** Guide excerpts are real `verikt guide`
+  output instead of invented examples; experiment citations say they were measured
+  on the pre-0.3.0 single-file guide with one model (claude-sonnet-4-6); claims of
+  "0 extra tokens" and of committed artifacts for every experiment are corrected;
+  the `--catalog-only`, hook, `--diff`, waiver and override-validation pages match
+  this release. (#36)
+- **The experiment harness reads `.cursor/rules/verikt.mdc`**, which the cursor
+  target writes; it read `.cursorrules`. (#36)
+- **Feature flags are wired for Go, and `requires_features` is enforced.** Go
+  templates got no `.Features`, so nothing could be gated on the Go version, and
+  `requires_features` was parsed but never enforced (ADR-007). The Go provider now resolves `.Features` from the target version
+  (`--set GoVersion`, the installed toolchain, or the architecture default), and
+  `verikt new` and `verikt add` stop before writing anything when a capability or
+  architecture needs a feature the target lacks, naming the capability, the feature,
+  the version that provides it, and how to target it. Version detection runs outside
+  the current directory, so a `go.mod` there cannot trigger a toolchain download;
+  development builds fall back to the default. (#30)
+- **Handler-package capabilities compile in every architecture.** `api-versioning`,
+  `htmx`, `i18n`, `idempotency`, `oauth2`, `request-id` and `static-assets` declared
+  `package httphandler`, so clean, layered and flat projects with any of them failed
+  to build (`sse` and `websocket` had the same fault, fixed with #29). `api-versioning` also used an undefined type, and
+  `static-assets` embedded a `static/` directory it wrote somewhere else; its assets
+  now live in `static/` next to the HTTP handler. `bff`, `elasticsearch` and `nats`
+  now take their package name from the directory the architecture maps them to, as
+  every other capability does. A static test checks every capability's package
+  clauses against every architecture. (#28)
+- **One router per project.** With `http-api`, clean and layered projects built a
+  `ServeMux` router of their own and called a `NewRouter` that clashed with the
+  capability's, so they did not compile. `main.go` now serves the capability's chi
+  router; without `http-api` the architecture's router is served through an
+  `http.Server` with explicit timeouts instead of a bare `ListenAndServe`. A project
+  with only `platform` compiles. (#24)
+- **Streams outlive the request timeout.** SSE and WebSocket routes were mounted
+  under the same timeout as JSON routes, so every stream was cut off after it. They
+  now register outside the timeout group; SSE moves its write deadline forward on
+  every write and the WebSocket hub sets its own read and write deadlines, while JSON
+  routes keep theirs. With the `timeout` capability, its middleware is the one applied
+  to the API group. (#29)
+- **The BFF gateway is race-free, bounded and wired.** `FanOut` appended results
+  without its mutex when a call named an unknown service, losing a result and racing
+  with in-flight calls; unknown services now fail with `ErrUnknownService`. Upstream
+  bodies are capped at 1 MiB (`WithMaxResponseBytes`), backend error statuses come
+  back as `*StatusError`, and with `observability` backend calls propagate the trace.
+  The handler maps upstream failures in one place and never returns upstream error
+  text. (#32)
+- **Capability order no longer breaks the build.** Partials rendered in the order
+  capabilities were typed, so `--cap health,http-api,bootstrap` and
+  `--cap bff,http-api` used `router` before http-api declared it. Capabilities are now
+  sorted so each follows the ones it requires, keeping your order otherwise; a
+  `requires` cycle is reported by name.
+- **Generated Go is gofmt-clean as written.** `internal/bootstrap/bootstrap.go` listed
+  capability imports out of order, and structs with conditional fields (`config.go`)
+  were misaligned. Rendered `.go` files now go through `go/format`, so the output is
+  clean even when the post-scaffold hooks are skipped or `go mod tidy` fails before
+  `gofmt` runs.
+- **`ddd` and `event-bus` together compile.** Both wrote `domain/event.go`, so the one
+  rendered last replaced the other and `--cap ddd,event-bus` failed with
+  `undefined: DomainEvent`. event-bus's file is now `domain/eventbus.go`. `graphql`
+  and `templ` collided the same way on `tools.go`; they now write `tools_gqlgen.go`
+  and `tools_templ.go`. A test rejects two capabilities writing the same file.
+
+- `verikt add` places capability files where the project's architecture puts them,
+  using the same path mappings, `ArchPaths` and partials as `verikt new`. Before, clean,
+  layered and flat projects got hexagonal paths (`adapter/`, `service/`, `domain/`) and
+  failed their own `verikt check`. `add --dry-run` reports the same paths, `add` no
+  longer leaves empty directories behind, and a `verikt.yaml` with a missing or unknown
+  `architecture:` is rejected before anything is written. (#23)
+- **The install script downloads an archive that exists.** It requested
+  `verikt_<os>_<arch>.tar.gz`; releases publish `verikt_<version>_<os>_<arch>.tar.gz`.
+  `latest` is now resolved to a concrete tag first. (#8)
+- **The install script fails closed.** A missing checksum entry, a mismatched hash, or
+  no `sha256sum`/`shasum` on the machine each stop the install. The old script
+  installed with a warning when the entry was missing, and when no hash tool existed
+  it set the computed hash to the expected one, so the comparison always passed. Every download uses `curl -f`, and `VERIKT_VERSION`
+  must be a semver tag. (#8)
+- **The engine error names its cause.** The reason extraction failed was discarded, so
+  the user saw only that the engine was required. (#9)
+- **`--diff` rejects an empty ref or one starting with `-`**, which git would have read
+  as an option. (#9)
+- **The Claude Code `PostToolUse` hook reports violations.** `verikt-check.sh` ran the
+  check with `|| true`, which forced the exit code to 0, so it never reported a
+  violation. It now counts violations, anti-patterns, proxy-rule violations and
+  decision violations, and reports an unreadable failure as unverified rather than as
+  a pass. (#10)
+- **The guide-refresh hook works on macOS**, using `sha256sum` or `shasum -a 256`,
+  whichever exists. (#10)
+- **`.claude/settings.json` is merged safely.** verikt refuses to write a file that
+  is not valid JSON or whose `hooks` has the wrong type, updates its own entries in
+  place, keeps yours, and writes atomically, preserving the file mode. (#10)
+- **A cached engine is verified before it runs.** It is used only if it is a regular
+  file (not a symlink) of the right size, executable, and matching the embedded
+  SHA-256; anything else is extracted again. Cache directories are created `0700`,
+  and the cache root and engine directory are refused if they are symlinks, are
+  not directories, are writable by others, or belong to another user, checked
+  before a cached copy is used. (#11, #36)
+- **The capability matrix covers all 65 Go capabilities and 4 architectures.**
+  `matrix.go`, which feeds the generated `docs/PROJECT.md`, covered 21, so the rest
+  were silently left out. Parity tests tie the matrix, the reference doc and the
+  website to the templates. Published counts went from 63 to 65. (#14)
+- **`dynamodb`, `feature-flags`, `multi-tenancy` and `s3` scaffold again.** Each
+  required a `config` capability that does not exist, so `verikt new` failed for all
+  four. `mongodb` and `sqlite` suggested it too; they now suggest `platform`. The
+  TypeScript `http-api` suggested a nonexistent `validation`. A test now rejects any
+  dangling `requires`, `suggests` or `conflicts` entry. (#16)
+- **Scaffolded projects pass their own `verikt check`.** `verikt.yaml` takes its
+  components from the chosen architecture's manifest. Empty clean and layered layers
+  get a `doc.go` instead of `.gitkeep`, so the empty-layer warning stays quiet on a
+  fresh scaffold. Adapters with fixed package names get their own subdirectory in
+  clean, layered and flat, instead of putting two packages in one folder. Flat
+  projects with `testing` or `saga` no longer fail with `mkdirat: empty path`. Covered
+  by `TestScaffoldPassesCheck` across four architectures. (#18)
+- **Shared guide files with malformed markers fail closed.** Copilot and Windsurf
+  files whose verikt markers were broken got a second section appended; verikt now
+  refuses to write them and says why. (#13)
+- **A feature-matrix or version-detection error no longer scaffolds with every
+  feature flag silently off.** (#12)
+- **Engine request frames are bounded at 64 MiB**, and `rules.functions` limits
+  outside the `int32` range are rejected. (#12)
+
+### Security
+
+- **`install.sh` downloads over HTTPS only.** Every request is pinned to
+  `--proto '=https' --tlsv1.2`, redirects included, and any other scheme is refused.
+  The binary is installed with `install -m 0755`, owned by root when sudo is needed,
+  and a `TMPDIR` containing a quote no longer breaks the cleanup trap. (#36)
+- **The release workflow is read-only by default.** Only the publishing job gets
+  `contents: write`, the engine-build checkout drops its credential, and `cross` is
+  pinned to 0.2.5. GitHub Actions does not currently run for this repository. (#36)
+- **Generated code (new projects and `verikt add`):**
+  - multi-tenancy: the tenant is resolved through a `TenantResolver` from verified
+    auth; the `X-Tenant-ID` header is never trusted.
+  - http-api: no `middleware.RealIP`; request bodies are capped at 1 MiB.
+  - rate-limiting: bounded client map, and the cleanup goroutine stops with its
+    context.
+  - idempotency: replays are scoped to caller, method, path and key; stored
+    responses are capped at 1 MiB, and expired entries are evicted.
+  - oauth2: `state` is single use and bound to the browser by an HttpOnly, Secure,
+    SameSite=Lax cookie compared in constant time; the token response is
+    `Cache-Control: no-store`.
+  - cors: only the exact matched origin is echoed, with `Vary: Origin`.
+  - websocket: messages over 64 KiB close the connection; connections are keyed by
+    a server-generated ID, not the client's `X-Request-ID`; `Broadcast` does not
+    hold the hub lock while writing.
+  - sse: event names with CR or LF are rejected, and multi-line data is sent one
+    `data:` line per line.
+  - bff: backend redirects are not followed, and a path must start with exactly
+    one `/`.
+  - mailpit: CR or LF in from, to or subject is rejected before connecting.
+  - docker-compose: ports are published on `127.0.0.1`; `.gitlab-ci.yml` pins
+    `docker:27-dind`. (#36)
+
+### Changed
+
+- **`silent_ci_swallow` and `mutable_install_url` read more shapes.** Escaped
+  quotes outside quotes, YAML quoted `run:` values, `{ …; } || true`,
+  `|| /bin/true`, `|| (exit 0)`, a Makefile `-` prefix on a verification command,
+  `sh -c "…"`, shell options before a script, `env -u`, `cargo +toolchain` and
+  `continue-on-error: ${{ true }}`; downloads piped into a shell through
+  intermediate stages, `/bin/sh -c "$(curl …)"`, `sh -ec`, backticks and
+  `source <(curl …)`. Both still ship at warning. Old and new produced identical
+  findings over about 100 local repositories and 1,205 Go modules. `cmd || echo`
+  and a verification used only as an `if` condition are not covered. (#36)
+- **`silent_ci_swallow` reads redirections and tight groups.** A command whose
+  output is redirected (`go test ./... 2>&1 || true`, `&>log`) is no longer cut at
+  the `&`; `{ go test ./...;} || true`, `(pytest) || true`, `sh -c "…" _` and
+  `bash -euo pipefail script.sh || true` are read; a next-line
+  `continue-on-error: ${{ true }}` or `'true'` counts. A subshell that ends with
+  another command, such as `(go test ./...; echo done) || true`, is no longer
+  reported, because its status is the last command's. `mutable_install_url` reads
+  `| bash -o pipefail` and `| bash +e` at the end of a download pipeline. Over 85
+  local repositories and 261 Go modules this added 10 findings, all from the
+  redirection change, and removed none. (#36)
+- **`context_background_in_handler` checks for a request, not a package name.** It
+  took any package path containing `handler`, `controller`, `adapter`, `transport` or
+  `api` as a handler, so it reported `context.Background()` in `main()` under
+  `api/cmd`, in a CLI command under an `...adapter` package, and in any package
+  named like `rapid` or `capital`, while a real handler in a package named `web` was
+  never checked. It now reports `context.Background()` only when it is passed to a
+  call while a named `*http.Request` or `context.Context` parameter is in scope, in
+  any package, and stays silent for deferred and error-path cleanup, goroutines,
+  `context.With*` derivations, setup calls and logging. The message names the
+  parameter to use (`use r.Context()`, `pass ctx`). Found by the ADR-012 corpus run;
+  each wrong shape is now a `detector-restraint` case. (#36)
+- **`live_dot_claude_fixture` reports only what Claude Code loads from a nested
+  directory.** A fixture `.claude/` is reported when it holds `rules/` or `skills/`,
+  the two entries Claude Code documents loading on demand below the working
+  directory. `agents/`, `commands/`, `hooks/`, `settings.json`, `settings.local.json`
+  and a nested `.claude/CLAUDE.md` are not reported: subagents are found by walking
+  up, settings and hooks are read from the root, and the rest are not documented to
+  load from a subdirectory. A standalone `CLAUDE.md` or `CLAUDE.local.md` inside a
+  fixture case is reported. Matching ignores case; `__tests__` and `__fixtures__`
+  count as fixture paths; the remedy is worded for any language. The ADR-012 corpus
+  run found the earlier markers wrong: of 1,025 findings over 26 local
+  repositories, 628 were `.claude/` directories holding only `agents/` or
+  `commands/`. (#36)
+- **The template security test enforces more of INV-003.** It rejects RealIP, a
+  tenant read from a header, a joined CORS allow-list, an idempotency key hashed
+  alone, and Docker images without a version tag, and asserts that required
+  controls (body limits, `Vary: Origin`, read limits) stay in place. (#36)
+- **`mise run release-check` compiles generated projects.** It runs
+  `TestScaffoldBuilds`, which scaffolds every architecture with several capability
+  sets (including the orderings, the `ddd`/`event-bus` pair and the renamed adapter
+  packages above) and runs `go build` and `go vet` on each. `verikt check` compiles
+  nothing, and GitHub Actions does not run, so this local gate is the only compile
+  check of generated code. It downloads modules, so it needs network access. (#24)
+- **The template security test rejects a WebSocket `CheckOrigin` that returns
+  `true`** unconditionally, with fixtures proving the pattern fires. (#29)
+
+- **One pass/fail rule for every finding.** Proxy rules and decision gates failed
+  only on the literal severity `error`, while built-in detectors had their own
+  loop. All four now go through the same decision: `error` fails, `warning` fails
+  only under `--strict` or `check.fail_on: warning`, `info` and waived findings never
+  fail, and a finding with no severity counts as an error. No shipped rule or
+  detector produces an empty severity, so no existing run changes outcome. (#21)
+- **Scaffolded Go code and verikt itself use `go.yaml.in/yaml/v3`** instead of
+  `gopkg.in/yaml.v3`. (#12)
+
+### Removed
+
+- **`scaffold.CheckRequiredFeatures`.** Nothing called it, and its message suggested a
+  `--go-version` flag that does not exist. `EnforceRequiredFeatures` is what
+  `verikt new` and `verikt add` use. (#30)
+
+- **Windows release archives.** (#11)
+- **`verikt setup` from the Homebrew formula's install and from the install script's
+  default run.** The formula prints a reminder instead; the script runs it only with
+  `--setup`. (#8, #11)
+- **`.cursorrules` as the Cursor output**, replaced by `.cursor/rules/verikt.mdc`. (#13)
+
+## [0.2.2] — 2026-08-15
 
 Found by dogfooding on a real project. Three false positives, all at error
 severity, so each failed a build — and none could be fixed in the reporting

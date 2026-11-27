@@ -19,11 +19,11 @@ path_mappings:
   adapter/grpchandler: handler
   adapter/mysqlrepo: repository
   adapter/redisrepo: repository
-  adapter/esrepo: repository
+  adapter/esrepo: repository/elasticsearch
   adapter/kafkahandler: handler
-  adapter/natshandler: handler
-  adapter/bffgateway: handler
-  adapter/mailpit: repository
+  adapter/natshandler: handler/nats
+  adapter/bffgateway: handler/bff
+  adapter/mailpit: repository/mailpit
   domain: model
   port: ""
   service: ""

@@ -9,7 +9,8 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- Chi router with full middleware chain (RequestID, RealIP, Recoverer, OTel)
+- Chi router with full middleware chain (Recoverer, RequestID, OTel, request logging, security headers). Forwarding headers such as `X-Forwarded-For` are not trusted: `r.RemoteAddr` stays the TCP peer. Behind a reverse proxy, add chi's `middleware.ClientIPFromXFF` with your proxy's CIDR prefixes.
+- JSON request bodies capped at 1 MiB by `decodeJSON`
 - RFC 7807 Problem Detail error responses
 - Pagination helpers
 - OpenAPI spec

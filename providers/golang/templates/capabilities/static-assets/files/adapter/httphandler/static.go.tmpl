@@ -1,20 +1,21 @@
-package httphandler
+package {{index .ArchPaths "HTTPHandlerPkg"}}
 
 import (
 	"embed"
-	"io/fs"
 	"net/http"
 )
 
+// The assets live next to this file because go:embed cannot reach a parent
+// directory. URLs map one-to-one onto the embedded tree: /static/css/style.css
+// is static/css/style.css.
+//
 //go:embed static
 var staticFS embed.FS
 
 // StaticHandler returns an HTTP handler that serves embedded static files.
-// Files are served from /static/ with cache headers for production use.
+// Mount it at /static/; files are served with cache headers for production use.
 func StaticHandler() http.Handler {
-	sub, _ := fs.Sub(staticFS, "static")
-	fileServer := http.FileServer(http.FS(sub))
-	return http.StripPrefix("/static/", cacheControl(fileServer))
+	return cacheControl(http.FileServer(http.FS(staticFS)))
 }
 
 func cacheControl(next http.Handler) http.Handler {

@@ -24,6 +24,14 @@ path_mappings:
   adapter/natshandler: internal/interface/nats
   adapter/bffgateway: internal/interface/bff
   adapter/mailpit: internal/infrastructure/mailpit
+  # Templates below declare a fixed package name, so each keeps its own
+  # directory under the layer that owns it.
+  adapter/dynamorepo: internal/infrastructure/dynamorepo
+  adapter/mongorepo: internal/infrastructure/mongorepo
+  adapter/sqliterepo: internal/infrastructure/sqliterepo
+  adapter/s3client: internal/infrastructure/s3client
+  adapter/querybuilder: internal/infrastructure/querybuilder
+  adapter/emailgateway: internal/infrastructure/emailgateway
   domain: internal/entity
   port: internal/usecase
   service: internal/usecase
@@ -36,10 +44,26 @@ components:
     may_depend_on: [entity]
   - name: interface
     in: ["internal/interface/**"]
-    may_depend_on: [usecase, entity]
+    may_depend_on: [usecase, entity, platform]
   - name: infrastructure
     in: ["internal/infrastructure/**"]
-    may_depend_on: [interface, usecase, entity]
+    may_depend_on: [interface, usecase, entity, platform]
+  # platform: cross-cutting code written by capabilities (observability,
+  # lifecycle, resilience, event bus, config, ...). It may use only the
+  # innermost layer's types. Listed after the layers because the first
+  # matching component wins: internal/infrastructure/config must stay
+  # infrastructure, not fall to platform's config/** pattern.
+  - name: platform
+    in: ["platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"]
+    may_depend_on: [entity]
+    # Only some capabilities write platform code, so it may be absent.
+    optional: true
+  # app: the composition root (cmd/ entrypoints and internal/bootstrap). It
+  # wires every other component together, so it may depend on all of them;
+  # nothing may depend on it.
+  - name: app
+    in: ["cmd/**", "internal/bootstrap/**"]
+    may_depend_on: [entity, usecase, interface, infrastructure, platform]
 hooks:
   - "go mod tidy"
   - "gofmt -w ."

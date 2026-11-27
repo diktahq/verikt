@@ -55,7 +55,7 @@ func (p *TypeScriptProvider) Scaffold(ctx context.Context, req provider.Scaffold
 
 	architecture := templateName
 
-	// Resolve version-gated features (ADR-008).
+	// Resolve version-gated features (ADR-007).
 	// If NodeVersion is explicitly set via --set, use it. Otherwise detect from node --version.
 	nodeVersion := ""
 	if v, ok := req.Options["NodeVersion"]; ok && v != "" {
@@ -199,7 +199,8 @@ func (p *TypeScriptProvider) DetectVersion(ctx context.Context) (string, error) 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, nodePath, "--version")
+	// nodePath is the node binary found on PATH, run with fixed arguments and no shell.
+	cmd := exec.CommandContext(ctx, nodePath, "--version") //nolint:gosec // G204: fixed arguments
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("running node --version: %w", err)

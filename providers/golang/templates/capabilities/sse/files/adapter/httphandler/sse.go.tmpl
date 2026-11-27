@@ -1,63 +1,126 @@
-package httphandler
+package {{index .ArchPaths "HTTPHandlerPkg"}}
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+)
+
+const (
+	// DefaultSSEKeepAlive is how often an idle stream sends a comment. It is
+	// shorter than the 30-60 seconds most proxies wait before dropping a quiet
+	// connection.
+	DefaultSSEKeepAlive = 15 * time.Second
+
+	// sseWriteTimeout bounds each write to a stream. The server's WriteTimeout
+	// is measured from the start of the request, so a stream replaces it with a
+	// deadline that moves forward on every write: a client that stops reading is
+	// still disconnected, a client that keeps reading is not.
+	sseWriteTimeout = 10 * time.Second
 )
 
 // EventWriter wraps an http.ResponseWriter to send Server-Sent Events.
 type EventWriter struct {
-	w       http.ResponseWriter
-	flusher http.Flusher
+	w  http.ResponseWriter
+	rc *http.ResponseController
 }
 
-// NewEventWriter creates an EventWriter from the given ResponseWriter.
-// It returns an error if the writer does not support flushing.
+// NewEventWriter starts an event stream on w. It returns an error if the
+// writer cannot flush.
 func NewEventWriter(w http.ResponseWriter) (*EventWriter, error) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return nil, fmt.Errorf("response writer does not support flushing")
-	}
+	ew := &EventWriter{w: w, rc: http.NewResponseController(w)}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-
-	return &EventWriter{w: w, flusher: flusher}, nil
+	w.WriteHeader(http.StatusOK)
+	if err := ew.flush(); err != nil {
+		return nil, err
+	}
+	return ew, nil
 }
 
+// ErrInvalidEventName is returned by Send for an event name containing a line
+// break, which would end the event field early and let the rest of the name
+// inject fields of its own.
+var ErrInvalidEventName = errors.New("sse event name must not contain CR or LF")
+
+// sseLineBreaks matches the three line endings the event-stream format
+// recognises: CRLF, LF and CR.
+var sseLineBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n")
+
 // Send writes a named SSE event with the given data and flushes immediately.
+// Multi-line data is sent as one data: line per line, as the WHATWG
+// event-stream format requires; the client rejoins them with newlines.
 func (ew *EventWriter) Send(event, data string) error {
-	if _, err := fmt.Fprintf(ew.w, "event: %s\ndata: %s\n\n", event, data); err != nil {
+	if strings.ContainsAny(event, "\r\n") {
+		return ErrInvalidEventName
+	}
+	var b strings.Builder
+	b.WriteString("event: " + event + "\n")
+	for _, line := range strings.Split(sseLineBreaks.Replace(data), "\n") {
+		b.WriteString("data: " + line + "\n")
+	}
+	b.WriteString("\n")
+	return ew.write("%s", b.String())
+}
+
+// KeepAlive writes an SSE comment, which clients ignore, to hold the
+// connection open through idle proxies.
+func (ew *EventWriter) KeepAlive() error {
+	return ew.write(": keep-alive\n\n")
+}
+
+// write extends the connection's write deadline, then writes and flushes.
+// ErrNotSupported means the writer has no deadline to extend (a test
+// recorder, for one), so there is nothing to lift.
+func (ew *EventWriter) write(format string, args ...any) error {
+	if err := ew.rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return fmt.Errorf("extend write deadline: %w", err)
+	}
+	if _, err := fmt.Fprintf(ew.w, format, args...); err != nil {
 		return fmt.Errorf("write sse event: %w", err)
 	}
-	ew.flusher.Flush()
+	return ew.flush()
+}
+
+func (ew *EventWriter) flush() error {
+	if err := ew.rc.Flush(); err != nil {
+		return fmt.Errorf("flush sse stream: %w", err)
+	}
 	return nil
 }
 
-// SSEHandler streams server-sent events to connected clients.
-func SSEHandler(w http.ResponseWriter, r *http.Request) {
-	ew, err := NewEventWriter(w)
-	if err != nil {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
+// NewSSEHandler returns a handler that streams server-sent events, sending a
+// keep-alive comment every keepAlive while idle. Register it outside the
+// request-timeout group: the stream ends when the client goes away, not when a
+// request budget runs out.
+func NewSSEHandler(keepAlive time.Duration) http.HandlerFunc {
+	if keepAlive <= 0 {
+		keepAlive = DefaultSSEKeepAlive
 	}
-
-	ctx := r.Context()
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
+	return func(w http.ResponseWriter, r *http.Request) {
+		ew, err := NewEventWriter(w)
+		if err != nil {
+			// The 200 and headers are already on the wire, so no error status
+			// can follow. A writer that cannot flush cannot stream: end here.
 			return
-		case <-ticker.C:
-			// Send a keep-alive comment to prevent connection timeout.
-			if _, err := fmt.Fprintf(w, ": keep-alive\n\n"); err != nil {
+		}
+
+		ticker := time.NewTicker(keepAlive)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-r.Context().Done():
 				return
+			case <-ticker.C:
+				if err := ew.KeepAlive(); err != nil {
+					return
+				}
 			}
-			ew.flusher.Flush()
 		}
 	}
 }

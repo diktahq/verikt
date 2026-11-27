@@ -3,6 +3,7 @@ package checker
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/diktahq/verikt/internal/config"
@@ -134,6 +135,34 @@ func TestCheckResult_ComplianceZeroRulesChecked(t *testing.T) {
 	}
 }
 
+// Passed is severity-aware: it counted every violation, so a run whose only
+// findings were warnings — function metrics, naked_goroutine, the warning-level
+// structure detectors — did not pass.
+func TestCheckResult_PassedIgnoresWarningsAndInfo(t *testing.T) {
+	result := &CheckResult{
+		FunctionViolations:    []Violation{{Rule: "function_params", Severity: "warning"}},
+		StructureViolations:   []Violation{{Rule: RuleCmdAllowlist, Severity: "warning"}},
+		AntiPatternViolations: []AntiPattern{{Name: "naked_goroutine", Severity: "warning"}, {Name: "x", Severity: "info"}},
+	}
+	if !result.Passed() {
+		t.Error("Passed() must be true when every finding is a warning or info")
+	}
+	if !result.Fails(config.FailOnWarning) {
+		t.Error("Fails(warning) must be true when there are warnings")
+	}
+}
+
+func TestCheckResult_PassedFailsOnErrorOrUnsetSeverity(t *testing.T) {
+	withError := &CheckResult{AntiPatternViolations: []AntiPattern{{Name: "sql_concatenation", Severity: "error"}}}
+	if withError.Passed() {
+		t.Error("Passed() must be false with an error-severity finding")
+	}
+	unset := &CheckResult{StructureViolations: []Violation{{Rule: "required_dir"}}}
+	if unset.Passed() {
+		t.Error("a finding with no severity counts as an error")
+	}
+}
+
 func TestDetectOrphanPackages_FlagsUnmatchedPackage(t *testing.T) {
 	cfg := &config.VeriktConfig{
 		Architecture: "hexagonal",
@@ -199,6 +228,48 @@ func TestDetectMissingComponents(t *testing.T) {
 	}
 	if violations[0].Rule != "missing_component" {
 		t.Errorf("expected rule missing_component, got %s", violations[0].Rule)
+	}
+}
+
+func TestDetectMissingComponents_SkipsOptionalComponents(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "domain"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "domain", "order.go"), []byte("package domain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// platform/ and port/ are both absent; only port is required.
+	cfg := &config.VeriktConfig{
+		Language: "go",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"domain/**"}},
+			{Name: "platform", In: []string{"platform/**"}, Optional: true},
+			{Name: "port", In: []string{"port/**"}},
+		},
+	}
+	violations := detectMissingComponents(cfg, dir)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 missing_component violation (port), got %d: %v", len(violations), violations)
+	}
+	if want := `component "port"`; !strings.Contains(violations[0].Message, want) {
+		t.Errorf("violation = %q, want it to name %s", violations[0].Message, want)
+	}
+}
+
+// An optional component whose directory exists but holds no source is not
+// reported either: it is allowed to be empty.
+func TestDetectMissingComponents_SkipsOptionalComponentWithoutSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "platform"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.VeriktConfig{
+		Language:   "go",
+		Components: []config.Component{{Name: "platform", In: []string{"platform/**"}, Optional: true}},
+	}
+	if violations := detectMissingComponents(cfg, dir); len(violations) != 0 {
+		t.Fatalf("expected no violations for an empty optional component, got %v", violations)
 	}
 }
 

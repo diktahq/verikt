@@ -8,9 +8,13 @@ import (
 	"testing"
 )
 
-// makeAgent builds an AIAgent rooted under dir for testing.
+// makeAgent builds an AIAgent rooted under home for testing. It also points
+// HOME at home, and clears CLAUDE_CONFIG_DIR, so nothing in the test can reach
+// the real home directory or a profile's config dir.
 func makeAgent(t *testing.T, home, name, configDir, rulesSubDir string) AIAgent {
 	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv(claudeConfigDirEnv, "")
 	configPath := filepath.Join(home, configDir)
 	rulesPath := filepath.Join(home, rulesSubDir)
 	if err := os.MkdirAll(configPath, 0o755); err != nil {
@@ -46,10 +50,11 @@ func TestSetup_DetectsClaudeCode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	agents, err := detectInstalledAgents()
+	det, err := detectAgents(nil)
 	if err != nil {
-		t.Fatalf("detectInstalledAgents: %v", err)
+		t.Fatalf("detectAgents: %v", err)
 	}
+	agents := det.Selected
 
 	agent := findAgent(t, agents, "Claude Code")
 	if want := filepath.Join(home, ".claude"); agent.ConfigDir != want {
@@ -64,10 +69,11 @@ func TestSetup_DetectsNoAgents(t *testing.T) {
 	// otherwise point at a real config dir and be detected.
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 
-	agents, err := detectInstalledAgents()
+	det, err := detectAgents(nil)
 	if err != nil {
-		t.Fatalf("detectInstalledAgents: %v", err)
+		t.Fatalf("detectAgents: %v", err)
 	}
+	agents := det.Selected
 	if len(agents) != 0 {
 		t.Errorf("expected no agents, got %d: %v", len(agents), agents)
 	}
@@ -85,10 +91,11 @@ func TestSetup_ClaudeConfigDirEnvOverridesHome(t *testing.T) {
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", alias)
 
-	agents, err := detectInstalledAgents()
+	det, err := detectAgents(nil)
 	if err != nil {
-		t.Fatalf("detectInstalledAgents: %v", err)
+		t.Fatalf("detectAgents: %v", err)
 	}
+	agents := det.Selected
 
 	agent := findAgent(t, agents, "Claude Code")
 	if agent.ConfigDir != alias {
@@ -110,10 +117,11 @@ func TestSetup_ClaudeConfigDirEnvExpandsTilde(t *testing.T) {
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", "~/.claude-personal")
 
-	agents, err := detectInstalledAgents()
+	det, err := detectAgents(nil)
 	if err != nil {
-		t.Fatalf("detectInstalledAgents: %v", err)
+		t.Fatalf("detectAgents: %v", err)
 	}
+	agents := det.Selected
 
 	agent := findAgent(t, agents, "Claude Code")
 	if agent.ConfigDir != alias {
@@ -132,10 +140,11 @@ func TestSetup_ClaudeConfigDirEnvMissingDirNotDetected(t *testing.T) {
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude-absent"))
 
-	agents, err := detectInstalledAgents()
+	det, err := detectAgents(nil)
 	if err != nil {
-		t.Fatalf("detectInstalledAgents: %v", err)
+		t.Fatalf("detectAgents: %v", err)
 	}
+	agents := det.Selected
 	for _, a := range agents {
 		if a.Name == "Claude Code" {
 			t.Errorf("Claude Code should not be detected, got ConfigDir %q", a.ConfigDir)

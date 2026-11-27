@@ -1,0 +1,67 @@
+package {{index .ArchPaths "BFFGatewayPkg"}}
+
+import (
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
+)
+
+// ServicesEnv names the environment variable that lists backend services as
+// comma-separated name=baseURL pairs, e.g.
+//
+//	BFF_SERVICES="users=http://users:8080,orders=http://orders:8080"
+const ServicesEnv = "BFF_SERVICES"
+
+// ServicesFromEnv builds a client for every backend listed in BFF_SERVICES.
+// An unset variable yields no clients, so the gateway starts with nothing
+// reachable rather than a guessed default.
+func ServicesFromEnv(opts ...Option) (map[string]ServiceClient, error) {
+	clients, err := ParseServices(os.Getenv(ServicesEnv), opts...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ServicesEnv, err)
+	}
+	return clients, nil
+}
+
+// ParseServices builds clients from comma-separated name=baseURL pairs. Each
+// URL must be absolute http or https without credentials: secrets belong in a
+// secret manager, not in a service list that ends up in logs.
+func ParseServices(spec string, opts ...Option) (map[string]ServiceClient, error) {
+	clients := map[string]ServiceClient{}
+	for _, entry := range strings.Split(spec, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		name, rawURL, ok := strings.Cut(entry, "=")
+		name, rawURL = strings.TrimSpace(name), strings.TrimSpace(rawURL)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("entry %q: want name=baseURL", entry)
+		}
+		if _, dup := clients[name]; dup {
+			return nil, fmt.Errorf("service %q listed twice", name)
+		}
+		if err := validateBaseURL(rawURL); err != nil {
+			return nil, fmt.Errorf("service %q: %w", name, err)
+		}
+		clients[name] = NewHTTPClient(rawURL, opts...)
+	}
+	return clients, nil
+}
+
+func validateBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("parse base URL: %w", err)
+	}
+	switch {
+	case u.Scheme != "http" && u.Scheme != "https":
+		return fmt.Errorf("base URL scheme %q: want http or https", u.Scheme)
+	case u.Host == "":
+		return fmt.Errorf("base URL has no host")
+	case u.User != nil:
+		return fmt.Errorf("base URL must not carry credentials")
+	}
+	return nil
+}

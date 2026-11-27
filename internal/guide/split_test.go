@@ -42,7 +42,10 @@ func TestBuildIndexContent_CompactSummary(t *testing.T) {
 
 	content := buildIndexContent(opts)
 
-	assert.Contains(t, content, "globs: [\"**/*\"]")
+	// Claude Code loads a rule with no paths frontmatter at launch; that is
+	// what the always-loaded index needs, so it carries no frontmatter at all.
+	assert.True(t, strings.HasPrefix(content, claudeHeader), "index must start with the generated header, not frontmatter")
+	assert.NotContains(t, content, "globs:")
 	assert.Contains(t, content, "Architecture: hexagonal")
 	assert.Contains(t, content, "Hexagonal (ports & adapters)")
 	assert.Contains(t, content, "## Layer Rules")
@@ -125,14 +128,18 @@ func TestSplitVsMonolithic_NonClaude(t *testing.T) {
 	err := Generate(opts)
 	require.NoError(t, err)
 
-	// Cursor gets monolithic output with sentinels.
-	data, err := os.ReadFile(filepath.Join(dir, ".cursorrules"))
+	// Cursor gets the compact writer rules; Adding Code is on demand.
+	data, err := os.ReadFile(filepath.Join(dir, ".cursor", "rules", "verikt.mdc"))
 	require.NoError(t, err)
 	content := string(data)
 
 	assert.Contains(t, content, "Architecture: hexagonal")
-	assert.Contains(t, content, "## Layer Rules")
-	assert.Contains(t, content, "## Adding Code")
+	assert.NotContains(t, content, "## Adding Code")
+	assert.Contains(t, content, ".verikt/references/architecture.md")
+
+	ref, err := os.ReadFile(filepath.Join(dir, ".verikt", "references", "architecture.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(ref), "## Adding Code")
 }
 
 func TestSplitCleanup_RemovesOldFile(t *testing.T) {
@@ -140,9 +147,9 @@ func TestSplitCleanup_RemovesOldFile(t *testing.T) {
 	rulesDir := filepath.Join(dir, ".claude", "rules")
 	require.NoError(t, os.MkdirAll(rulesDir, 0o755))
 
-	// Create old monolithic file.
+	// Create old monolithic file, as every verikt since 0.1.0 wrote it.
 	oldPath := filepath.Join(rulesDir, "verikt.md")
-	require.NoError(t, os.WriteFile(oldPath, []byte("old content"), 0o644))
+	require.NoError(t, os.WriteFile(oldPath, []byte(claudeHeader+"old content"), 0o644))
 
 	opts := GenerateOptions{
 		ProjectDir:   dir,
@@ -282,7 +289,7 @@ func TestBuildIndexContent_WithoutFeatures(t *testing.T) {
 	assert.NotContains(t, content, "## Language Version")
 }
 
-func TestCategoryContent_HasGlobsFrontmatter(t *testing.T) {
+func TestCategoryContent_HasPathsFrontmatter(t *testing.T) {
 	opts := GenerateOptions{
 		Architecture: "hexagonal",
 		Capabilities: []string{"mysql"},
@@ -290,8 +297,72 @@ func TestCategoryContent_HasGlobsFrontmatter(t *testing.T) {
 
 	content := buildCategoryContent("data", []string{"mysql"}, opts)
 
-	// Should start with YAML frontmatter.
-	assert.True(t, strings.HasPrefix(content, "---\nglobs: ["))
-	assert.Contains(t, content, `"internal/repository/**"`)
-	assert.Contains(t, content, `"adapter/*repo/**"`)
+	// Claude Code scopes a rule with a `paths:` YAML list; it ignores `globs:`,
+	// which made every category file load in every session.
+	assert.True(t, strings.HasPrefix(content, "---\npaths:\n  - \"internal/repository/**\"\n"), "got:\n%s", content)
+	assert.Contains(t, content, "  - \"adapter/*repo/**\"\n")
+	assert.NotContains(t, content, "globs:")
+}
+
+func claudeRuleNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(dir, ".claude", "rules"))
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+// A category the project no longer has must not leave its file behind: Claude
+// Code would keep loading the stale rules.
+func TestWriteSplit_RemovesStaleCategoryFiles(t *testing.T) {
+	dir := t.TempDir()
+	opts := GenerateOptions{ProjectDir: dir, Target: "claude", Architecture: "hexagonal", Capabilities: []string{"http-api", "mysql"}}
+	require.NoError(t, Generate(opts))
+	require.FileExists(t, filepath.Join(dir, ".claude", "rules", "verikt-data.md"))
+
+	opts.Capabilities = []string{"http-api"}
+	require.NoError(t, Generate(opts))
+
+	assert.ElementsMatch(t, []string{"verikt-index.md", "verikt-http.md"}, claudeRuleNames(t, dir))
+}
+
+// Switching to --catalog-only replaces the split files with verikt.md, and
+// switching back removes verikt.md.
+func TestClaudeRules_SwitchingCatalogOnlyLeavesNoStaleFiles(t *testing.T) {
+	dir := t.TempDir()
+	full := GenerateOptions{ProjectDir: dir, Target: "claude", Architecture: "hexagonal", Capabilities: []string{"http-api"}}
+	require.NoError(t, Generate(full))
+
+	require.NoError(t, Generate(GenerateOptions{ProjectDir: dir, Target: "claude", CatalogOnly: true}))
+	assert.ElementsMatch(t, []string{"verikt.md"}, claudeRuleNames(t, dir))
+
+	require.NoError(t, Generate(full))
+	assert.ElementsMatch(t, []string{"verikt-index.md", "verikt-http.md"}, claudeRuleNames(t, dir))
+}
+
+// Only files verikt generated are removed: a user's own rule, even one whose
+// name starts with "verikt", is kept.
+func TestClaudeRules_KeepsUserFiles(t *testing.T) {
+	dir := t.TempDir()
+	rulesDir := filepath.Join(dir, ".claude", "rules")
+	require.NoError(t, os.MkdirAll(rulesDir, 0o755))
+	user := map[string]string{
+		"verikt-notes.md": "# my own verikt notes\n",
+		"go.md":           "# go rules\n",
+	}
+	for name, content := range user {
+		require.NoError(t, os.WriteFile(filepath.Join(rulesDir, name), []byte(content), 0o644))
+	}
+
+	require.NoError(t, Generate(GenerateOptions{ProjectDir: dir, Target: "claude", Architecture: "hexagonal", Capabilities: []string{"http-api"}}))
+	require.NoError(t, Generate(GenerateOptions{ProjectDir: dir, Target: "claude", CatalogOnly: true}))
+
+	for name, content := range user {
+		data, err := os.ReadFile(filepath.Join(rulesDir, name))
+		require.NoError(t, err)
+		assert.Equal(t, content, string(data))
+	}
 }

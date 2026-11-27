@@ -96,9 +96,7 @@ pub fn handle_anti_pattern_check(req: &CheckRequest) -> Vec<EngineResponse> {
         all_findings.extend(detect_init_abuse(root, source, &rel_file));
         all_findings.extend(detect_naked_goroutines(root, source, &rel_file));
         all_findings.extend(detect_swallowed_errors(root, source, &rel_file));
-        all_findings.extend(detect_context_background(
-            root, source, &rel_file, &pkg_path,
-        ));
+        all_findings.extend(detect_context_background(root, source, &rel_file));
         all_findings.extend(detect_sql_concatenation(root, source, &rel_file));
         all_findings.extend(detect_uuid_v4_as_key(root, source, &rel_file));
         all_findings.extend(detect_fat_handlers(root, source, &rel_file, &pkg_path));
@@ -1126,72 +1124,192 @@ fn detect_swallowed_errors<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec
     findings
 }
 
-/// Detect `context.Background()` in handler/adapter packages where the request
-/// context should be used instead.
-fn detect_context_background<'a>(
-    root: Node<'a>,
-    source: &[u8],
-    file: &str,
-    pkg_path: &str,
-) -> Vec<DetFinding> {
-    if !is_handler_package(pkg_path) {
-        return vec![];
-    }
-
-    // Collect lines where context.Background() is legitimately used:
-    // inside context.WithTimeout/WithDeadline (shutdown pattern) or init calls.
-    let mut skip_lines: std::collections::HashSet<usize> = std::collections::HashSet::new();
+/// Detect `context.Background()` passed to a downstream call where a request
+/// context is in scope.
+///
+/// The risk is that a caller's cancellation and deadline are dropped: the
+/// request was cancelled or timed out, and the downstream call carries on. That
+/// is only reachable where there was a request context to use (INV-005), so a
+/// call is reported when `context.Background()` is an argument to another call
+/// inside a function, method or function literal — or a function literal nested
+/// in one — with a named parameter of type `*http.Request` or
+/// `context.Context`.
+///
+/// This replaced a package-path gate that matched "handler", "controller",
+/// "adapter", "transport" or "api" anywhere in the path. That reported `main()`
+/// in `api/cmd`, CLI commands in an `mcpadapter` package and anything under
+/// `rapid` or `capital`, none of which had a request to drop, and it missed a
+/// handler in a package named `web`. Scope decides it now, whatever the package
+/// is called; the exemptions below are what made scope precise enough to stand
+/// without the gate on the ADR-012 corpus.
+fn detect_context_background<'a>(root: Node<'a>, source: &[u8], file: &str) -> Vec<DetFinding> {
     let mut call_nodes: Vec<Node> = Vec::new();
     collect_nodes(root, "call_expression", &mut call_nodes);
 
-    for call in &call_nodes {
-        let fn_text = call
-            .child_by_field_name("function")
-            .map(|f| node_text(f, source))
+    call_nodes
+        .into_iter()
+        .filter(|call| is_context_background_call(*call, source))
+        .filter(|call| is_call_argument(*call))
+        .filter(|call| !is_exempt_background(*call, source))
+        .filter_map(|call| {
+            let in_scope = request_context_in_scope(call, source)?;
+            Some(DetFinding {
+                detector: "context_background_in_handler",
+                file: file.to_string(),
+                line: line_of(call),
+                message: in_scope.message(),
+            })
+        })
+        .collect()
+}
+
+/// A request context reachable from a `context.Background()` call.
+enum RequestContext<'s> {
+    /// A `*http.Request` parameter, by name.
+    Request(&'s str),
+    /// A `context.Context` parameter, by name.
+    Context(&'s str),
+}
+
+impl RequestContext<'_> {
+    fn message(&self) -> String {
+        match self {
+            RequestContext::Request(r) => format!(
+                "context.Background() with request {r} in scope drops its cancellation and deadline — use {r}.Context()"
+            ),
+            RequestContext::Context(ctx) => format!(
+                "context.Background() with {ctx} in scope drops the caller's cancellation and deadline — pass {ctx}"
+            ),
+        }
+    }
+}
+
+/// `context.Background()` handed straight to another call. Compared
+/// (`ctx != context.Background()`), assigned as a nil fallback, or returned, it
+/// reaches nothing downstream, so there is no cancellation to drop.
+fn is_call_argument(call: Node) -> bool {
+    call.parent().is_some_and(|args| {
+        args.kind() == "argument_list"
+            && args
+                .parent()
+                .is_some_and(|outer| outer.kind() == "call_expression")
+    })
+}
+
+/// The nearest request context in scope at `node`: a parameter of the
+/// enclosing function, method or function literal, or of any function that
+/// encloses that one.
+///
+/// None when the call is reached through a `defer` statement, a `go`
+/// statement or an `if err != nil` body first. Cleanup (rollback, close,
+/// unlock) must run after the caller's context is cancelled, which is exactly
+/// when using it would fail; a goroutine outlives the call that started it, and
+/// a request context is cancelled when the handler returns. Detaching is
+/// correct in all three.
+fn request_context_in_scope<'s>(node: Node, source: &'s [u8]) -> Option<RequestContext<'s>> {
+    let mut current = node.parent();
+    while let Some(n) = current {
+        match n.kind() {
+            "defer_statement" | "go_statement" => return None,
+            "block" if is_error_branch(n, source) => return None,
+            "function_declaration" | "method_declaration" | "func_literal" => {
+                if let Some(found) = n
+                    .child_by_field_name("parameters")
+                    .and_then(|params| request_parameter(params, source))
+                {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+        current = n.parent();
+    }
+    None
+}
+
+/// The body of `if err != nil { ... }`. Cleanup there runs after a failure the
+/// caller's context may have caused (cancelled, deadline passed), so a fresh
+/// context is what lets it run at all.
+fn is_error_branch(block: Node, source: &[u8]) -> bool {
+    block.parent().is_some_and(|stmt| {
+        stmt.kind() == "if_statement"
+            && stmt
+                .child_by_field_name("consequence")
+                .is_some_and(|c| c.id() == block.id())
+            && stmt
+                .child_by_field_name("condition")
+                .is_some_and(|cond| is_err_neq_nil(cond, source))
+    })
+}
+
+/// The first named `*http.Request` or `context.Context` parameter in a
+/// parameter list. A parameter that is unnamed or named `_` is skipped: the
+/// signature already says the context is deliberately ignored, usually to
+/// satisfy an interface, and there is no name to point the reader at.
+fn request_parameter<'s>(params: Node, source: &'s [u8]) -> Option<RequestContext<'s>> {
+    let mut cursor = params.walk();
+    for decl in params.named_children(&mut cursor) {
+        if decl.kind() != "parameter_declaration" {
+            continue;
+        }
+        let ty = decl
+            .child_by_field_name("type")
+            .map(|t| node_text(t, source))
             .unwrap_or("");
-        if fn_text == "context.WithTimeout" || fn_text == "context.WithDeadline" {
-            // Mark any context.Background() inside this call's args as skip.
-            if let Some(args) = call.child_by_field_name("arguments") {
-                let mut inner_calls: Vec<Node> = Vec::new();
-                collect_nodes(args, "call_expression", &mut inner_calls);
-                for inner in inner_calls {
-                    if is_context_background_call(inner, source) {
-                        skip_lines.insert(inner.start_position().row);
-                    }
-                }
-            }
+        let mut names = decl.walk();
+        let name = decl
+            .children_by_field_name("name", &mut names)
+            .map(|n| node_text(n, source))
+            .find(|n| *n != "_");
+        match (ty, name) {
+            ("*http.Request", Some(n)) => return Some(RequestContext::Request(n)),
+            ("context.Context", Some(n)) => return Some(RequestContext::Context(n)),
+            _ => {}
         }
-        if is_init_call(fn_text)
-            && let Some(args) = call.child_by_field_name("arguments")
+    }
+    None
+}
+
+/// `context.Background()` inside the arguments of a call that detaches on
+/// purpose or does not care about cancellation:
+///
+/// - `context.WithTimeout`, `WithDeadline`, `WithCancel`, `WithValue`, ...:
+///   a context deliberately derived from the root (a bounded shutdown, a
+///   listener that must outlive the call, an OAuth refresh);
+/// - a setup call (`Connect`, `Open`, `Dial`, ...), which creates a resource
+///   that outlives the request;
+/// - a logging call, where the context carries values, not cancellation.
+fn is_exempt_background(call: Node, source: &[u8]) -> bool {
+    let mut current = call.parent();
+    while let Some(n) = current {
+        if n.kind() == "argument_list"
+            && let Some(outer) = n.parent()
+            && outer.kind() == "call_expression"
         {
-            let mut inner_calls: Vec<Node> = Vec::new();
-            collect_nodes(args, "call_expression", &mut inner_calls);
-            for inner in inner_calls {
-                if is_context_background_call(inner, source) {
-                    skip_lines.insert(inner.start_position().row);
-                }
+            let fn_text = outer
+                .child_by_field_name("function")
+                .map(|f| node_text(f, source))
+                .unwrap_or("");
+            if fn_text.starts_with("context.With") || is_init_call(fn_text) || is_log_call(fn_text)
+            {
+                return true;
             }
         }
+        current = n.parent();
     }
+    false
+}
 
-    let mut findings = Vec::new();
-    for call in &call_nodes {
-        if is_context_background_call(*call, source) {
-            let row = call.start_position().row;
-            if !skip_lines.contains(&row) {
-                findings.push(DetFinding {
-                    detector: "context_background_in_handler",
-                    file: file.to_string(),
-                    line: line_of(*call),
-                    message:
-                        "context.Background() in handler — use request context (r.Context()) for proper cancellation"
-                            .to_string(),
-                });
-            }
-        }
-    }
-
-    findings
+/// A call to a logger method, recognised by its method name: `Printf`,
+/// `Info`, `ErrorContext`, `LogAttrs` and the like.
+fn is_log_call(fn_text: &str) -> bool {
+    const LOG_METHODS: &[&str] = &[
+        "Print", "Printf", "Println", "Log", "Logf", "LogAttrs", "Debug", "Debugf", "Info",
+        "Infof", "Warn", "Warnf", "Error", "Errorf",
+    ];
+    let method = fn_text.rsplit('.').next().unwrap_or(fn_text);
+    let base = method.strip_suffix("Context").unwrap_or(method);
+    fn_text.contains('.') && LOG_METHODS.contains(&base)
 }
 
 /// Detect SQL string concatenation (injection risk).
@@ -2339,5 +2457,225 @@ mod tests {
             "internal/models".to_string(),
         ];
         assert!(detect_mvc_in_hexagonal(&mvc_only).is_empty());
+    }
+
+    /// (case name, package path, source, expected finding lines).
+    type CtxCase<'a> = (&'a str, &'a str, &'a str, Vec<u32>);
+
+    /// The package path is part of each case to show it no longer decides
+    /// anything: the detector reads scope, not the path.
+    fn ctx_background_lines(src: &str) -> Vec<u32> {
+        let tree = parse(src);
+        detect_context_background(tree.root_node(), src.as_bytes(), "test.go")
+            .iter()
+            .map(|f| f.line)
+            .collect()
+    }
+
+    fn assert_ctx_cases(cases: Vec<CtxCase<'_>>) {
+        for (name, pkg, src, want) in cases {
+            let got = ctx_background_lines(src);
+            assert_eq!(got, want, "{name} (package {pkg}):\n{src}");
+        }
+    }
+
+    /// context.Background() is only a defect where a request context was there
+    /// to be used. The detector decided "handler" from the package path, by
+    /// substring, so the ADR-012 corpus audit found it reporting `main()` in an
+    /// `api/cmd` package (signal.NotifyContext and an OpenTelemetry shutdown,
+    /// both correct), a CLI command in an `mcpadapter` package, and any path
+    /// containing "rapid" or "capital". None of those had a request in scope, so
+    /// no cancellation was dropped and there was nothing to act on (INV-005).
+    #[test]
+    fn context_background_without_request_in_scope_is_silent() {
+        assert_ctx_cases(vec![
+            (
+                "main in an api package: signal context and telemetry shutdown",
+                "api/cmd",
+                "package main\n\nimport (\n\t\"context\"\n\t\"os\"\n\t\"os/signal\"\n)\n\nfunc main() {\n\tctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)\n\tdefer stop()\n\totelShutdown := setupTelemetry()\n\tdefer otelShutdown(context.Background())\n\trun(ctx)\n}\n",
+                vec![],
+            ),
+            (
+                "CLI command with no request in an adapter package",
+                "internal/mcpadapter",
+                "package mcpadapter\n\nimport \"context\"\n\nfunc runServe(args []string) error {\n\tctx := context.Background()\n\treturn serve(ctx, args)\n}\n",
+                vec![],
+            ),
+            (
+                "package named rapid",
+                "internal/rapid",
+                "package rapid\n\nimport \"context\"\n\nfunc Run() error {\n\treturn process(context.Background())\n}\n",
+                vec![],
+            ),
+            (
+                "package named capital",
+                "internal/capital",
+                "package capital\n\nimport \"context\"\n\nfunc Recompute() error {\n\treturn rebuild(context.Background())\n}\n",
+                vec![],
+            ),
+            (
+                "background workers started from main",
+                "api/cmd/worker",
+                "package main\n\nimport \"context\"\n\nfunc main() {\n\tgo poll(context.Background())\n\tgo func() {\n\t\tdrain(context.Background())\n\t}()\n\tselect {}\n}\n",
+                vec![],
+            ),
+            (
+                "constructor with no context parameter in a handler package",
+                "internal/adapter/handler",
+                "package handler\n\nimport \"context\"\n\nfunc New() *Handler {\n\treturn &Handler{base: context.Background()}\n}\n",
+                vec![],
+            ),
+            (
+                "parameter of another type named like a request",
+                "internal/handler",
+                "package handler\n\nimport \"context\"\n\nfunc Replay(req Request) error {\n\treturn send(context.Background(), req)\n}\n",
+                vec![],
+            ),
+        ]);
+    }
+
+    /// A request context in scope is what makes the risk reachable: the caller
+    /// handed this code a cancellation signal and a deadline, and
+    /// context.Background() throws both away for the downstream call. That is
+    /// true whatever the package is called, so these fire outside handler-named
+    /// packages too.
+    #[test]
+    fn context_background_with_request_in_scope_is_reported() {
+        assert_ctx_cases(vec![
+            (
+                "http handler in a package with no handler-like name",
+                "internal/web",
+                "package web\n\nimport (\n\t\"context\"\n\t\"net/http\"\n)\n\nfunc Show(w http.ResponseWriter, r *http.Request) {\n\titem, _ := load(context.Background(), r.URL.Path)\n\twrite(w, item)\n}\n",
+                vec![9],
+            ),
+            (
+                "method taking ctx calls downstream with context.Background()",
+                "internal/service",
+                "package service\n\nimport \"context\"\n\nfunc (s *Service) Place(ctx context.Context, id string) error {\n\treturn s.repo.Save(context.Background(), id)\n}\n",
+                vec![6],
+            ),
+            (
+                "handler written as a function literal in main",
+                "cmd/server",
+                "package main\n\nimport (\n\t\"context\"\n\t\"net/http\"\n)\n\nfunc main() {\n\thttp.HandleFunc(\"/\", func(w http.ResponseWriter, r *http.Request) {\n\t\t_ = fetch(context.Background())\n\t})\n}\n",
+                vec![10],
+            ),
+            (
+                "function literal nested in a handler",
+                "internal/adapter/handler",
+                "package handler\n\nimport (\n\t\"context\"\n\t\"net/http\"\n)\n\nfunc Notify(w http.ResponseWriter, r *http.Request) {\n\teach(func(id string) {\n\t\t_ = send(context.Background(), id)\n\t})\n}\n",
+                vec![10],
+            ),
+            (
+                "grouped parameters with a context among them",
+                "internal/store",
+                "package store\n\nimport \"context\"\n\nfunc Load(ctx context.Context, a, b string) error {\n\treturn query(context.Background(), a, b)\n}\n",
+                vec![6],
+            ),
+        ]);
+    }
+
+    /// Shapes the ADR-012 corpus produced once scope decided instead of the
+    /// package path, each reduced from a real repository (pgx, go-redis, the MCP
+    /// Go SDK, grpc-gateway, and two applications). A context is in scope in
+    /// every one, and none drops a caller's cancellation for a downstream call:
+    /// the Background() value is compared, used as a fallback, given to a
+    /// cleanup that must run after cancellation (deferred, or on the error
+    /// path, where the caller's context may be why it failed), given to a
+    /// goroutine that
+    /// outlives the caller, detached on purpose, or handed to a logger.
+    #[test]
+    fn context_background_that_drops_nothing_is_silent() {
+        let wrap = |body: &str| {
+            format!(
+                "package p\n\nimport \"context\"\n\nfunc (s *S) Do(ctx context.Context) error {{\n{body}\n\treturn nil\n}}\n"
+            )
+        };
+        let bodies = [
+            (
+                "compared, not passed",
+                "\tif ctx != context.Background() {\n\t\ts.watch(ctx)\n\t}",
+            ),
+            (
+                "nil-context fallback",
+                "\tif ctx == nil {\n\t\tctx = context.Background()\n\t}",
+            ),
+            (
+                "stored as a default",
+                "\tif s.base == nil {\n\t\ts.base = context.Background()\n\t}",
+            ),
+            (
+                "deferred rollback",
+                "\ttx := s.begin(ctx)\n\tdefer func() { _ = tx.Rollback(context.Background()) }()",
+            ),
+            (
+                "deferred close",
+                "\tconn := s.conn(ctx)\n\tdefer conn.Close(context.Background())",
+            ),
+            (
+                "shutdown after ctx is done",
+                "\tgo func() {\n\t\t<-ctx.Done()\n\t\t_ = s.srv.Shutdown(context.Background())\n\t}()",
+            ),
+            (
+                "work handed to a goroutine",
+                "\tgo s.audit(context.Background())",
+            ),
+            (
+                "cleanup on the error path",
+                "\tif err := s.migrate(ctx); err != nil {\n\t\t_, _ = s.conn.Exec(context.Background(), \"DROP DATABASE scratch\")\n\t\treturn err\n\t}",
+            ),
+            (
+                "detached on purpose",
+                "\tlistenCtx, cancel := context.WithCancel(context.Background())\n\ts.listen(listenCtx, cancel)",
+            ),
+            (
+                "detached with a value",
+                "\trefresh := context.WithValue(context.Background(), key{}, s.client)\n\ts.refresh(refresh)",
+            ),
+            (
+                "logged",
+                "\tinternal.Logger.Printf(context.Background(), \"moving %s\", s.id)",
+            ),
+            (
+                "logged with slog",
+                "\ts.log.InfoContext(context.Background(), \"moving\", \"id\", s.id)",
+            ),
+        ];
+        let mut cases: Vec<(String, String)> = bodies
+            .iter()
+            .map(|(name, body)| (name.to_string(), wrap(body)))
+            .collect();
+        cases.push((
+            "context parameter deliberately ignored".to_string(),
+            "package p\n\nimport \"context\"\n\nfunc (s stub) Get(_ context.Context, id string) error {\n\treturn s.real.Get(context.Background(), id)\n}\n".to_string(),
+        ));
+        for (name, src) in cases {
+            assert_eq!(
+                ctx_background_lines(&src),
+                Vec::<u32>::new(),
+                "{name}:\n{src}"
+            );
+        }
+    }
+
+    /// The two existing exemptions still hold inside a request scope: a
+    /// deliberately detached context with its own bound, and a call that sets up
+    /// a long-lived resource.
+    #[test]
+    fn context_background_exemptions_hold_in_request_scope() {
+        assert_ctx_cases(vec![
+            (
+                "bounded detached context inside a handler",
+                "internal/handler",
+                "package handler\n\nimport (\n\t\"context\"\n\t\"net/http\"\n\t\"time\"\n)\n\nfunc Audit(w http.ResponseWriter, r *http.Request) {\n\tctx, cancel := context.WithTimeout(context.Background(), time.Second)\n\tdefer cancel()\n\trecord(ctx)\n}\n",
+                vec![],
+            ),
+            (
+                "connection set up from a function that takes ctx",
+                "internal/store",
+                "package store\n\nimport \"context\"\n\nfunc Open(ctx context.Context, dsn string) (*Pool, error) {\n\treturn pgx.Connect(context.Background(), dsn)\n}\n",
+                vec![],
+            ),
+        ]);
     }
 }

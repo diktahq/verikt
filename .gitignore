@@ -43,8 +43,12 @@ engine-artifacts/
 # edikt hook runtime state (machine-local, not project config)
 .edikt/state/
 
-# Internal material: brand, GTM, ICP, review reports, maintainer scripts. None of
-# it describes the tool, and this repository is public.
+# Internal material: brand, GTM, ICP, review reports. None of it describes the
+# tool, and this repository is public.
 docs/internal/
 docs/product/
-scripts/corpus-audit.sh
+
+# Corpus audit reports quote source from the repositories audited, which may be
+# private. scripts/corpus-audit.sh writes them outside the checkout and refuses a
+# path inside it; this is the second guard.
+corpus-report*.md

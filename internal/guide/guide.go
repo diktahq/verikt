@@ -1,15 +1,12 @@
 package guide
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/diktahq/verikt/internal/config"
-	"github.com/diktahq/verikt/internal/rules"
 )
 
 // GenerateOptions holds the inputs for guide generation.
@@ -26,42 +23,49 @@ type GenerateOptions struct {
 	Features          map[string]bool          // detected language features; only true entries are shown
 	GuideMode         string                   // "passive" | "audit" | "prompted" (default: "passive")
 	SeverityOverrides config.SeverityOverrides // path-scoped severity overrides from verikt.yaml
+	Notices           io.Writer                // optional: receives non-fatal notices (e.g. legacy .cursorrules migration)
 }
 
 // Generate produces guide files for the specified target(s).
+//
+// Every target receives the same compact, always-loaded writer rules
+// (buildWriterRules). Longer material — capability catalog, reviewer
+// checklist, full layer detail, and the scaffold interview in catalog-only
+// output — is written once to on-demand references under .verikt/references/
+// (INV-001).
 func Generate(opts GenerateOptions) error {
 	targets, err := resolveTargets(opts.Target, opts.ProjectDir)
 	if err != nil {
 		return err
 	}
 
-	// Monolithic content for non-Claude targets (built lazily).
-	var monolithic string
-	monolithicBuilt := false
+	if err := writeReferences(opts.ProjectDir, buildReferences(opts)); err != nil {
+		return fmt.Errorf("write guide references: %w", err)
+	}
 
+	writer := buildWriterRules(opts)
 	for _, t := range targets {
 		if ct, ok := t.(*claudeTarget); ok && !opts.CatalogOnly {
-			sc := buildSplitContent(opts)
-			if err := ct.WriteSplit(opts.ProjectDir, sc); err != nil {
+			if err := ct.WriteSplit(opts.ProjectDir, buildSplitContent(opts)); err != nil {
 				return fmt.Errorf("write split guide: %w", err)
 			}
-		} else {
-			if !monolithicBuilt {
-				monolithic = buildContent(opts)
-				monolithicBuilt = true
-			}
-			if err := t.Write(opts.ProjectDir, monolithic); err != nil {
-				return fmt.Errorf("write guide for %s: %w", t.Name(), err)
-			}
+			continue
+		}
+		if ct, ok := t.(*cursorTarget); ok {
+			ct.notices = opts.Notices
+		}
+		if err := t.Write(opts.ProjectDir, writer); err != nil {
+			return fmt.Errorf("write guide for %s: %w", t.Name(), err)
 		}
 	}
 	return nil
 }
 
-// GenerateFromConfig reads an VeriktConfig and generates guides.
-// An optional fs.FS can be passed to enable template pattern extraction.
-func GenerateFromConfig(projectDir string, cfg *config.VeriktConfig, target string, templateFS ...fs.FS) error {
-	opts := GenerateOptions{
+// OptionsFromConfig returns the GenerateOptions derived from verikt.yaml for
+// projectDir and target. Callers may set optional fields (TemplateFS, Notices)
+// before passing the result to Generate.
+func OptionsFromConfig(projectDir string, cfg *config.VeriktConfig, target string) GenerateOptions {
+	return GenerateOptions{
 		ProjectDir:        projectDir,
 		Target:            target,
 		Architecture:      cfg.Architecture,
@@ -71,6 +75,12 @@ func GenerateFromConfig(projectDir string, cfg *config.VeriktConfig, target stri
 		GuideMode:         cfg.Guide.GuideMode(),
 		SeverityOverrides: cfg.SeverityOverrides,
 	}
+}
+
+// GenerateFromConfig reads an VeriktConfig and generates guides.
+// An optional fs.FS can be passed to enable template pattern extraction.
+func GenerateFromConfig(projectDir string, cfg *config.VeriktConfig, target string, templateFS ...fs.FS) error {
+	opts := OptionsFromConfig(projectDir, cfg, target)
 	if len(templateFS) > 0 {
 		opts.TemplateFS = templateFS[0]
 	}
@@ -89,6 +99,7 @@ func buildContent(opts GenerateOptions) string {
 
 	writeHeader(&b)
 	writeAgentInstructions(&b, opts.GuideMode)
+	b.WriteString("**Before you finish:** run through the Verification Checklist at the bottom of this guide.\n\n")
 	writeGovernanceCheckpoint(&b)
 
 	if !opts.CatalogOnly {
@@ -240,7 +251,6 @@ func writeAgentInstructions(b *strings.Builder, mode ...string) {
 	b.WriteString("This guide contains two types of content:\n\n")
 	b.WriteString("- **🔴 MUST** — Implementation requirements. If a MUST applies to what you are building, implement it. The only valid reason to skip is if it genuinely does not apply — state that explicitly.\n")
 	b.WriteString("- **🟡 SHOULD** — Production readiness recommendations. Implement if scope allows; otherwise flag as a known gap.\n\n")
-	b.WriteString("**Before you finish:** run through the Verification Checklist at the bottom of this guide.\n\n")
 }
 
 // writeGovernanceCheckpoint writes a pre-action compliance checkpoint for the agent.
@@ -403,6 +413,15 @@ func writeArchitecture(b *strings.Builder, arch string) {
 	}
 }
 
+// optionalSuffix marks a component the project may legitimately not have yet,
+// so an agent does not read its absence as architectural drift.
+func optionalSuffix(c config.Component) string {
+	if c.Optional {
+		return " (optional: may be absent)"
+	}
+	return ""
+}
+
 func writeLayerRules(b *strings.Builder, arch string, components []config.Component) {
 	b.WriteString("## Layer Rules\n\n")
 
@@ -416,7 +435,7 @@ func writeLayerRules(b *strings.Builder, arch string, components []config.Compon
 	}
 
 	for _, c := range components {
-		b.WriteString("### " + c.Name + "\n")
+		b.WriteString("### " + c.Name + optionalSuffix(c) + "\n")
 		b.WriteString("- Directories: " + strings.Join(c.In, ", ") + "\n")
 		if len(c.MayDependOn) == 0 {
 			b.WriteString("- Dependencies: none (innermost layer)\n")
@@ -723,7 +742,7 @@ func capabilityDir(cap string) string {
 		"devcontainer":  ".devcontainer/",
 		"templ":         "adapter/httphandler/views/",
 		"htmx":          "adapter/httphandler/",
-		"static-assets": "static/",
+		"static-assets": "adapter/httphandler/static/",
 	}
 	if d, ok := dirs[cap]; ok {
 		return d
@@ -732,32 +751,7 @@ func capabilityDir(cap string) string {
 }
 
 func writeRuleSummaries(b *strings.Builder, projectDir string) {
-	if projectDir == "" {
-		return
-	}
-
-	rulesDir := filepath.Join(projectDir, ".verikt", "rules")
-	if _, err := os.Stat(rulesDir); errors.Is(err, fs.ErrNotExist) {
-		return
-	}
-
-	loadedRules, statuses, err := rules.LoadRules(rulesDir, projectDir)
-	if err != nil {
-		return
-	}
-
-	// Filter to valid rules only.
-	var validRules []rules.Rule
-	statusMap := make(map[string]string, len(statuses))
-	for _, s := range statuses {
-		statusMap[s.Rule.ID] = s.Status
-	}
-	for _, r := range loadedRules {
-		if statusMap[r.ID] == "valid" {
-			validRules = append(validRules, r)
-		}
-	}
-
+	validRules := loadValidRules(projectDir)
 	if len(validRules) == 0 {
 		return
 	}

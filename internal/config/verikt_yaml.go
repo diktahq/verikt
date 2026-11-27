@@ -3,10 +3,12 @@ package config
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // SeverityOverride configures a path-scoped severity for a violation rule.
@@ -26,10 +28,12 @@ type SeverityOverride struct {
 // Override key namespace:
 //   - Dependency violations:   violation.Rule  → "dependency", "arch/domain", "arch/handler", …
 //   - Architecture violations: violation.Rule  → "orphan_package", "missing_component"
-//   - Structure violations:    violation.Rule  → "required_dir", "forbidden_dir"
+//   - Structure violations:    violation.Rule  → "required_dir", "forbidden_dir",
+//     "cmd_allowlist", "live_dot_claude_fixture", "silent_ci_swallow",
+//     "mutable_install_url", "invalid_allow_directive"
 //   - Function violations:     violation.Rule  → "max_lines", "max_params", "max_return_values"
 //   - Proxy rules:             violation.RuleID → user-defined IDs from .verikt/rules/ YAML files
-//   - Anti-patterns:           NOT overridable (hardcoded safety rules)
+//   - Anti-patterns:           antipattern.Name → "sql_concatenation", "god_package", …
 //
 // First match wins when evaluating a file path.
 type SeverityOverrides map[string][]SeverityOverride
@@ -55,6 +59,67 @@ type CheckConfig struct {
 	// that legitimately don't belong to any declared component.
 	// Example: ["generated/**", "vendor/**", "tools/**"]
 	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+
+	// AllowedEntrypoints turns on the cmd_allowlist detector (Go projects).
+	// Each entry is a project-relative directory holding a `package main`,
+	// such as "cmd/server", or "." for a main package in the project root.
+	//
+	// nil (key absent or null) leaves the detector off. A present but empty
+	// list turns it on with nothing approved, so every entrypoint is reported.
+	// The pointer is what keeps those two apart through a save and load.
+	AllowedEntrypoints *[]string `yaml:"allowed_entrypoints,omitempty" json:"allowed_entrypoints,omitempty"`
+
+	// FailOn is the lowest finding severity that fails `verikt check`: "error"
+	// (the default, also when empty) or "warning". The --strict flag sets
+	// "warning" for one run and takes precedence over this field.
+	FailOn string `yaml:"fail_on,omitempty" json:"fail_on,omitempty"`
+
+	// SilentCISwallow tunes the silent_ci_swallow check, which is always on.
+	SilentCISwallow SilentCISwallowConfig `yaml:"silent_ci_swallow,omitempty" json:"silent_ci_swallow,omitempty"`
+
+	// MutableInstallURL tunes the mutable_install_url check, which is always
+	// on for CI, script, build and container files.
+	MutableInstallURL MutableInstallURLConfig `yaml:"mutable_install_url,omitempty" json:"mutable_install_url,omitempty"`
+}
+
+// SilentCISwallowConfig tunes the silent_ci_swallow check.
+type SilentCISwallowConfig struct {
+	// ExtraCommands are command names, or a command followed by fixed
+	// arguments ("deno test"), treated as verification commands in addition
+	// to the built-in list, so `<command> || true` on them is reported.
+	ExtraCommands []string `yaml:"extra_commands,omitempty" json:"extra_commands,omitempty"`
+}
+
+// MutableInstallURLConfig tunes the mutable_install_url check.
+type MutableInstallURLConfig struct {
+	// IncludeDocs also scans fenced code blocks in README.md and
+	// docs/**/*.md. Off by default: install docs routinely show a
+	// convenience one-liner.
+	IncludeDocs bool `yaml:"include_docs,omitempty" json:"include_docs,omitempty"`
+}
+
+// EntrypointAllowlist returns the normalised allowed entrypoints and whether
+// the cmd_allowlist detector is on.
+func (c CheckConfig) EntrypointAllowlist() ([]string, bool) {
+	if c.AllowedEntrypoints == nil {
+		return nil, false
+	}
+	out := make([]string, 0, len(*c.AllowedEntrypoints))
+	for _, e := range *c.AllowedEntrypoints {
+		out = append(out, NormalizeEntrypoint(e))
+	}
+	return out, true
+}
+
+// NormalizeEntrypoint converts an entrypoint path to its canonical form:
+// slash-separated and cleaned, with no leading "./" or trailing "/". The
+// project root is ".". An empty or blank entry stays empty.
+func NormalizeEntrypoint(p string) string {
+	p = strings.TrimSpace(strings.ReplaceAll(p, "\\", "/"))
+	if p == "" {
+		return ""
+	}
+	return path.Clean(p)
 }
 
 // GuideConfig controls how `verikt guide` instructs AI agents.
@@ -94,6 +159,11 @@ type Component struct {
 	Name        string   `yaml:"name" json:"name"`
 	In          []string `yaml:"in" json:"in"`
 	MayDependOn []string `yaml:"may_depend_on" json:"may_depend_on"`
+	// Optional marks a component a project may legitimately not have yet, such
+	// as platform code that only some capabilities write. An optional component
+	// with no code is not reported as missing_component; its dependency rules
+	// still apply once code exists.
+	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
 type RulesConfig struct {
@@ -189,20 +259,125 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 			}
 		}
 	}
-	// Validate severity_overrides entries.
-	validSeverities := map[string]bool{"must": true, "should": true, "ignore": true}
-	for key, overrides := range cfg.SeverityOverrides {
+	errs = append(errs, ValidateAllowedEntrypoints(cfg.Check)...)
+	if err := ValidateFailOn(cfg.Check.FailOn); err != nil {
+		errs = append(errs, err)
+	}
+	errs = append(errs, ValidateSilentCISwallow(cfg.Check.SilentCISwallow)...)
+	errs = append(errs, validateSeverityOverrides(cfg.SeverityOverrides)...)
+	return errs
+}
+
+// ValidateSilentCISwallow rejects check.silent_ci_swallow.extra_commands
+// entries that are blank, duplicated, or contain shell syntax. An entry is a
+// command name ("migrate-db") or a command followed by fixed arguments
+// ("deno test"), never a pipeline or a quoted string.
+func ValidateSilentCISwallow(c SilentCISwallowConfig) []error {
+	var errs []error
+	seen := map[string]bool{}
+	for i, raw := range c.ExtraCommands {
+		cmd := strings.Join(strings.Fields(raw), " ")
+		switch {
+		case cmd == "":
+			errs = append(errs, fmt.Errorf("check.silent_ci_swallow.extra_commands[%d] is empty", i))
+		case strings.ContainsAny(cmd, "|;&$()<>`'\"\\#="):
+			errs = append(errs, fmt.Errorf("check.silent_ci_swallow.extra_commands[%d] %q must be a command name, not shell syntax", i, raw))
+		case seen[cmd]:
+			errs = append(errs, fmt.Errorf("check.silent_ci_swallow.extra_commands[%d] %q is duplicated", i, raw))
+		}
+		seen[cmd] = true
+	}
+	return errs
+}
+
+// validateSeverityOverrides checks every severity_overrides entry: a known
+// severity, a reason, and no catch-all ahead of entries it would shadow.
+func validateSeverityOverrides(all SeverityOverrides) []error {
+	var errs []error
+	for key, overrides := range all {
 		for i, o := range overrides {
-			if !validSeverities[o.Severity] {
-				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].severity %q is invalid (must be one of: must, should, ignore)", key, i, o.Severity))
+			if err := validOverrideSeverity(key, i, o); err != nil {
+				errs = append(errs, err)
 			}
 			if strings.TrimSpace(o.Reason) == "" {
-				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].reason is required", key, i))
+				errs = append(errs, overrideReasonRequired(key, i))
 			}
 			// Warn if a catch-all (no paths) is not the last entry — subsequent entries are unreachable.
 			if len(o.Paths) == 0 && i < len(overrides)-1 {
 				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d] is a catch-all (no paths) but is not the last entry — subsequent entries are unreachable", key, i))
 			}
+		}
+	}
+	return errs
+}
+
+// ValidateCheckOverrides is what `verikt check` enforces on severity_overrides
+// before it runs: every severity is must, should or ignore, and every waiver
+// (ignore) has a reason.
+//
+// check used to apply overrides unvalidated. `severity: info` turned an
+// error-level finding into info, which never fails — not even under --strict —
+// and, not being "ignore", left no trace in the WAIVED section. A waiver
+// without a reason was accepted too. Both quietly checked less than the file
+// appears to say.
+//
+// It is narrower than the save-time rules on purpose: a must or should entry
+// without a reason, or a catch-all ahead of other entries, hides no finding,
+// and the published examples write `severity: must` with no reason, so
+// refusing to run on them would break configs for no safety gain.
+func ValidateCheckOverrides(all SeverityOverrides) []error {
+	keys := make([]string, 0, len(all))
+	for key := range all {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var errs []error
+	for _, key := range keys {
+		for i, o := range all[key] {
+			if err := validOverrideSeverity(key, i, o); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if o.Severity == "ignore" && strings.TrimSpace(o.Reason) == "" {
+				errs = append(errs, overrideReasonRequired(key, i))
+			}
+		}
+	}
+	return errs
+}
+
+// validOverrideSeverity rejects anything but must, should and ignore. "info",
+// "error" and "warning" are finding severities, not override values.
+func validOverrideSeverity(key string, i int, o SeverityOverride) error {
+	switch o.Severity {
+	case "must", "should", "ignore":
+		return nil
+	default:
+		return fmt.Errorf("severity_overrides[%q][%d].severity %q is invalid (must be one of: must, should, ignore)", key, i, o.Severity)
+	}
+}
+
+func overrideReasonRequired(key string, i int) error {
+	return fmt.Errorf("severity_overrides[%q][%d].reason is required", key, i)
+}
+
+// ValidateAllowedEntrypoints rejects allowlist entries that cannot name a
+// directory inside the project: empty, absolute, or escaping it with "..".
+func ValidateAllowedEntrypoints(c CheckConfig) []error {
+	if c.AllowedEntrypoints == nil {
+		return nil
+	}
+	var errs []error
+	for i, raw := range *c.AllowedEntrypoints {
+		e := NormalizeEntrypoint(raw)
+		switch {
+		case e == "":
+			errs = append(errs, fmt.Errorf("check.allowed_entrypoints[%d] is empty", i))
+		case path.IsAbs(e) || filepath.IsAbs(raw):
+			errs = append(errs, fmt.Errorf("check.allowed_entrypoints[%d] %q must be a project-relative path", i, raw))
+		case e == ".." || strings.HasPrefix(e, "../"):
+			errs = append(errs, fmt.Errorf("check.allowed_entrypoints[%d] %q must not leave the project", i, raw))
 		}
 	}
 	return errs
@@ -306,31 +481,87 @@ func DefaultVeriktConfig(language, architecture string) *VeriktConfig {
 		return defaultTypeScriptConfig(cfg, architecture)
 	}
 
+	applyGoArchitecture(cfg, architecture)
+	return cfg
+}
+
+// applyGoArchitecture sets the components, structure rules and template source
+// of a Go architecture's default config. Unknown names get hexagonal.
+func applyGoArchitecture(cfg *VeriktConfig, architecture string) {
+	forbidden := []string{"utils/", "helpers/"}
 	switch architecture {
 	case "flat":
 		cfg.Components = nil
-		cfg.Rules.Structure = StructureConfig{
-			ForbiddenDirs: []string{"utils/", "helpers/"},
-		}
+		cfg.Rules.Structure = StructureConfig{ForbiddenDirs: forbidden}
 		cfg.Templates = TemplateSourceConfig{Source: "verikt/cli"}
-	default: // hexagonal
-		cfg.Components = []Component{
-			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
-			{Name: "ports", In: []string{"port/**"}, MayDependOn: []string{"domain"}},
-			{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "ports"}},
-			{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"ports", "domain"}},
+	case "clean":
+		cfg.Components = goComponents("entity",
+			Component{Name: "entity", In: []string{"internal/entity/**"}, MayDependOn: []string{}},
+			Component{Name: "usecase", In: []string{"internal/usecase/**"}, MayDependOn: []string{"entity"}},
+			Component{Name: "interface", In: []string{"internal/interface/**"}, MayDependOn: []string{"usecase", "entity", "platform"}},
+			Component{Name: "infrastructure", In: []string{"internal/infrastructure/**"}, MayDependOn: []string{"interface", "usecase", "entity", "platform"}},
+		)
+		cfg.Rules.Structure = StructureConfig{
+			RequiredDirs:  []string{"cmd/", "internal/entity/", "internal/usecase/", "internal/interface/", "internal/infrastructure/"},
+			ForbiddenDirs: forbidden,
 		}
+		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
+	case "layered":
+		cfg.Components = goComponents("model",
+			Component{Name: "handler", In: []string{"internal/handler/**"}, MayDependOn: []string{"service", "model", "platform"}},
+			Component{Name: "service", In: []string{"internal/service/**"}, MayDependOn: []string{"repository", "model"}},
+			Component{Name: "repository", In: []string{"internal/repository/**"}, MayDependOn: []string{"model", "platform"}},
+			Component{Name: "model", In: []string{"internal/model/**"}, MayDependOn: []string{}},
+		)
+		cfg.Rules.Structure = StructureConfig{
+			RequiredDirs:  []string{"cmd/", "internal/handler/", "internal/service/", "internal/repository/", "internal/model/"},
+			ForbiddenDirs: forbidden,
+		}
+		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
+	default: // hexagonal
+		cfg.Components = goComponents("domain",
+			Component{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
+			Component{Name: "ports", In: []string{"port/**"}, MayDependOn: []string{"domain"}},
+			Component{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "ports"}},
+			Component{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"ports", "domain", "platform"}},
+		)
 		cfg.Rules.Structure = StructureConfig{
 			RequiredDirs:  []string{"cmd/", "domain/", "port/", "adapter/"},
-			ForbiddenDirs: []string{"utils/", "helpers/"},
+			ForbiddenDirs: forbidden,
 		}
-		// cmd/ is the application entry point and wiring layer — outside the
-		// hexagonal architecture boundary. Exclude it from orphan detection.
-		cfg.Check = CheckConfig{Exclude: []string{"cmd/**"}}
 		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
 	}
+}
 
-	return cfg
+// platformDirs are the directories Go capability templates write cross-cutting
+// code into (observability, lifecycle, resilience, event bus, config, ...).
+var platformDirs = []string{"platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"}
+
+// goComponents appends the two components every layered Go architecture
+// shares to its layers. innermost names the only layer platform code may use.
+//
+//   - platform: capability-written cross-cutting code. Optional, because a
+//     project scaffolded without such capabilities has none.
+//   - app: the composition root (cmd/ entrypoints and internal/bootstrap). It
+//     wires everything together, so it may depend on every component and
+//     nothing may depend on it. It replaces `check.exclude: [cmd/**]`, which
+//     hid entrypoints from orphan detection instead of classifying them.
+//
+// Component patterns match at any depth and the first matching component
+// wins, so platform comes after the layers: internal/infrastructure/config
+// must stay infrastructure rather than fall to platform's config/** glob.
+func goComponents(innermost string, layers ...Component) []Component {
+	all := make([]string, 0, len(layers)+1)
+	for _, l := range layers {
+		all = append(all, l.Name)
+	}
+	all = append(all, "platform")
+	out := make([]Component, 0, len(layers)+2)
+	out = append(out, layers...)
+	return append(out,
+		Component{Name: "platform", In: append([]string{}, platformDirs...), MayDependOn: []string{innermost}, Optional: true},
+		Component{Name: "app", In: []string{"cmd/**", "internal/bootstrap/**"}, MayDependOn: all},
+	)
 }
 
 func defaultTypeScriptConfig(cfg *VeriktConfig, architecture string) *VeriktConfig {

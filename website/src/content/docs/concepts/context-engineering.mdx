@@ -56,13 +56,19 @@ Without this in the system instructions layer, the agent defaults to training da
 
 ```bash
 verikt guide
-# Generated .claude/rules/verikt.md (1,247 tokens)
-# Generated .cursorrules (1,247 tokens)
-# Generated .github/copilot-instructions.md (1,247 tokens)
-# Generated .windsurfrules (1,247 tokens)
+# Guide generated for target: all
+#
+# Always loaded, each within 1,500 tokens:
+#   .claude/rules/verikt-index.md
+#   .cursor/rules/verikt.mdc
+#   .github/copilot-instructions.md
+#   .windsurfrules
+#   AGENTS.md
+# Read on demand:
+#   .verikt/references/
 ```
 
-Each file is a precisely curated system instruction — not a documentation dump. It tells the agent the minimum it needs to know to produce architecture-correct output: the pattern, the layers, the capabilities, the rules, the warnings. 1,247 tokens of high-signal context that applies to every prompt in the session.
+Each file is a precisely curated system instruction — not a documentation dump. It tells the agent the minimum it needs to know to produce architecture-correct output: the pattern, the layers, the capabilities, the rules, the warnings. At most 1,500 tokens of always-loaded context that applies to every prompt in the session, with the longer material in references the agent reads only when the task needs it.
 
 This is what Fowler's definition describes: "curating what the model sees so that you get a better result." verikt curates the architecture layer.
 

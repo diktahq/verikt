@@ -136,7 +136,7 @@ func TestDocsDoNotPublishASeverityBasedGate(t *testing.T) {
 	var checked int
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			switch d.Name() {
@@ -152,13 +152,16 @@ func TestDocsDoNotPublishASeverityBasedGate(t *testing.T) {
 		}
 
 		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || strings.HasPrefix(filepath.ToSlash(rel), "docs/internal/") {
+		if relErr != nil {
+			return relErr
+		}
+		if strings.HasPrefix(filepath.ToSlash(rel), "docs/internal/") {
 			return nil
 		}
 
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return nil
+			return readErr
 		}
 		checked++
 

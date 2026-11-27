@@ -1,0 +1,72 @@
+# Local git hooks. GitHub Actions does not run for this repository, so these
+# hooks are the only gates a change passes through during development. The full
+# suite (`mise run release-check`) runs before a release, not on every push.
+#
+# Install once per clone (lefthook is pinned in .mise.toml):
+#
+#   mise exec -- lefthook install
+#
+# pre-commit is the fast gate, a few seconds with a warm build cache:
+#   - gofmt on the staged Go files
+#   - golangci-lint on the packages with staged Go files, new issues only
+#   - go test -short on the packages with staged Go files
+#   - cargo fmt --check when engine sources are staged
+# pre-push runs `mise run verify`: build, vet, format, tidy, tests, lint and the
+# installer tests. Race, compiled scaffolds and the self-check are release-time.
+#
+# Git exports GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE to hooks. Tests that run
+# git in temp directories (scaffold, guide, installer) and golangci-lint's
+# --new-from-rev would otherwise operate on this repository's index, so every
+# command that runs git underneath clears them first.
+
+output:
+  - failure
+
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      exclude:
+        - "experiments/**"
+        - "**/testdata/**"
+      run: |
+        unformatted=$(gofmt -l {staged_files}) || exit 1
+        if [ -n "$unformatted" ]; then
+          echo "gofmt needed on:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+    golangci-lint:
+      glob: "*.go"
+      exclude:
+        - "experiments/**"
+        - "**/testdata/**"
+      run: |
+        unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+        pkgs=$(for f in {staged_files}; do echo "./$(dirname "$f")/"; done | sort -u)
+        golangci-lint run --new-from-rev=HEAD $pkgs
+
+    go-test:
+      glob: "*.go"
+      exclude:
+        - "experiments/**"
+        - "**/testdata/**"
+        - "internal/engineclient/experiment/**"
+      run: |
+        unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+        pkgs=$(for f in {staged_files}; do echo "./$(dirname "$f")"; done | sort -u)
+        go test -short $pkgs
+
+    cargo-fmt:
+      root: "engine/"
+      glob: "*.rs"
+      run: cargo fmt --check
+
+pre-push:
+  commands:
+    verify:
+      run: |
+        unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+        mise run verify

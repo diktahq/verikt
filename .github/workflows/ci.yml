@@ -93,7 +93,7 @@ jobs:
           chmod +x internal/engineclient/bin/verikt-engine-linux-amd64
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          version: v2.11.3
+          version: v2.15.0
 
   # verikt checks itself. Every architecture bug found in this repository so far
   # was found by hand; the root verikt.yaml makes that automatic.
@@ -139,6 +139,7 @@ jobs:
           # `check` exits non-zero on error-severity findings, which the previous
           # step already gates on; this step only measures, so the exit code is
           # deliberately ignored under `set -e`.
+          # verikt:allow silent_ci_swallow reason="measurement only; the Check architecture step gates on the exit code"
           /tmp/verikt check --output json > verikt-check.json || true
           baseline=$(grep -vE '^\s*#|^\s*$' .github/verikt-debt-baseline | head -1)
           # `// []` guards the arrays: they were omitempty, so this job crashed

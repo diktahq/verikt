@@ -22,30 +22,24 @@ The generated content lands at `.github/copilot-instructions.md`. Copilot picks 
 
 ## What gets generated
 
-The file contains your architecture context in a format Copilot can act on. For a layered service with postgres and a gRPC transport:
+The file contains your architecture context in a format Copilot can act on. For a layered service scaffolded with `grpc`, `postgres`, `circuit-breaker` and `migrations`, the layer and capability sections read:
 
 ```
-# Architecture: layered
-# Components: handler, service, repository, domain
+## Layer Rules
 
-## Dependency Rules
-- handler/ must NOT import from domain/
-- service/ must NOT import from handler/
-- repository/ must NOT import from handler/ or service/
+- **handler**: depends on service, model, platform
+- **service**: depends on repository, model
+- **repository**: depends on model, platform
+- **model**: depends on nothing (innermost)
+- **platform** (optional: may be absent): depends on model
+- **app**: depends on handler, service, repository, model, platform
 
-## Capabilities
-- grpc: gRPC server with protobuf, graceful shutdown
-- postgres: Connection pool, pgx driver
-- circuit-breaker: Wraps outbound HTTP calls in service layer
-- migrations: Versioned schema changes via golang-migrate
+## Active Capabilities
 
-## Anti-patterns to Avoid
-- No business logic in gRPC handlers (delegate to service layer)
-- No SQL in service layer (use repository interfaces)
-- No direct infrastructure imports from domain
+**grpc**, **postgres**, **circuit-breaker**, **migrations**. Wiring patterns and the full catalog: `.verikt/references/capabilities.md`.
 ```
 
-The agent knows the exact constraint — "handler/ must NOT import from domain/" — not a vague principle. Specific rules produce specific compliance.
+The agent knows the exact constraint — `service` depends on `repository` and `model`, nothing else — not a vague principle. The file stays short because it is sent with every request; the directories for each layer, the forbidden imports (``- `service` NEVER imports from `handler` ``) and the capability wiring live in `.verikt/references/`, and the file tells Copilot when to read each one.
 
 ## Sentinel-based merging
 
@@ -56,7 +50,7 @@ If `.github/copilot-instructions.md` already exists with your own content, verik
 ...your existing content stays here...
 
 <!-- verikt:start -->
-# Architecture: layered
+# verikt — layered Architecture
 ...generated content...
 <!-- verikt:end -->
 
@@ -84,13 +78,13 @@ If you want to update all targets at once:
 verikt guide
 ```
 
-Running without `--target` regenerates all supported formats — `.claude/rules/verikt.md`, `.cursorrules`, `.github/copilot-instructions.md`, and `.windsurfrules` — in a single pass.
+Running without `--target` regenerates the files of every agent the project already uses — `.claude/rules/`, `.cursor/rules/verikt.mdc`, `.github/copilot-instructions.md`, `.windsurfrules`, `AGENTS.md` — in a single pass, along with the on-demand references in `.verikt/references/`. When the project carries none of them yet, it writes all of them.
 
 ## What this changes
 
 In [EXP-09](/experiments/exp-09/), the guide changed not just what the agent built but what it recommended. Without the guide: vague suggestions to "consider adding retries." With the guide: an exact `verikt add retry circuit-breaker idempotency` command, because the guide's interaction warnings made the dependency chain explicit.
 
-The same pattern applies in Copilot. The instructions file is the mechanism — the effect is the same.
+That experiment ran one model, claude-sonnet-4-6, against the single-file guide verikt generated before 0.3.0. Copilot was not measured, and neither was the current two-tier guide, so treat the result as evidence about the content, not a measured effect in Copilot.
 
 ---
 

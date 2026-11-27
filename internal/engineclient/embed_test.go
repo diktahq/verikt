@@ -27,7 +27,8 @@ func requireEmbeddedEngine(t *testing.T) {
 }
 
 // A missing engine must be reported as an error, not crash or return a path to
-// nothing: callers fall back to Go-native analysis on this signal.
+// nothing: `verikt check` turns this signal into ErrEngineRequired rather than
+// analysing with a second implementation (ADR-006).
 func TestEnginePath_ReportsAbsentEngine(t *testing.T) {
 	if len(engineBinary) > 0 {
 		t.Skip("an engine is embedded; this covers the absent case")
@@ -296,4 +297,255 @@ func TestEnginePathIsSafeUnderConcurrentExtraction(t *testing.T) {
 			"the binary visible at the returned path was not the embedded engine")
 	}
 	assert.Equal(t, racers, seen)
+}
+
+// fakeEngine is a stand-in binary for the extraction core. Its content is
+// irrelevant; what matters is that it is not the real engine, so these tests run
+// on a checkout that has never built one.
+var fakeEngine = []byte("#!/bin/sh\n# not a real engine, but a distinct payload\nexit 0\n")
+
+// A cached file is trusted only if it is the embedded binary byte for byte.
+//
+// The cache lookup used to be an os.Stat: any file at the expected path was
+// executed. A truncated extraction, a corrupted disk block, or a file planted in
+// the user's cache directory was run as the engine without a word.
+func TestExtractEngine_ReplacesCachedFileThatIsNotTheEmbeddedBinary(t *testing.T) {
+	sameSizeWrongContent := bytes.Repeat([]byte("x"), len(fakeEngine))
+
+	cases := map[string]func(t *testing.T, path string){
+		"same size, different content": func(t *testing.T, path string) {
+			require.NoError(t, os.WriteFile(path, sameSizeWrongContent, 0o700))
+		},
+		"truncated": func(t *testing.T, path string) {
+			require.NoError(t, os.WriteFile(path, fakeEngine[:len(fakeEngine)/2], 0o700))
+		},
+		"empty": func(t *testing.T, path string) {
+			require.NoError(t, os.WriteFile(path, nil, 0o700))
+		},
+		"not executable": func(t *testing.T, path string) {
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows has no exec bit")
+			}
+			require.NoError(t, os.WriteFile(path, fakeEngine, 0o600))
+		},
+		"symlink to a correct copy": func(t *testing.T, path string) {
+			// The link target can change after verification; only a regular
+			// file in the cache directory is trusted.
+			target := filepath.Join(t.TempDir(), "elsewhere")
+			require.NoError(t, os.WriteFile(target, fakeEngine, 0o700))
+			require.NoError(t, os.Symlink(target, path))
+		},
+	}
+
+	for name, plant := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			path, err := extractEngine(fakeEngine, root)
+			require.NoError(t, err)
+
+			require.NoError(t, os.Remove(path))
+			plant(t, path)
+
+			got, err := extractEngine(fakeEngine, root)
+			require.NoError(t, err)
+			assert.Equal(t, path, got)
+
+			info, err := os.Lstat(got)
+			require.NoError(t, err)
+			assert.True(t, info.Mode().IsRegular(), "the cached engine must be a regular file")
+			if runtime.GOOS != "windows" {
+				assert.NotZero(t, info.Mode().Perm()&0o100, "the cached engine must be executable by its owner")
+			}
+			data, err := os.ReadFile(got)
+			require.NoError(t, err)
+			assert.Equal(t, fakeEngine, data, "a cached file that is not the embedded binary must be re-extracted")
+		})
+	}
+}
+
+// A valid cached binary is reused, not rewritten on every invocation.
+func TestExtractEngine_ReusesVerifiedCache(t *testing.T) {
+	root := t.TempDir()
+	path, err := extractEngine(fakeEngine, root)
+	require.NoError(t, err)
+
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	require.NoError(t, os.Chtimes(path, old, old))
+
+	again, err := extractEngine(fakeEngine, root)
+	require.NoError(t, err)
+	assert.Equal(t, path, again)
+
+	info, err := os.Stat(again)
+	require.NoError(t, err)
+	assert.True(t, info.ModTime().Equal(old), "a verified cache hit must not rewrite the binary")
+}
+
+// The engine and its directory are private to the user. Nobody else needs to
+// read, list or execute them, and a group- or world-writable path to an
+// executable is an invitation to replace it.
+func TestExtractEngine_UsesOwnerOnlyPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	root := t.TempDir()
+	path, err := extractEngine(fakeEngine, root)
+	require.NoError(t, err)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "engine binary")
+
+	dirInfo, err := os.Stat(filepath.Dir(path))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm(), "engine cache directory")
+}
+
+// The cache directory is named by the binary's digest, under the given root.
+func TestExtractEngine_PathIsKeyedByDigest(t *testing.T) {
+	root := t.TempDir()
+	path, err := extractEngine(fakeEngine, root)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "engine-"+engineCacheKey(fakeEngine)), filepath.Dir(path))
+}
+
+func TestExtractEngine_RejectsEmptyBinary(t *testing.T) {
+	_, err := extractEngine(nil, t.TempDir())
+	require.Error(t, err)
+}
+
+// The concurrency guarantee must hold without a real engine, so it is checked
+// against the injectable core as well as through EnginePath above.
+func TestExtractEngine_ConcurrentCallersSeeWholeBinary(t *testing.T) {
+	root := t.TempDir()
+	payload := bytes.Repeat([]byte("engine"), 1<<18) // ~1.5 MB widens the write window
+
+	const racers = 8
+	errs := make(chan error, racers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			path, err := extractEngine(payload, root)
+			if err != nil {
+				errs <- err
+				return
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(data, payload) {
+				errs <- assert.AnError
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err, "a concurrent caller saw an error or a partial binary")
+	}
+
+	// No temp files are left behind.
+	entries, err := os.ReadDir(filepath.Join(root, "engine-"+engineCacheKey(payload)))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "only the installed engine should remain in its cache directory")
+}
+
+// A symlinked cache root would make extraction, execution and pruning all happen
+// wherever the link points. It is refused before anything is read or created.
+func TestExtractEngine_RefusesSymlinkedCacheRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	target := t.TempDir()
+	root := filepath.Join(t.TempDir(), "verikt")
+	require.NoError(t, os.Symlink(target, root))
+
+	_, err := extractEngine(fakeEngine, root)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+
+	entries, err := os.ReadDir(target)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing may be written through a symlinked cache root")
+}
+
+// A symlinked engine-<hash> directory is refused even when it holds a verified
+// copy: the cache-hit path must not run from a directory someone else chose.
+func TestExtractEngine_RefusesSymlinkedEngineDirOnCacheHit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	elsewhere := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(elsewhere, "verikt-engine"), fakeEngine, 0o700))
+	root := t.TempDir()
+	require.NoError(t, os.Symlink(elsewhere, filepath.Join(root, "engine-"+engineCacheKey(fakeEngine))))
+
+	_, err := extractEngine(fakeEngine, root)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+}
+
+// A cache directory others can write to lets them swap the engine between the
+// hash check and exec, so it is refused.
+func TestExtractEngine_RefusesGroupOrWorldWritableCacheDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	t.Run("root", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.Chmod(root, 0o777))
+		_, err := extractEngine(fakeEngine, root)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "writable")
+	})
+	t.Run("engine dir", func(t *testing.T) {
+		root := t.TempDir()
+		path, err := extractEngine(fakeEngine, root)
+		require.NoError(t, err)
+		require.NoError(t, os.Chmod(filepath.Dir(path), 0o770))
+		_, err = extractEngine(fakeEngine, root)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "writable")
+	})
+}
+
+// Ownership is checked against the effective user: a directory owned by someone
+// else is theirs to change.
+func TestPrivateDirProblem_RejectsForeignOwner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX ownership")
+	}
+	dir := t.TempDir()
+	info, err := os.Lstat(dir)
+	require.NoError(t, err)
+
+	assert.NoError(t, privateDirProblem(dir, info, os.Geteuid()))
+	err = privateDirProblem(dir, info, os.Geteuid()+1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "owned by")
+}
+
+// Pruning through a symlinked root would delete directories at the link target.
+func TestPruneStaleEngineCaches_DoesNotFollowSymlinkedRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	target := t.TempDir()
+	stale := filepath.Join(target, "engine-0000000000000000")
+	require.NoError(t, os.Mkdir(stale, 0o700))
+	old := time.Now().Add(-48 * time.Hour)
+	require.NoError(t, os.Chtimes(stale, old, old))
+
+	root := filepath.Join(t.TempDir(), "verikt")
+	require.NoError(t, os.Symlink(target, root))
+
+	pruneStaleEngineCaches(root, "engine-1111111111111111")
+	assert.DirExists(t, stale)
 }

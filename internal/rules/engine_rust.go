@@ -70,24 +70,29 @@ func findingToViolation(f *pb.Finding) RuleViolation {
 	}
 }
 
+// severityToProto fails closed: anything but a recognised severity is an
+// error. Info never fails the check, so defaulting to it turned an empty or
+// misspelled severity into a silent pass.
 func severityToProto(s string) pb.Severity {
 	switch s {
-	case "error":
-		return pb.Severity_ERROR
 	case "warning":
 		return pb.Severity_WARNING
-	default:
+	case "info":
 		return pb.Severity_INFO
+	default:
+		return pb.Severity_ERROR
 	}
 }
 
+// severityFromProto fails closed the same way: a finding with no severity on
+// the wire is an error.
 func severityFromProto(s pb.Severity) string {
 	switch s {
-	case pb.Severity_ERROR:
-		return "error"
 	case pb.Severity_WARNING:
 		return "warning"
-	default:
+	case pb.Severity_INFO:
 		return "info"
+	default: // ERROR, SEVERITY_UNSPECIFIED, or a value this build does not know
+		return "error"
 	}
 }

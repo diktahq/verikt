@@ -51,11 +51,11 @@ When you run `verikt new`, here's what happens:
 
 1. **Load architecture** — Read the manifest, set up base variables
 
-2. **Detect version** — Run `go env GOVERSION` to detect the installed Go version (or use `--set GoVersion=X.XX`)
+2. **Detect version** — Use `--set GoVersion=X.YY` if given, else the installed Go version from `go env GOVERSION`, else the architecture default. The result goes into `go.mod` and any generated Dockerfile
 
 3. **Resolve features** — Compare the detected version against `features.yaml` to produce a boolean feature map (e.g., `os_root: true`, `log_slog: true`). See the [Feature Matrix](/reference/features/).
 
-4. **Load capabilities** — Read each capability manifest, validate requirements, conflicts, and `requires_features` gates
+4. **Load capabilities** — Read each capability manifest, add missing dependencies, order every capability after the ones it requires, check conflicts, and fail on unmet `requires_features`
 
 5. **Collect partials** — Gather code snippets from each capability's `_partials/` directory
 

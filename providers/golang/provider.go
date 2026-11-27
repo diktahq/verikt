@@ -3,12 +3,14 @@ package golang
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,7 +31,7 @@ func init() {
 	provider.Register("go", &GoProvider{})
 }
 
-func (p *GoProvider) Scaffold(_ context.Context, req provider.ScaffoldRequest) (*provider.ScaffoldResponse, error) {
+func (p *GoProvider) Scaffold(ctx context.Context, req provider.ScaffoldRequest) (*provider.ScaffoldResponse, error) {
 	templateName := strings.TrimSpace(req.TemplateName)
 	if templateName == "" {
 		templateName = "api"
@@ -59,38 +61,24 @@ func (p *GoProvider) Scaffold(_ context.Context, req provider.ScaffoldRequest) (
 		architecture = templateName
 	}
 
-	renderer := scaffold.NewRenderer(templatesFS)
-
-	// Parse capabilities from options (comma-separated).
-	var capabilities []string
-	if capStr := req.Options["capabilities"]; capStr != "" {
-		for _, c := range strings.Split(capStr, ",") {
-			c = strings.TrimSpace(c)
-			if c != "" {
-				capabilities = append(capabilities, c)
-			}
-		}
+	// Resolve the target Go version and its features (ADR-007).
+	target, err := p.goTarget(ctx, req.Options, architecture)
+	if err != nil {
+		return nil, err
 	}
+	if target.Version != "" {
+		vars["GoVersion"] = target.Version
+	}
+	vars["Features"] = target.Features
 
-	var renderResult *scaffold.RenderResult
-	if len(capabilities) > 0 {
-		// Composition mode: architecture + capabilities.
-		plan, err := scaffold.ComposeProject(templatesFS, architecture, capabilities, vars)
-		if err != nil {
-			return nil, fmt.Errorf("compose project: %w", err)
-		}
-		renderResult, err = renderer.RenderComposition(plan, req.OutputDir)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Legacy mode: single template directory.
-		archDir := path.Join("templates", "architectures", architecture)
-		var err error
-		renderResult, err = renderer.RenderTemplate(archDir, req.OutputDir, vars)
-		if err != nil {
-			return nil, err
-		}
+	capabilities := parseCapabilities(req.Options["capabilities"])
+	renderResult, err := renderProject(architecture, capabilities, vars, req.OutputDir)
+	var missing *scaffold.MissingFeaturesError
+	if errors.As(err, &missing) {
+		return nil, explainMissingFeatures(missing, target)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	archDir := path.Join("templates", "architectures", architecture)
@@ -109,6 +97,11 @@ func (p *GoProvider) Scaffold(_ context.Context, req provider.ScaffoldRequest) (
 	}
 
 	veriktCfg := config.DefaultVeriktConfig("go", architecture)
+	// The manifest is the source of truth for the component graph a project
+	// is scaffolded with; DefaultVeriktConfig supplies the remaining rules.
+	if manifest != nil && len(manifest.Components) > 0 {
+		veriktCfg.Components = manifest.Components
+	}
 	if len(capabilities) > 0 {
 		veriktCfg.Capabilities = capabilities
 	}
@@ -136,6 +129,87 @@ func (p *GoProvider) Scaffold(_ context.Context, req provider.ScaffoldRequest) (
 	}
 
 	return &provider.ScaffoldResponse{FilesCreated: files, VeriktYAML: veriktBytes}, nil
+}
+
+// parseCapabilities splits the comma-separated capabilities option.
+func parseCapabilities(capStr string) []string {
+	var capabilities []string
+	for _, c := range strings.Split(capStr, ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			capabilities = append(capabilities, c)
+		}
+	}
+	return capabilities
+}
+
+// renderProject renders the architecture with its capabilities (composition
+// mode) or, with none, the architecture's template directory alone (legacy
+// mode). Both enforce requires_features against vars["Features"].
+func renderProject(architecture string, capabilities []string, vars map[string]interface{}, outputDir string) (*scaffold.RenderResult, error) {
+	renderer := scaffold.NewRenderer(templatesFS)
+	archDir := path.Join("templates", "architectures", architecture)
+	if len(capabilities) > 0 {
+		plan, err := scaffold.ComposeProject(templatesFS, architecture, capabilities, vars)
+		if err != nil {
+			return nil, fmt.Errorf("compose project: %w", err)
+		}
+		return renderer.RenderComposition(plan, outputDir)
+	}
+	manifest, err := loadManifest(archDir)
+	if err != nil {
+		return nil, fmt.Errorf("load architecture manifest %q: %w", architecture, err)
+	}
+	if err := scaffold.EnforceRequiredFeatures(templatesFS, manifest, nil, vars); err != nil {
+		return nil, err
+	}
+	return renderer.RenderTemplate(archDir, outputDir, vars)
+}
+
+// goTarget resolves the Go version a new project targets and the features it
+// provides: --set GoVersion when given, else the installed toolchain, else the
+// architecture manifest's GoVersion default. ADR-007 names that default as the
+// fallback; without a toolchain the post-scaffold hooks cannot run anyway, so
+// the default only has to produce a go.mod a later toolchain accepts.
+func (p *GoProvider) goTarget(ctx context.Context, options map[string]string, architecture string) (*scaffold.Target, error) {
+	fallback := ""
+	if manifest, err := loadManifest(path.Join("templates", "architectures", architecture)); err == nil {
+		if v, ok := manifest.Defaults()["GoVersion"].(string); ok {
+			fallback = v
+		}
+	}
+	pinned := scaffold.VersionCandidate{Version: options["GoVersion"], Source: scaffold.VersionExplicit}
+	target, err := (&scaffold.FeatureResolver{}).ResolveTarget(ctx, p, pinned, fallback)
+	if err != nil {
+		return nil, fmt.Errorf("GoVersion: %w", err)
+	}
+	return target, nil
+}
+
+// explainMissingFeatures adds the target Go version, where it came from, and
+// how to raise it to a requires_features failure.
+func explainMissingFeatures(missing *scaffold.MissingFeaturesError, target *scaffold.Target) error {
+	var origin string
+	switch target.Source {
+	case scaffold.VersionExplicit:
+		origin = "set with --set GoVersion"
+	case scaffold.VersionProject:
+		origin = "from go.mod"
+	case scaffold.VersionDetected:
+		origin = "the installed Go toolchain"
+	case scaffold.VersionDefault:
+		origin = "the architecture default; no Go toolchain was detected"
+	default:
+		origin = "unknown origin"
+	}
+	version := target.Version
+	if version == "" {
+		version = "unknown"
+	}
+	minimum := missing.MinimumVersion()
+	if minimum == "" {
+		return fmt.Errorf("%w\n  target Go version is %s (%s)\n  no Go version provides that feature: the template declares a feature missing from providers/golang/templates/features.yaml", missing, version, origin)
+	}
+	return fmt.Errorf("%w\n  target Go version is %s (%s)\n  fix: install Go %s or newer, or pass --set GoVersion=%s", missing, version, origin, minimum, minimum)
 }
 
 func (p *GoProvider) Analyze(ctx context.Context, req provider.AnalyzeRequest) (*provider.AnalyzeResponse, error) {
@@ -181,7 +255,12 @@ func (p *GoProvider) DetectVersion(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, goPath, "env", "GOVERSION")
+	// goPath is the go binary found on PATH, run with fixed arguments and no shell.
+	cmd := exec.CommandContext(ctx, goPath, "env", "GOVERSION") //nolint:gosec // G204: fixed arguments
+	// Run outside the working directory: a go.mod there with a newer go or
+	// toolchain line would make GOTOOLCHAIN=auto switch (and download) a
+	// toolchain, reporting that instead of the one installed.
+	cmd.Dir = os.TempDir()
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {
@@ -191,17 +270,19 @@ func (p *GoProvider) DetectVersion(ctx context.Context) (string, error) {
 	return parseGoVersion(strings.TrimSpace(stdout.String())), nil
 }
 
-// parseGoVersion extracts major.minor from a Go version string like "go1.26.1".
+// goVersionPattern matches a release or pre-release Go version: go1.26.1,
+// go1.22, 1.21.3, go1.23rc1.
+var goVersionPattern = regexp.MustCompile(`^(?:go)?(\d+\.\d+)(?:\.\d+)?((?:rc|beta)\d+)?$`)
+
+// parseGoVersion extracts major.minor (plus any pre-release suffix) from a Go
+// version string like "go1.26.1". Anything else, such as a devel build,
+// returns "" so callers treat the version as undetected.
 func parseGoVersion(raw string) string {
-	if raw == "" {
+	m := goVersionPattern.FindStringSubmatch(strings.TrimSpace(raw))
+	if m == nil {
 		return ""
 	}
-	raw = strings.TrimPrefix(raw, "go")
-	parts := strings.SplitN(raw, ".", 3)
-	if len(parts) < 2 {
-		return raw
-	}
-	return parts[0] + "." + parts[1]
+	return m[1] + m[2]
 }
 
 func (p *GoProvider) GetFeatureMatrix() ([]byte, error) {

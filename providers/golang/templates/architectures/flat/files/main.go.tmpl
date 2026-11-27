@@ -1,7 +1,42 @@
 package main
+{{- if and .HasHTTP (not .HasBootstrap)}}
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	httphandler "{{.ModulePath}}/{{index .ArchPaths "HTTPHandler"}}"
+)
+
+func main() {
+	fmt.Println("{{.ServiceName}} service")
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// run serves the http-api router until SIGINT or SIGTERM. Add the 'bootstrap'
+// capability for config loading, OpenTelemetry and managed shutdown hooks.
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	timeouts := httphandler.DefaultTimeouts()
+	api := httphandler.NewHandler(logger)
+	router := httphandler.NewRouter(logger, timeouts, api.RegisterRoutes)
+	return httphandler.NewHTTPServer(":8080", router, timeouts, logger).Run(ctx)
+}
+{{- else}}
 
 import "fmt"
 
 func main() {
 	fmt.Println("{{.ServiceName}} service")
 }
+{{- end}}

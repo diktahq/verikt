@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -34,14 +36,14 @@ and transitive dependencies are auto-resolved. Existing files are never overwrit
 			if err != nil {
 				return fmt.Errorf("read --dry-run flag: %w", err)
 			}
-			return runAdd(args, dryRun)
+			return runAdd(cmd.Context(), args, dryRun)
 		},
 	}
 	cmd.Flags().Bool("dry-run", false, "Show what would be added without writing any files")
 	return cmd
 }
 
-func runAdd(capabilities []string, dryRun bool) error {
+func runAdd(ctx context.Context, capabilities []string, dryRun bool) error {
 	cfgPath, err := config.FindVeriktYAML(".")
 	if err != nil {
 		return fmt.Errorf("no verikt.yaml found — run `verikt new` first: %w", err)
@@ -57,6 +59,12 @@ func runAdd(capabilities []string, dryRun bool) error {
 		return fmt.Errorf("get provider: %w", err)
 	}
 	tFS := providerImpl.GetTemplateFS()
+
+	// The architecture's path mappings decide where capability files go, so an
+	// unknown or missing architecture is rejected before anything is rendered.
+	if err := validateArchitecture(tFS, cfg.Architecture); err != nil {
+		return err
+	}
 
 	toAdd, autoDeps, err := resolveCapabilitiesToAdd(tFS, cfg, capabilities)
 	if err != nil {
@@ -87,6 +95,10 @@ func runAdd(capabilities []string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+	target, err := resolveProjectTarget(ctx, providerImpl, vars)
+	if err != nil {
+		return err
+	}
 
 	// Use ComposeProject to get proper vars with Has* flags for all capabilities.
 	finalCaps := make([]string, 0, len(cfg.Capabilities)+len(toAdd))
@@ -94,14 +106,18 @@ func runAdd(capabilities []string, dryRun bool) error {
 	finalCaps = append(finalCaps, toAdd...)
 
 	plan, err := scaffold.ComposeProject(tFS, cfg.Architecture, finalCaps, vars)
+	var missing *scaffold.MissingFeaturesError
+	if errors.As(err, &missing) {
+		return explainProjectMissingFeatures(missing, target)
+	}
 	if err != nil {
 		return fmt.Errorf("compose project: %w", err)
 	}
 
 	if dryRun {
-		return previewAdd(tFS, toAdd, projectDir, plan.Vars, autoDeps)
+		return previewAdd(tFS, plan, toAdd, projectDir, autoDeps)
 	}
-	return applyAdd(tFS, cfg, cfgPath, projectDir, toAdd, finalCaps, plan.Vars, autoDeps)
+	return applyAdd(tFS, plan, cfg, cfgPath, projectDir, toAdd, finalCaps, autoDeps)
 }
 
 // resolveCapabilitiesToAdd validates the requested capabilities, rejects
@@ -197,7 +213,7 @@ func resolveCapabilitiesToAdd(tFS fs.FS, cfg *config.VeriktConfig, capabilities 
 }
 
 // projectScaffoldVars infers the template variables for an existing project:
-// ServiceName from the directory name, ModulePath from go.mod.
+// ServiceName from the directory name, ModulePath and GoVersion from go.mod.
 func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]interface{}, err error) {
 	projectDir = strings.TrimSuffix(cfgPath, "/verikt.yaml")
 	projectDir = strings.TrimSuffix(projectDir, "\\verikt.yaml")
@@ -207,6 +223,7 @@ func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]int
 	}
 	serviceName := filepath.Base(absDir)
 	modulePath := fmt.Sprintf("example.com/%s", serviceName)
+	goVersion := ""
 	if goModData, readErr := os.ReadFile(filepath.Join(projectDir, "go.mod")); readErr == nil {
 		for _, line := range strings.Split(string(goModData), "\n") {
 			if strings.HasPrefix(line, "module ") {
@@ -214,37 +231,82 @@ func projectScaffoldVars(cfgPath string) (projectDir string, vars map[string]int
 				break
 			}
 		}
+		goVersion = goModGoDirective(string(goModData))
 	}
 
-	return projectDir, map[string]interface{}{
+	vars = map[string]interface{}{
 		"ServiceName": serviceName,
 		"ModulePath":  modulePath,
-	}, nil
+	}
+	if goVersion != "" {
+		vars["GoVersion"] = goVersion
+	}
+	return projectDir, vars, nil
+}
+
+// goModGoDirective returns the version in go.mod's go directive, or "" when
+// there is none. The directive is the project's declared minimum Go version,
+// so it, not the installed toolchain, is what added code must compile under.
+func goModGoDirective(goMod string) string {
+	for _, line := range strings.Split(goMod, "\n") {
+		line, _, _ = strings.Cut(line, "//") // a trailing comment is not part of the version
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "go" {
+			return fields[1]
+		}
+	}
+	return ""
+}
+
+// resolveProjectTarget resolves the language version an existing project
+// targets and stores its features in vars (ADR-007). A go.mod go directive
+// (already in vars as GoVersion) wins; otherwise the installed toolchain.
+// There is no fallback default: for an existing project a guessed version
+// would be less accurate than reporting it as unknown.
+func resolveProjectTarget(ctx context.Context, p provider.LanguageProvider, vars map[string]interface{}) (*scaffold.Target, error) {
+	pinned := scaffold.VersionCandidate{Source: scaffold.VersionProject}
+	if v, ok := vars["GoVersion"].(string); ok {
+		pinned.Version = v
+	}
+	target, err := (&scaffold.FeatureResolver{}).ResolveTarget(ctx, p, pinned, "")
+	if err != nil {
+		return nil, fmt.Errorf("go.mod go directive: %w", err)
+	}
+	vars["Features"] = target.Features
+	return target, nil
+}
+
+// explainProjectMissingFeatures adds the project's target version, where it
+// came from, and how to raise it to a requires_features failure.
+func explainProjectMissingFeatures(missing *scaffold.MissingFeaturesError, target *scaffold.Target) error {
+	minimum := missing.MinimumVersion()
+	switch {
+	case target.Version == "":
+		return fmt.Errorf("%w\n  the project's language version could not be determined (no go directive in go.mod and no toolchain detected)", missing)
+	case minimum == "":
+		return fmt.Errorf("%w\n  target version is %s; no version provides that feature, so the capability declares one the feature matrix does not define", missing, target.Version)
+	case target.Source == scaffold.VersionProject:
+		return fmt.Errorf("%w\n  target Go version is %s (the go directive in go.mod)\n  fix: raise the go directive in go.mod to %s or newer (go get go@%s), then rerun verikt add", missing, target.Version, minimum, minimum)
+	default:
+		return fmt.Errorf("%w\n  target version is %s (%s toolchain)\n  fix: upgrade the toolchain to %s or newer, then rerun verikt add", missing, target.Version, target.Source, minimum)
+	}
 }
 
 // previewAdd reports what applyAdd would do without writing anything.
-func previewAdd(tFS fs.FS, toAdd []string, projectDir string, vars map[string]interface{}, autoDeps []string) error {
-	renderer := scaffold.NewRenderer(tFS)
-	var totalCreated, totalSkipped int
-
-	for _, c := range toAdd {
-		capDir := path.Join("templates", "capabilities", c)
-		created, skipped, previewErr := renderer.PreviewCapabilityFiles(capDir, projectDir, vars)
-		if previewErr != nil {
-			return fmt.Errorf("preview capability %q: %w", c, previewErr)
-		}
-		for _, f := range created {
-			fmt.Printf("  Would create: %s\n", f)
-			totalCreated++
-		}
-		for _, f := range skipped {
-			fmt.Printf("  Would skip (exists): %s\n", f)
-			totalSkipped++
-		}
+func previewAdd(tFS fs.FS, plan *scaffold.CompositionPlan, toAdd []string, projectDir string, autoDeps []string) error {
+	created, skipped, err := scaffold.NewRenderer(tFS).PreviewAddedCapabilities(plan, projectDir, toAdd)
+	if err != nil {
+		return fmt.Errorf("preview capabilities: %w", err)
+	}
+	for _, f := range created {
+		fmt.Printf("  Would create: %s\n", f)
+	}
+	for _, f := range skipped {
+		fmt.Printf("  Would skip (exists): %s\n", f)
 	}
 
 	fmt.Printf("\nDry run: %d files would be created, %d skipped, %d capabilities added\n",
-		totalCreated, totalSkipped, len(toAdd))
+		len(created), len(skipped), len(toAdd))
 	fmt.Println("verikt.yaml and the generated guides were not modified.")
 	if len(autoDeps) > 0 {
 		fmt.Printf("Auto-resolved dependencies: %s\n", strings.Join(autoDeps, ", "))
@@ -254,26 +316,19 @@ func previewAdd(tFS fs.FS, toAdd []string, projectDir string, vars map[string]in
 }
 
 // applyAdd renders the new capabilities, records them in verikt.yaml, and
-// regenerates the guides.
-func applyAdd(tFS fs.FS, cfg *config.VeriktConfig, cfgPath, projectDir string, toAdd, finalCaps []string, vars map[string]interface{}, autoDeps []string) error {
-	renderer := scaffold.NewRenderer(tFS)
-	var totalCreated, totalSkipped int
-
-	// Only render files from newly-added capabilities.
-	for _, c := range toAdd {
-		capDir := path.Join("templates", "capabilities", c)
-		result, skipped, renderErr := renderer.RenderCapabilityFiles(capDir, projectDir, vars)
-		if renderErr != nil {
-			return fmt.Errorf("render capability %q: %w", c, renderErr)
-		}
-		for _, f := range result.FilesCreated {
-			fmt.Printf("  Created: %s\n", f)
-			totalCreated++
-		}
-		for _, f := range skipped {
-			fmt.Printf("  Skipped (exists): %s\n", f)
-			totalSkipped++
-		}
+// regenerates the guides. Only the newly added capabilities are rendered,
+// through the same path as `verikt new`: the architecture's path mappings,
+// ArchPaths and partials all apply.
+func applyAdd(tFS fs.FS, plan *scaffold.CompositionPlan, cfg *config.VeriktConfig, cfgPath, projectDir string, toAdd, finalCaps, autoDeps []string) error {
+	result, skipped, err := scaffold.NewRenderer(tFS).RenderAddedCapabilities(plan, projectDir, toAdd)
+	if err != nil {
+		return fmt.Errorf("render capabilities: %w", err)
+	}
+	for _, f := range result.FilesCreated {
+		fmt.Printf("  Created: %s\n", f)
+	}
+	for _, f := range skipped {
+		fmt.Printf("  Skipped (exists): %s\n", f)
 	}
 
 	// Update verikt.yaml with new capabilities.
@@ -289,12 +344,32 @@ func applyAdd(tFS fs.FS, cfg *config.VeriktConfig, cfgPath, projectDir string, t
 	}
 
 	fmt.Printf("\nDone: %d files created, %d files skipped, %d capabilities added\n",
-		totalCreated, totalSkipped, len(toAdd))
+		len(result.FilesCreated), len(skipped), len(toAdd))
 	if len(autoDeps) > 0 {
 		fmt.Printf("Auto-resolved dependencies: %s\n", strings.Join(autoDeps, ", "))
 	}
 
 	return nil
+}
+
+// validateArchitecture fails with a clear error when verikt.yaml names no
+// architecture, or one the provider does not ship.
+func validateArchitecture(tFS fs.FS, architecture string) error {
+	archs, err := listArchitectures(tFS)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(archs))
+	for _, a := range archs {
+		if a.name == architecture {
+			return nil
+		}
+		names = append(names, a.name)
+	}
+	if strings.TrimSpace(architecture) == "" {
+		return fmt.Errorf("verikt.yaml declares no architecture — set `architecture:` to one of: %s", strings.Join(names, ", "))
+	}
+	return fmt.Errorf("unknown architecture %q in verikt.yaml — available: %s", architecture, strings.Join(names, ", "))
 }
 
 // listAvailableCapabilities returns the names of all capabilities in the template FS.

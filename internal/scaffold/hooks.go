@@ -40,8 +40,10 @@ func validateHookVars(vars map[string]interface{}) error {
 		}
 		kind := reflect.TypeOf(val).Kind()
 		switch kind {
-		case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Ptr:
+		case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Pointer:
 			continue
+		default:
+			// Scalar kinds render as plain strings and are validated below.
 		}
 		if _, ok := val.(bool); ok {
 			continue
@@ -79,7 +81,7 @@ func RunPostScaffoldHooks(outputDir string, hooks []string, vars map[string]inte
 		// are validated by validateHookVars against the safeShellValue allowlist.
 		// Hook templates themselves come from embedded fs.FS (compiled into the binary).
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		cmd := exec.CommandContext(ctx, "sh", "-c", renderedHook)
+		cmd := exec.CommandContext(ctx, "sh", "-c", renderedHook) //nolint:gosec // G204: hook from the embedded template FS, vars allowlisted above
 		cmd.Dir = outputDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

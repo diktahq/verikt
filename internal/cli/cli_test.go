@@ -475,9 +475,11 @@ func TestGuide_GeneratesAllTargets(t *testing.T) {
 
 	for _, p := range []string{
 		filepath.Join(".claude", "rules", "verikt-index.md"),
-		".cursorrules",
+		filepath.Join(".cursor", "rules", "verikt.mdc"),
 		filepath.Join(".github", "copilot-instructions.md"),
 		".windsurfrules",
+		"AGENTS.md",
+		filepath.Join(".verikt", "references", "architecture.md"),
 	} {
 		full := filepath.Join(svcDir, p)
 		if _, err := os.Stat(full); os.IsNotExist(err) {
@@ -500,8 +502,10 @@ func TestGuide_SingleTarget(t *testing.T) {
 	}
 	for _, p := range []string{
 		".cursorrules",
+		filepath.Join(".cursor", "rules", "verikt.mdc"),
 		".windsurfrules",
 		filepath.Join(".github", "copilot-instructions.md"),
+		"AGENTS.md",
 	} {
 		_ = os.Remove(filepath.Join(svcDir, p))
 	}
@@ -519,7 +523,13 @@ func TestGuide_SingleTarget(t *testing.T) {
 	}
 
 	// Other targets should NOT exist.
-	for _, p := range []string{".cursorrules", ".windsurfrules", filepath.Join(".github", "copilot-instructions.md")} {
+	for _, p := range []string{
+		".cursorrules",
+		filepath.Join(".cursor", "rules", "verikt.mdc"),
+		".windsurfrules",
+		filepath.Join(".github", "copilot-instructions.md"),
+		"AGENTS.md",
+	} {
 		full := filepath.Join(svcDir, p)
 		if _, err := os.Stat(full); err == nil {
 			t.Errorf("expected %s to NOT exist for single target", p)

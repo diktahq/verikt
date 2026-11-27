@@ -17,8 +17,8 @@ Each experiment runs the same agent on the same task. Condition A: no guide — 
     <span class="exp-stat-label">less variance across runs</span>
   </div>
   <div class="exp-stat">
-    <span class="exp-stat-number">0</span>
-    <span class="exp-stat-label">extra tokens — guide loads from cache</span>
+    <span class="exp-stat-number">17,220</span>
+    <span class="exp-stat-label">cache tokens the guide added in EXP-01, with no extra fresh input tokens</span>
   </div>
 </div>
 
@@ -92,7 +92,7 @@ The guide doesn't make agents better on average — it makes them consistently c
 
 ## Methodology
 
-Every experiment follows the same protocol: same agent, same task, one variable changed. Every run persists the full prompt, raw response, and `verikt check` output as artifacts. [Full methodology →](/experiments/methodology/)
+Every experiment follows the same protocol: same agent, same task, one variable changed. The harness writes the full prompt, raw response, and `verikt check` output for every run. The repository holds those run artifacts for EXP-04, EXP-07 and EXP-09; for EXP-01, EXP-02, EXP-03, EXP-05, EXP-06 and EXP-08 it holds only the experiment's `manifest.yaml`, and EXP-10 is defined in a test file with no committed runs. [Full methodology →](/experiments/methodology/)
 
 ---
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -194,7 +195,7 @@ func TestCheckPrintProxyRuleSection_PassMessageOnlyWhenNothingStaleOrInvalid(t *
 // check --help and ErrCheckFailed both promise "error-severity violations", but
 // the gate counted every violation, including warnings. An unsuppressable
 // warning-level anti-pattern (god_package) made exit 0 unreachable.
-func TestCheckHasBlockingFindings_OnlyErrorSeverity(t *testing.T) {
+func TestEvaluateCheck_OnlyErrorSeverityFailsByDefault(t *testing.T) {
 	tests := []struct {
 		name    string
 		result  *checker.CheckResult
@@ -249,13 +250,13 @@ func TestCheckHasBlockingFindings_OnlyErrorSeverity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, hasBlockingFindings(tt.result))
+			assert.Equal(t, tt.want, evaluateCheck(checkOutcome{Checker: tt.result}, config.FailOnError).Failed)
 		})
 	}
 }
 
-func TestCheckHasBlockingFindings_NilResult(t *testing.T) {
-	assert.False(t, hasBlockingFindings(nil))
+func TestEvaluateCheck_NilResultPasses(t *testing.T) {
+	assert.False(t, evaluateCheck(checkOutcome{}, config.FailOnError).Failed)
 }
 
 // A stale rule could not run, so it must not leave the exit code at 0.
@@ -265,28 +266,28 @@ func TestCheckRuleResultBlocks_StaleCountsAsBlocking(t *testing.T) {
 			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "stale", Error: "scope matches 0 files"},
 		},
 	}
-	assert.True(t, ruleResultBlocks(stale))
+	assert.True(t, evaluateCheck(checkOutcome{Rules: stale}, config.FailOnError).Failed)
 
 	invalid := &rules.RunResult{
 		Statuses: []rules.RuleStatus{
 			{Rule: rules.Rule{ID: "r1"}, Filename: "r1.yaml", Status: "invalid", Error: "missing id"},
 		},
 	}
-	assert.True(t, ruleResultBlocks(invalid))
+	assert.True(t, evaluateCheck(checkOutcome{Rules: invalid}, config.FailOnError).Failed)
 
 	warningOnly := &rules.RunResult{
 		Violations: []rules.RuleViolation{{RuleID: "r1", Severity: "warning", File: "x.go", Description: "soft"}},
 		Statuses:   []rules.RuleStatus{{Rule: rules.Rule{ID: "r1"}, Status: "valid"}},
 	}
-	assert.False(t, ruleResultBlocks(warningOnly))
+	assert.False(t, evaluateCheck(checkOutcome{Rules: warningOnly}, config.FailOnError).Failed)
 
 	errorViolation := &rules.RunResult{
 		Violations: []rules.RuleViolation{{RuleID: "r1", Severity: "error", File: "x.go", Description: "hard"}},
 		Statuses:   []rules.RuleStatus{{Rule: rules.Rule{ID: "r1"}, Status: "valid"}},
 	}
-	assert.True(t, ruleResultBlocks(errorViolation))
+	assert.True(t, evaluateCheck(checkOutcome{Rules: errorViolation}, config.FailOnError).Failed)
 
-	assert.False(t, ruleResultBlocks(nil))
+	assert.False(t, evaluateCheck(checkOutcome{Rules: nil}, config.FailOnError).Failed)
 }
 
 func TestCheckPrintProxyRuleSection_InvalidStaleWithViolations(t *testing.T) {
@@ -321,7 +322,7 @@ func TestCheckPrintCombinedJSON_PassNoChecker(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		err := printCombinedJSON(nil, ruleResult, nil, false)
+		err := printCombinedJSON(checkOutcome{Rules: ruleResult}, checkVerdict{FailOn: config.FailOnError})
 		require.NoError(t, err)
 	})
 
@@ -366,7 +367,7 @@ func TestCheckPrintCombinedJSON_FailWithCheckerViolations(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		err := printCombinedJSON(checkerResult, nil, nil, true)
+		err := printCombinedJSON(checkOutcome{Checker: checkerResult}, checkVerdict{FailOn: config.FailOnError, Failed: true})
 		require.NoError(t, err)
 	})
 
@@ -395,7 +396,7 @@ func TestCheckPrintCombinedJSON_MultipleViolationTypes(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		err := printCombinedJSON(checkerResult, nil, nil, true)
+		err := printCombinedJSON(checkOutcome{Checker: checkerResult}, checkVerdict{FailOn: config.FailOnError, Failed: true})
 		require.NoError(t, err)
 	})
 
@@ -414,7 +415,7 @@ func TestCheckPrintCombinedTerminal_NilCheckerResult(t *testing.T) {
 	flags := &checkFlags{}
 
 	out := captureStdout(t, func() {
-		printCombinedTerminal(nil, nil, nil, cfg, flags)
+		printCombinedTerminal(checkOutcome{}, cfg, flags, checkVerdict{FailOn: config.FailOnError})
 	})
 
 	assert.Contains(t, out, "verikt check — hexagonal")
@@ -427,7 +428,7 @@ func TestCheckPrintCombinedTerminal_NilRuleResult(t *testing.T) {
 	flags := &checkFlags{}
 
 	out := captureStdout(t, func() {
-		printCombinedTerminal(nil, nil, nil, cfg, flags)
+		printCombinedTerminal(checkOutcome{}, cfg, flags, checkVerdict{FailOn: config.FailOnError})
 	})
 
 	assert.Contains(t, out, "verikt check — flat")
@@ -439,7 +440,7 @@ func TestCheckPrintCombinedTerminal_StagedModeTip(t *testing.T) {
 	flags := &checkFlags{staged: true}
 
 	out := captureStdout(t, func() {
-		printCombinedTerminal(nil, nil, nil, cfg, flags)
+		printCombinedTerminal(checkOutcome{}, cfg, flags, checkVerdict{FailOn: config.FailOnError})
 	})
 
 	assert.Contains(t, out, "Tip: Add to .git/hooks/pre-commit:")
@@ -451,7 +452,7 @@ func TestCheckPrintCombinedTerminal_NoStagedTipByDefault(t *testing.T) {
 	flags := &checkFlags{staged: false}
 
 	out := captureStdout(t, func() {
-		printCombinedTerminal(nil, nil, nil, cfg, flags)
+		printCombinedTerminal(checkOutcome{}, cfg, flags, checkVerdict{FailOn: config.FailOnError})
 	})
 
 	assert.NotContains(t, out, "pre-commit")
@@ -462,7 +463,7 @@ func TestCheckPrintCombinedTerminal_EmptyArchitectureFallback(t *testing.T) {
 	flags := &checkFlags{}
 
 	out := captureStdout(t, func() {
-		printCombinedTerminal(nil, nil, nil, cfg, flags)
+		printCombinedTerminal(checkOutcome{}, cfg, flags, checkVerdict{FailOn: config.FailOnError})
 	})
 
 	assert.Contains(t, out, "verikt check — project")
@@ -560,7 +561,7 @@ func TestCheckFilterRuleResult_EmptyRuleID(t *testing.T) {
 
 func TestCheckPrintCombinedJSON_NilBothResults(t *testing.T) {
 	out := captureStdout(t, func() {
-		err := printCombinedJSON(nil, nil, nil, false)
+		err := printCombinedJSON(checkOutcome{}, checkVerdict{FailOn: config.FailOnError})
 		require.NoError(t, err)
 	})
 
@@ -667,4 +668,24 @@ func TestFilterRuleResultByFiles(t *testing.T) {
 
 	assert.Len(t, filtered.Violations, 1)
 	assert.Equal(t, "service/svc.go", filtered.Violations[0].File)
+}
+
+func TestFunctionMetricSpec_CarriesConfiguredLimits(t *testing.T) {
+	spec, err := functionMetricSpec(config.FunctionRules{MaxLines: 80, MaxParams: 4, MaxReturnValues: 2})
+	require.NoError(t, err)
+	assert.Equal(t, int32(80), spec.MaxLines)
+	assert.Equal(t, int32(4), spec.MaxParams)
+	assert.Equal(t, int32(2), spec.MaxReturns)
+}
+
+func TestFunctionMetricSpec_RejectsNegativeLimit(t *testing.T) {
+	_, err := functionMetricSpec(config.FunctionRules{MaxParams: -1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_params")
+}
+
+func TestFunctionMetricSpec_RejectsLimitAboveInt32(t *testing.T) {
+	_, err := functionMetricSpec(config.FunctionRules{MaxLines: math.MaxInt32 + 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_lines")
 }

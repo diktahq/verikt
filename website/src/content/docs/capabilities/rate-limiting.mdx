@@ -9,8 +9,10 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- Rate limiting middleware
+- Per-client-IP token bucket middleware: `RateLimiter(ctx, rps, burst, logger)`
 - Per-endpoint configuration
+
+The client IP is the TCP peer, or the IP recorded by chi's trusted `ClientIPFrom*` middleware when you run behind a proxy, so a spoofed `X-Forwarded-For` cannot buy a fresh bucket. At most 100,000 clients are tracked at once; past that, new clients get 429 until idle ones are swept. The sweep goroutine stops when `ctx` is cancelled.
 
 ## When to Use
 
@@ -18,7 +20,7 @@ Use `rate-limiting` on any public-facing API to prevent abuse, brute-force attac
 
 ## Requirements & Suggestions
 
-**Requires:** [`http-api`](/capabilities/http-api/)
+**Requires:** [`http-api`](/capabilities/http-api/), and chi v5.5.0 or later for `middleware.GetClientIP`. A new project resolves a current chi; when you `verikt add rate-limiting` to a project that pins an older one, run `go get github.com/go-chi/chi/v5@latest` first.
 
 ## Add to Your Service
 

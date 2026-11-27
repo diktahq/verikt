@@ -1,4 +1,4 @@
-package httphandler
+package {{index .ArchPaths "HTTPHandlerPkg"}}
 
 import (
 	"context"
@@ -7,10 +7,13 @@ import (
 )
 
 const (
-	defaultAPIVersion  = "v1"
-	versionHeader      = "X-API-Version"
-	versionContextKey  contextKey = "api_version"
+	defaultAPIVersion = "v1"
+	versionHeader     = "X-API-Version"
 )
+
+// apiVersionContextKey keys the API version in a request context. An unexported
+// struct type cannot collide with keys set by any other package.
+type apiVersionContextKey struct{}
 
 // APIVersion extracts the API version from URL prefix (/v1/, /v2/) or header.
 func APIVersion(next http.Handler) http.Handler {
@@ -28,7 +31,7 @@ func APIVersion(next http.Handler) http.Handler {
 			version = hv
 		}
 
-		ctx := context.WithValue(r.Context(), versionContextKey, version)
+		ctx := context.WithValue(r.Context(), apiVersionContextKey{}, version)
 		w.Header().Set(versionHeader, version)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -36,7 +39,7 @@ func APIVersion(next http.Handler) http.Handler {
 
 // GetAPIVersion extracts the API version from context.
 func GetAPIVersion(ctx context.Context) string {
-	if v, ok := ctx.Value(versionContextKey).(string); ok {
+	if v, ok := ctx.Value(apiVersionContextKey{}).(string); ok {
 		return v
 	}
 	return defaultAPIVersion

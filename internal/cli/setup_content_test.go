@@ -68,3 +68,15 @@ func TestGlobalRulesContent_ContainsCommands(t *testing.T) {
 		}
 	}
 }
+
+// The global rule must not send agents to --catalog-only in a configured
+// project, where the project's own capability reference already exists.
+func TestGlobalRulesContent_CatalogOnlyOnlyWithoutConfig(t *testing.T) {
+	content := GlobalRulesContent("0.3.0")
+	if !strings.Contains(content, ".verikt/references/capabilities.md") {
+		t.Error("expected the rule to point at the project's capability reference first")
+	}
+	if !strings.Contains(content, "no `verikt.yaml`") {
+		t.Error("expected --catalog-only to be limited to projects without verikt.yaml")
+	}
+}

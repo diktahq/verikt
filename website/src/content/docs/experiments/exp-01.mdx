@@ -19,8 +19,8 @@ The agent with the guide produced a hexagonal service. The agent without it put 
     <span class="exp-stat-label">compliance without</span>
   </div>
   <div class="exp-stat">
-    <span class="exp-stat-number">0</span>
-    <span class="exp-stat-label">fresh tokens for the guide</span>
+    <span class="exp-stat-number">17,220</span>
+    <span class="exp-stat-label">cache tokens for the guide</span>
   </div>
 </div>
 
@@ -75,7 +75,7 @@ verikt check: FAIL         verikt check: PASS
 | Output tokens | 2,791 | 1,970 |
 | Latency | 28,109ms | **22,255ms** |
 
-The guide is served entirely from prompt cache. Zero fresh input tokens billed for the guide overhead.
+Fresh input tokens were 3 in both conditions: the guide was read from prompt cache. That does not make it free. Cache tokens went from 0 to 17,220, and cache reads are billed, at a lower rate than fresh input. In [EXP-09](/experiments/exp-09/), run 2 read 12,085 cache tokens without the guide and 62,630 with it.
 
 ## The finding that changed how we write guides
 
@@ -106,6 +106,6 @@ The task prompt says nothing about architecture. Create/retrieve orders, validat
 
 [→ Experiment Methodology — reproduction instructions](/experiments/methodology/)
 
-[→ Artifacts on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-01)
+[→ Experiment definition on GitHub](https://github.com/diktahq/verikt/tree/main/experiments/EXP-01) (only `manifest.yaml` is committed; run artifacts are not)
 
 [→ EXP-02: Does the improvement hold across 3 runs?](/experiments/exp-02/)

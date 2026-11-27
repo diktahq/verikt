@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -119,7 +120,7 @@ func scanLines(rule Rule, relPath string, data []byte, patternRe, mustContainRe,
 				Ref:         rule.Ref,
 				File:        relPath,
 				Line:        lineNum,
-				Match:       truncate(line, 120),
+				Match:       matchText(line),
 			})
 			continue
 		}
@@ -134,7 +135,7 @@ func scanLines(rule Rule, relPath string, data []byte, patternRe, mustContainRe,
 				Ref:         rule.Ref,
 				File:        relPath,
 				Line:        lineNum,
-				Match:       truncate(line, 120),
+				Match:       matchText(line),
 			})
 			continue
 		}
@@ -149,7 +150,7 @@ func scanLines(rule Rule, relPath string, data []byte, patternRe, mustContainRe,
 				Ref:         rule.Ref,
 				File:        relPath,
 				Line:        lineNum,
-				Match:       truncate(line, 120),
+				Match:       matchText(line),
 			})
 		}
 	}
@@ -177,11 +178,25 @@ func severity(s string) string {
 	return s
 }
 
+// matchText is the source line a finding echoes: trimmed, and cut at 120 bytes.
+// The engine produces the same text (grep.rs match_text); the parity tests
+// compare them.
+func matchText(line string) string {
+	return truncate(strings.TrimSpace(line), 120)
+}
+
+// truncate cuts s to at most maxLen bytes, backing up to a rune boundary: a cut
+// inside a multi-byte rune is not valid UTF-8, and JSON output turns it into a
+// replacement character.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	end := maxLen
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + "..."
 }
 
 type byteReader struct {

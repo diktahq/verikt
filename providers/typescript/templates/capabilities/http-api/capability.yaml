@@ -12,4 +12,3 @@ suggests:
   - platform
   - graceful
   - cors
-  - validation

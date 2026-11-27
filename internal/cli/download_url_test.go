@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // downloadURL matches a release asset URL in the documentation, capturing the
@@ -34,7 +34,7 @@ func TestDocumentedDownloadURLsMatchTheReleaseArchiveNames(t *testing.T) {
 	var checked int
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			switch d.Name() {
@@ -50,13 +50,16 @@ func TestDocumentedDownloadURLsMatchTheReleaseArchiveNames(t *testing.T) {
 		}
 
 		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || strings.HasPrefix(filepath.ToSlash(rel), "docs/internal/") {
+		if relErr != nil {
+			return relErr
+		}
+		if strings.HasPrefix(filepath.ToSlash(rel), "docs/internal/") {
 			return nil
 		}
 
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return nil
+			return readErr
 		}
 
 		for i, line := range strings.Split(string(data), "\n") {

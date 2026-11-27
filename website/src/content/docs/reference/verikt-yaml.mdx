@@ -36,7 +36,16 @@ components:
 
   - name: adapters
     in: ["adapter/**"]
-    may_depend_on: [ports, domain]
+    may_depend_on: [ports, domain, platform]
+
+  - name: platform
+    in: ["platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"]
+    may_depend_on: [domain]
+    optional: true
+
+  - name: app
+    in: ["cmd/**", "internal/bootstrap/**"]
+    may_depend_on: [domain, ports, service, adapters, platform]
 
 rules:
   max_function_lines: 80
@@ -54,7 +63,7 @@ The project's programming language. Supported values: `go`, `typescript`.
 
 ### `architecture`
 
-The architecture pattern used to scaffold the project (`hexagonal`, `flat`).
+The architecture pattern used to scaffold the project (`hexagonal`, `clean`, `layered`, `flat`).
 
 ### `capabilities`
 
@@ -69,6 +78,15 @@ The core of architecture enforcement. Each component defines:
 | `name` | string | Component identifier |
 | `in` | string[] | Glob patterns matching this component's packages |
 | `may_depend_on` | string[] | Other components this one is allowed to import from |
+| `optional` | bool | When `true`, the component may have no code yet. `verikt check` does not report `missing_component` for it; its dependency rules still apply once code exists. Defaults to `false` |
+
+Every component without `optional: true` must have a directory matching one of its `in` patterns, or `verikt check` reports `missing_component`.
+
+`verikt new` writes the components of the architecture you chose, plus two that every layered Go architecture shares. `platform` holds the cross-cutting code capabilities write (observability, resilience, event bus, config, lifecycle, migrations, validation, test helpers). It may depend only on the innermost layer (`domain`, `entity` or `model`), and it is optional because a project scaffolded without those capabilities has none. `app` is the composition root: `cmd/` entrypoints and `internal/bootstrap/`. It may depend on every other component and nothing may depend on it. Because `app` classifies `cmd/`, scaffolded projects no longer need `check.exclude: [cmd/**]`.
+
+Dependency rules apply to production code. Imports in `_test.go` files are not checked, so a test can import a fixture or fake from another component.
+
+When two components' patterns can claim the same package, the first one declared wins. `verikt new` lists `platform` after the architecture layers for that reason: in a clean project, `internal/infrastructure/config` belongs to `infrastructure`, not to `platform`'s `config/**`.
 
 <Aside type="caution">
 **Dependency rules are enforced transitively.** If `service` may depend on `domain` and `ports`, but not `adapters`, then any import from a `service/` package into an `adapter/` package is a violation.
@@ -86,13 +104,67 @@ Optional rules for function complexity and project structure:
 | `required_dirs` | string[] | [] | Directories that must exist |
 | `forbidden_dirs` | string[] | [] | Directories that must not exist |
 
+### `check`
+
+Optional settings for `verikt check`:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `exclude` | string[] | [] | Path globs the checker ignores: generated code, vendored trees, tooling directories. Does not apply to `allowed_entrypoints` |
+| `allowed_entrypoints` | string[] | absent | The Go binaries this project is meant to have. Turns on the `cmd_allowlist` detector |
+| `fail_on` | string | `error` | The lowest finding severity that fails `verikt check`: `error` or `warning` |
+| `silent_ci_swallow.extra_commands` | string[] | [] | Your own verification commands. `silent_ci_swallow` reports `\|\| true` after them, like the built-in list |
+| `mutable_install_url.include_docs` | bool | `false` | Also scan fenced code blocks in `README.md` and `docs/**/*.md` for `mutable_install_url` |
+
+Agents asked to refactor or migrate code tend to add a new `cmd/` binary rather than change the one that exists, and a repository collects helper mains and `_v2` copies nobody asked for. `allowed_entrypoints` declares the binary surface, and `verikt check` reports any `package main` outside it:
+
+```yaml
+check:
+  allowed_entrypoints:
+    - cmd/server
+    - cmd/cli
+```
+
+Each entry is a project-relative directory. Use `.` for a `main.go` in the project root. An entrypoint is a directory directly holding a non-test `.go` file in `package main`, either in the project root or anywhere under `cmd/`. Files behind `//go:build ignore` are generator scripts and do not count, and neither do directories the Go tool skips (`.name`, `_name`, `testdata`, `vendor`) or anything reached through a symlink.
+
+Leaving the key out leaves the detector off. An empty list, `allowed_entrypoints: []`, turns it on with nothing approved, so every entrypoint is reported. `check.exclude` is not applied to this detector: excluding `cmd/**` from orphan detection is common, and it would otherwise switch the check off in the projects it is for. To accept one specific entrypoint without listing it, waive it with `severity_overrides` under the key `cmd_allowlist`.
+
+Findings are reported at warning severity and do not fail the check. Raise them to blocking with `severity_overrides` (`severity: must`).
+
+#### `silent_ci_swallow` and `mutable_install_url`
+
+Both checks are always on; these keys tune them. `silent_ci_swallow` knows common test runners, linters and migration tools. If your project verifies with its own command, list it, and `<command> || true` is reported too. An entry is a command name or a command followed by fixed arguments, matched against the start of the command:
+
+```yaml
+check:
+  silent_ci_swallow:
+    extra_commands: [db-up, "deno test"]
+  mutable_install_url:
+    include_docs: true
+```
+
+`include_docs` adds fenced code blocks in `README.md` and `docs/**/*.md` to what `mutable_install_url` reads. It is off by default because install docs show convenience one-liners on purpose. See [CI, script and container files](/reference/cli/#ci-script-and-container-files) for what each check reports and how to allow one line.
+
+#### `fail_on`
+
+By default only error-severity findings fail `verikt check`; warnings are reported and the run passes. `fail_on: warning` makes every warning fail it too, for a project that has paid its warnings down and wants to keep them at zero:
+
+```yaml
+check:
+  fail_on: warning
+```
+
+It applies to every category the same way: built-in detectors, anti-patterns, proxy rules and decision gates. Info findings and findings waived with `severity_overrides` never fail. The `--strict` flag sets the same threshold for one run and takes precedence over this field, so `fail_on: error` with `--strict` still fails on warnings. To make one rule blocking rather than all warnings, use `severity_overrides` with `severity: must`.
+
+Any other value, including `info` or the override words `must` and `should`, is rejected: `verikt check` stops with an error naming `check.fail_on` instead of running at a threshold you did not ask for. See [exit codes](/reference/cli/#exit-codes) for the full table.
+
 ## Feature-Gated Manifests
 
 Architecture and capability manifests support two fields for integrating with the [feature matrix](/reference/features/).
 
 ### `requires_features`
 
-A list of feature names that must be enabled for the manifest to apply. If any required feature is disabled (because the target Go version is too old), verikt skips or warns about the capability.
+A list of feature names the target Go version must provide. If any is missing, `verikt new` and `verikt add` fail before writing a file, naming the capability (or architecture), the missing feature, and the version that provides it. A feature the matrix does not define is reported as missing too: nothing can show that the target provides it.
 
 ```yaml
 # capability.yaml
@@ -121,12 +193,22 @@ When `os_root` is true (Go >= 1.24): `root.go.tmpl` is rendered, `fallback.go.tm
 
 ## Validation
 
-The configuration is validated when running `verikt check`:
+Validation happens at two points, and they check different things.
 
-- Component names must be unique
-- Components cannot depend on themselves
-- Dependencies must reference existing components
-- `in` patterns must be valid globs
+`verikt check` and `verikt guide` reject a `capabilities` entry that is empty or names a capability the language provider does not have, and name the entry.
+
+The structural rules are enforced when verikt writes the file — `verikt new`, `verikt add`, `verikt init`, `verikt analyze` and `verikt decide` refuse to save a config that breaks them:
+
+- `language` and `architecture` are set
+- Component names are present and unique
+- No component lists itself in `may_depend_on`
+- Every `may_depend_on` entry names an existing component
+- Every `check.allowed_entrypoints` entry is a non-empty, project-relative path that stays inside the project
+- `check.fail_on` is empty, `error` or `warning`
+- Every `check.silent_ci_swallow.extra_commands` entry is a command name, optionally followed by fixed arguments (`deno test`). Blank entries, duplicates and shell syntax (`|`, `;`, `$(`, quotes, `=`) are rejected
+- Every `severity_overrides` entry has a severity of `must`, `should` or `ignore` and a reason, and no catch-all shadows entries after it
+
+`verikt check` does not re-run these structural rules on a file you edited by hand, with exceptions it validates before running: `check.fail_on`, `check.silent_ci_swallow.extra_commands`, `check.allowed_entrypoints`, and in `severity_overrides` the severity (`must`, `should` or `ignore`) and the `reason` on every `ignore` entry. An invalid entry stops the check with a message naming it. A hand-written `must` or `should` entry without a reason, or a catch-all ahead of other entries, is accepted by `check`, because neither hides a finding. Nothing validates `in` patterns as globs.
 
 <Aside type="tip">
 You can add `verikt check` to your CI pipeline to catch dependency violations before merge.

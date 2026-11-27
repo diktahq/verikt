@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## `verikt guide`
 
-Generate architecture context for AI coding agents. Reads your `verikt.yaml` and outputs rules, dependency constraints, and anti-patterns that AI agents consume before writing code.
+Generate architecture context for AI coding agents. Reads your `verikt.yaml` and writes rules, dependency constraints, and anti-patterns into the files AI agents load before writing code. Full detail — targets, the on-demand references under `.verikt/references/`, the instruction budget — is on the [`verikt guide` page](/reference/guide/).
 
 ```bash
 verikt guide [flags]
@@ -17,21 +17,32 @@ verikt guide [flags]
 
 | Flag | Description | Default |
 |------|------------|---------|
-| `--target` | AI tool target (`all`, `claude`, `cursor`, `copilot`, `windsurf`) | `all` |
-| `--path` | Path to project | `.` |
-| `--output` | Output format (`terminal`, `file`) | `terminal` |
+| `--target` | Which agent's files to write (`all`, `claude`, `cursor`, `copilot`, `windsurf`, `agents`) | `all` |
+| `--catalog-only` | Write only the capability catalog, for a project without `verikt.yaml`; refuses and writes nothing when `verikt.yaml` is found | `false` |
+
+`all` writes for every agent the project already uses, or for all of them when none is detected.
+
+| Target | Always-loaded file |
+|--------|--------------------|
+| `claude` | `.claude/rules/verikt-index.md` and `.claude/rules/verikt-<category>.md` |
+| `cursor` | `.cursor/rules/verikt.mdc` (verikt's section is moved out of a legacy `.cursorrules`) |
+| `copilot` | `.github/copilot-instructions.md` |
+| `windsurf` | `.windsurfrules` |
+| `agents` | `AGENTS.md` |
+
+Every target also gets the on-demand references in `.verikt/references/`. Commit them with the rest.
 
 ### Examples
 
 ```bash
-# Generate context for any AI agent
+# Every agent the project uses
 verikt guide
 
 # Target Claude Code specifically
 verikt guide --target claude
 
-# Target Cursor
-verikt guide --target cursor
+# AGENTS.md, read by Codex, Antigravity and other agents
+verikt guide --target agents
 ```
 
 <Aside type="tip">
@@ -63,17 +74,23 @@ verikt new [name] [flags]
 
 ### Version Detection and Features
 
-By default, verikt runs `go env GOVERSION` to detect the installed Go version. The detected version is used to resolve **feature flags** from the provider's feature matrix — enabling modern stdlib APIs and language features in the generated code.
+Templates emit different code depending on the Go version they target, so verikt settles that version before rendering anything. It takes the first of:
 
-You can override the detected version with `--set GoVersion=X.XX`. This is useful in CI environments or when targeting a specific Go version different from the one installed locally.
+1. `--set GoVersion=X.YY` (a release version such as `1.24` or `1.24.3`; anything else is rejected)
+2. The installed toolchain, from `go env GOVERSION`, reduced to major.minor. verikt runs it outside the current directory, so a `go.mod` there with a newer `go` or `toolchain` line cannot trigger a toolchain download. Development builds (`devel ...`) count as no toolchain.
+3. The architecture's default, `1.22`, when no toolchain is found
+
+The chosen version is written to the `go` directive in `go.mod` and to the Go base image of any generated Dockerfile, and resolves the **feature flags** templates use, from the provider's feature matrix.
 
 ```bash
-# Use detected Go version (default)
+# Use the installed Go version (default)
 verikt new my-service --language go --no-wizard
 
 # Target a specific Go version
 verikt new my-service --language go --set GoVersion=1.24 --no-wizard
 ```
+
+An architecture or capability can declare `requires_features`. When the target version lacks one, `verikt new` stops before writing files and names the capability, the missing feature, the version that provides it, where the target version came from, and the fix: install that Go version or pass `--set GoVersion`.
 
 See the [Feature Matrix](/reference/features/) for the full list of version-gated features.
 
@@ -108,7 +125,31 @@ verikt check [flags]
 | Flag | Description | Default |
 |------|------------|---------|
 | `--path` | Path to project | `.` |
-| `--output` | Output format (`terminal`, `json`) | `terminal` |
+| `-o, --output` | Output format (`terminal`, `json`, `markdown`) | `terminal` |
+| `--diff <ref>` | Report only findings in files changed since the merge base of `<ref>` and `HEAD` | none |
+| `--staged` | Report only findings in files in the git staging area | `false` |
+| `--detectors` | Run only the built-in detectors | `false` |
+| `--proxy-rules` | Run only proxy rules | `false` |
+| `--rule <id>` | Run a single proxy rule | none |
+| `--decisions` | Run only decision gate validation | `false` |
+| `--allow-degraded` | If the analysis engine is unavailable, skip the built-in detectors with a warning instead of failing | `false` |
+| `--strict` | Fail on warning-severity findings too. Takes precedence over `check.fail_on` | `false` |
+
+`--detectors`, `--proxy-rules`, `--rule` and `--decisions` each narrow the run to one kind of check, so they cannot be combined.
+
+### Checking Only What Changed
+
+`--diff main` compares against the merge base of `main` and `HEAD`, not against `main`'s current tip, so on a branch that has fallen behind it reports what the branch changed rather than everything `main` moved on. The comparison is with the working tree, so committed and uncommitted work are both included, and so are untracked files git does not ignore: a file created since the last commit is checked before anyone runs `git add`. A ref that git cannot resolve is an error, not an empty file list: an empty list would filter every finding away and report a pass. An empty ref, or one starting with `-`, is rejected before git sees it.
+
+`--diff` and `--staged` include added, copied, modified and **renamed** files, and a symlink replaced by a regular file. Renames used to be left out, so every finding in a file the branch had moved — including one moved and then edited — disappeared from the report.
+
+Paths are compared relative to the checked project, not the repository root, so both flags work when `--path` points at a service inside a monorepo. File names git would quote, such as ones with non-ASCII characters, are read verbatim. Findings waived with a `verikt:allow` marker in a changed file stay in the `WAIVED` section.
+
+### When the Analysis Engine Is Unavailable
+
+The built-in detectors (dependency rules, structure, function metrics, anti-patterns) run on the analysis engine embedded in the binary and extracted to a cache directory on first use. A cached engine is used only if it is a regular file, not a symlink, with the expected size, permissions and SHA-256; anything else is extracted again.
+
+If the engine cannot be extracted — an unwritable cache directory, for example — `verikt check` fails, and the error names the cause. It does not quietly skip the detectors and report a pass. `--allow-degraded` opts into skipping them: a warning on stderr says the detectors did not run, and only proxy rules and decision gates are checked. stdout is untouched, so `-o json` stays parseable. `--allow-degraded` is refused together with `--detectors`, which would leave nothing to check. `--decisions`, `--proxy-rules` and `--rule` never need the engine.
 
 ### What It Does Not Analyse
 
@@ -136,17 +177,182 @@ verikt runs **14 AST-based detectors**:
 - **Function complexity** — functions exceeding line/param/return limits
 - **Component coverage** — percentage of components with source files
 - **Anti-patterns** — common architectural violations
+- **Unapproved entrypoints** (`cmd_allowlist`, Go only, opt-in) — a `package main`
+  in the project root or under `cmd/` that `check.allowed_entrypoints` does not
+  list. Off unless that key is set; see the [`check` reference](/reference/verikt-yaml/#check)
+- **Live agent configuration in fixtures** (`live_dot_claude_fixture`, always on)
+  — a `.claude/` directory holding `rules/` or `skills/` under a path segment named
+  `test`, `tests`, `testdata`, `fixtures`, `evals`, `examples`, `__tests__` or
+  `__fixtures__`, or a standalone `CLAUDE.md` or `CLAUDE.local.md` inside a fixture
+  case (`testdata/<case>/CLAUDE.md`)
+
+The second exists because a fixture an agent can find is not a fixture. Claude Code
+loads `CLAUDE.md`, `CLAUDE.local.md`, `.claude/rules/` and `.claude/skills/` from a
+subdirectory on demand, the first time it reads or edits a file there, so a test
+subject stored that way becomes the instructions of whoever works on the fixture.
+Store it as `dot-claude/` (or `CLAUDE.fixture.md`) and copy it into place in a
+temporary directory when the test runs. `agents/`, `commands/`, `hooks/`, settings
+files and a nested `.claude/CLAUDE.md` are not loaded from a subdirectory, so a
+`.claude/` holding only those is not reported;
+`.git`, `node_modules` and `vendor` are not searched, symlinks are not followed,
+and `check.exclude` applies.
+
+Both are reported under **STRUCTURE VIOLATIONS** and in the JSON `violations[]`
+array, at warning severity, so neither fails the check unless you raise it with
+`severity_overrides`. `live_dot_claude_fixture` names the directory; with
+`--diff` it is kept when any file inside that directory changed.
+
+### CI, Script and Container Files
+
+Two more checks read the files that run your build rather than your source code.
+Both are always on, apply to every language, and report at warning severity under
+**STRUCTURE VIOLATIONS** with `file:line`.
+
+They read `.github/workflows/*.yml` and `*.yaml`, `lefthook.yml` and
+`.lefthook.yml`, `scripts/**/*.sh`, `.claude/hooks/**/*.sh`, every `Makefile`,
+`GNUmakefile` and `*.mk`, and every `Dockerfile`, `Dockerfile.*` and
+`*.Dockerfile` (except template files such as `Dockerfile.tmpl`). Comments are
+ignored, and a command continued with a trailing `\` is read as one command,
+reported at the line where it starts. `.git`, `node_modules`, `vendor` and
+`testdata` are not searched, symlinks are not followed, and `check.exclude`
+applies.
+
+**`silent_ci_swallow`** reports a failure turned into a pass. `migrate-up || true`
+in a deploy script, `RESULT=$(verikt check) || true` in a hook and
+`continue-on-error: true` on a lint job each stay green while the thing they ran
+is broken. It reports:
+
+- `continue-on-error: true` on any job or step of a workflow. Only the literal
+  value counts; `continue-on-error: ${{ matrix.experimental }}` is not reported.
+- `|| true` or `|| :` followed by a read of `$?`, on the same line or the next
+  command, for any command. After the swallow `$?` is always 0. Capture the
+  status with `set +e; cmd; rc=$?; set -e` instead.
+- `|| true`, `|| :` or `|| exit 0` after a verification command: test runners,
+  linters, type checkers, scanners and migration tools (`go test`, `go vet`,
+  `pytest`, `golangci-lint`, `eslint`, `tsc`, `npm run lint`, `make test`,
+  `rails db:migrate`, `alembic` and others), a script or target whose name has a
+  `test`, `lint`, `check`, `verify` or `migrate` part (`./scripts/run-tests.sh`,
+  `migrate-up`, `make test-short`), and captures such as
+  `OUT=$(go test ./...) || true`.
+
+Cleanup is never reported, whatever its arguments mention: `rm -rf .pytest_cache || true`,
+`docker rm -f test-db || true` and `kill $PID || true` are ordinary best-effort
+steps, and so are scripts named for setup or teardown (`./scripts/clean-test-db.sh`).
+A bare snake_case word such as `cmd_check` is read as a shell function and not
+reported. Add your own verification commands with
+[`check.silent_ci_swallow.extra_commands`](/reference/verikt-yaml/#check).
+
+**`mutable_install_url`** reports a download whose content can change under the
+same reference, so the build you reviewed is not the build that runs:
+
+- a download piped or substituted into a shell: `curl ... | bash`,
+  `wget -qO- ... | sudo sh`, `curl ... | VERSION=v1 bash`, `bash <(curl ...)`,
+  `sh -c "$(curl ...)"`. Piping into `shasum`, `sha256sum` or `tar` is not
+  reported, and neither is a pipe inside a quoted string, such as an `echo` that
+  prints install instructions.
+- `/releases/latest/download/` anywhere.
+- `raw.githubusercontent.com/<owner>/<repo>/main/...`, or `master`, `HEAD` or
+  `refs/heads/main`. Image files (`.png`, `.svg` and similar) are skipped.
+- in workflows, `uses:` pinned to `main`, `master` or `HEAD`. Version tags and
+  commit SHAs pass.
+- in Dockerfiles, a `FROM` image that is untagged or tagged `:latest` without an
+  `@sha256:` digest. `FROM scratch`, earlier build stages, `FROM $BASE_IMAGE` and
+  registry ports (`localhost:5000/app:1.2`) are handled.
+
+Documentation is not scanned unless you set
+[`check.mutable_install_url.include_docs: true`](/reference/verikt-yaml/#check).
+Install docs routinely show a convenience one-liner, and a page that explains the
+anti-pattern has to quote it. With the key set, fenced code blocks in `README.md`
+and `docs/**/*.md` are scanned for pipe-to-shell and `/releases/latest/download/`,
+also at warning severity.
+
+verikt's own test suite runs both checks over every Dockerfile, CI config and
+Makefile template it ships, so `verikt new` does not scaffold a project that fails
+them.
+
+#### Allowing One Line
+
+Some swallows are deliberate: a notification that must not block a release, a
+lint job in advisory mode during a migration. Mark that line instead of waiving
+the whole file:
+
+```yaml
+      - name: Notify Slack
+        # verikt:allow silent_ci_swallow reason="Slack outages must not block a release"
+        continue-on-error: true
+```
+
+The marker is a comment holding exactly `verikt:allow <rule_id> reason="<text>"`,
+in `#`, `//` or `<!-- ... -->` form, for `silent_ci_swallow` or
+`mutable_install_url`. It covers the finding on its own line, or the next command
+when it sits in the comment lines directly above it; a blank line in between
+breaks the link. One marker allows one rule. For a command split over several
+lines, it may sit above the first line or trail any of them. In opted-in
+Markdown, a `<!-- verikt:allow ... -->` directly above a code fence covers that
+block.
+
+A finding a marker allows is not dropped. It is listed under **WAIVED**, and in the JSON `waived[]` array with `category: "structure"`, carrying the marker's reason, and it does not affect the exit code.
+
+```sh
+golangci-lint run ./... || true  # verikt:allow silent_ci_swallow reason="advisory until the v2 config lands (#412)"
+```
+
+Markers fail closed. A comment that mentions `verikt:allow` but has no `reason`, a
+blank reason, single quotes, extra text, more than one rule, or a rule that does
+not take markers allows nothing: the finding is still reported, and the marker
+itself is reported as `invalid_allow_directive`, also a warning. All of these are
+rejected:
+
+```yaml
+continue-on-error: true # verikt:allow silent_ci_swallow
+continue-on-error: true # verikt:allow silent_ci_swallow reason="  "
+continue-on-error: true # verikt:allow silent_ci_swalow reason="known flaky"
+continue-on-error: true # verikt:allow-continue-on-error reason="known flaky"
+```
+
+For a whole file or directory, use `severity_overrides` with the rule id and
+`paths`: `severity: ignore` waives it, `severity: must` makes it fail the check.
+`--diff` and `--staged` keep a finding when its file changed.
 
 ### Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | No error-severity violations. Warnings may be present. |
-| 1 | An error-severity violation was found, or a proxy rule could not run |
+| 0 | No finding at or above the fail threshold. Warnings may be present. |
+| 1 | A finding at or above the fail threshold was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability, an invalid `check.fail_on`, `check.silent_ci_swallow.extra_commands`, `check.allowed_entrypoints` or `severity_overrides` entry in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
 
-Warnings never affect the exit code, so a finding you have chosen to live with
-cannot block a pipeline. The exit code is the same in every output format —
-`--output json` reports the same verdict it prints.
+One rule decides pass or fail for every finding — built-in detectors,
+anti-patterns, proxy rules and decision gates alike — after `severity_overrides`
+have been applied:
+
+| Severity | Default | `--strict` or `check.fail_on: warning` |
+|----------|---------|----------------------------------------|
+| `error` | fails | fails |
+| `warning` | passes | fails |
+| `info` | passes | passes |
+| waived (`ignore`) | passes | passes |
+| none, or unrecognised | fails | fails |
+
+Warnings do not affect the exit code by default. New detectors ship at warning
+severity until they have shown their precision on real repositories, so a
+warning is a finding to review, not a verdict. Raise the threshold for one run
+with `--strict`, or for the project with
+[`check.fail_on: warning`](/reference/verikt-yaml/#check). To make one rule
+blocking without the others, set it to `must` in `severity_overrides` instead.
+A finding with no severity counts as an error, so a detector that forgets to set
+one cannot pass silently.
+
+The last line of terminal output gives the counts, the verdict and the reason:
+
+```
+0 errors, 3 warnings — passed (use --strict to fail on warnings)
+0 errors, 3 warnings — failed (warnings fail: --strict)
+1 error, 0 warnings — failed
+0 errors, 0 warnings — failed (1 proxy rule did not run)
+```
+
+The exit code is the same in every output format — `--output json` reports the
+same verdict it prints.
 
 A proxy rule whose scope matches no files is reported as **stale** and fails the
 check: a rule that did not run has not passed. A rule that ran and found nothing
@@ -166,6 +372,8 @@ severity_overrides:
       paths: ["internal/core/**"]
 ```
 
+`verikt check` validates every override before it runs. The severity must be `must`, `should` or `ignore`; `info`, `error`, `warning` or anything else stops the check with a message naming the entry. An `ignore` entry needs a `reason`. `severity: info` used to be accepted: it turned an error into a finding that passed even under `--strict` and never appeared under `WAIVED`.
+
 Waived findings are still reported, in a `WAIVED` section and in the `waived[]`
 array of the JSON output, and they do not affect the exit code. A finding that
 disappeared entirely would be indistinguishable from one the detector never
@@ -179,10 +387,20 @@ names are stable within a version, not across them.
 `violations[]`, `anti_patterns[]` and `waived[]` are always present and always
 arrays, so they are safe to iterate on a passing project.
 
+`fail_on` is the threshold the run was decided at (`error`, or `warning` under
+`--strict` or `check.fail_on: warning`). `error_count`, `warning_count` and
+`info_count` count findings by severity across every category, proxy rules and
+decision gates included; waived findings are in none of them, and a finding
+with no severity is counted as an error.
+
 ```json
 {
   "schema_version": 2,
   "result": "fail",
+  "fail_on": "error",
+  "error_count": 2,
+  "warning_count": 0,
+  "info_count": 0,
   "violations": [
     { "severity": "error", "file": "domain/order.go", "rule": "dependency", "message": "..." }
   ],
@@ -211,12 +429,10 @@ built-in detector findings only. An error-severity proxy-rule violation lives in
 `decision_violations[]`. A gate built from the two top-level arrays passes on all
 three.
 
-To count findings by severity — for a debt report rather than a gate — include
-every source:
+For a debt report rather than a gate, read the counts:
 
 ```bash
-jq '[(.violations // [])[], (.anti_patterns // [])[], (.proxy_rules.violations // [])[]]
-    | group_by(.severity) | map({severity: .[0].severity, count: length})' verikt.json
+jq '{errors: .error_count, warnings: .warning_count, info: .info_count}' verikt.json
 ```
 
 ### Example Output
@@ -234,7 +450,7 @@ Function Issues: 0
 Component Coverage: 100% (4/4)
 Compliance: 100%
 
-✓ All checks passed
+0 errors, 0 warnings — passed
 ```
 
 ## `verikt analyze`
@@ -266,6 +482,8 @@ verikt add <capability> [capability...] [flags]
 
 Capabilities are validated against the provider's templates, conflicts are checked, and transitive dependencies are auto-resolved. **Existing files are never overwritten** — only new files are created.
 
+`verikt add` targets the Go version in the project's `go.mod` `go` directive (falling back to the installed toolchain when there is none) and enforces `requires_features` against it. A capability that needs a newer version fails with the feature it needs and the fix: raise the `go` directive (`go get go@X.YY`) and rerun.
+
 ### Flags
 
 | Flag | Description | Default |
@@ -279,7 +497,7 @@ resolve, and leaves `verikt.yaml` and the generated guides untouched.
 
 1. Finds `verikt.yaml` in the current directory
 2. Validates that each capability exists and doesn't conflict
-3. Auto-resolves transitive dependencies (e.g., `bff` pulls in `http-api`)
+3. Auto-resolves transitive dependencies (e.g., `bff` pulls in `http-api` and `bootstrap`) and orders every capability after the ones it requires
 4. Renders only new capability files, skipping any that already exist on disk
 5. Updates `verikt.yaml` with the new capabilities
 6. Regenerates `verikt guide` output
@@ -294,7 +512,7 @@ verikt add redis
 verikt add kafka-consumer observability
 
 # Add a capability with transitive deps
-verikt add bff  # auto-adds http-api if not present
+verikt add bff  # auto-adds http-api and bootstrap if not present
 ```
 
 ### Example Output
@@ -302,13 +520,18 @@ verikt add bff  # auto-adds http-api if not present
 ```
 Adding capabilities:
   + http-api (auto-dependency)
+  + bootstrap (auto-dependency)
   + bff
-  Created: adapter/httphandler/handler.go
-  Created: adapter/httphandler/router.go
-  Skipped (exists): config/config.go
+  Created: /work/svc/adapter/httphandler/handler.go
+  Created: /work/svc/adapter/httphandler/router.go
+  Created: /work/svc/internal/bootstrap/bootstrap.go
+  Created: /work/svc/adapter/bffgateway/gateway.go
+  Created: /work/svc/adapter/bffgateway/routes.go
+  ...
+  Skipped (exists): /work/svc/cmd/svc/main.go
 
-Done: 5 files created, 1 files skipped, 2 capabilities added
-Auto-resolved dependencies: http-api
+Done: 16 files created, 1 files skipped, 3 capabilities added
+Auto-resolved dependencies: http-api, bootstrap
 ```
 
 ---
@@ -394,6 +617,34 @@ verikt init [flags]
 
 <Aside type="note">
 This is useful for adding architecture enforcement to projects that weren't scaffolded with verikt. Use `verikt analyze` first to understand the existing structure.
+</Aside>
+
+---
+
+## `verikt setup`
+
+Register verikt globally with the AI agents installed on this machine. For Claude Code it also offers to install the verikt skills, which add `/verikt:init`. Neither Homebrew nor the install script runs it for you (the script does with `--setup`).
+
+```bash
+verikt setup [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--check` | Report status without writing; exit 1 if any agent is stale | `false` |
+| `--force` | Rewrite even if the installed version matches | `false` |
+| `--uninstall` | Remove verikt's global files | `false` |
+| `--codex` | Also manage verikt's section in `~/.codex/AGENTS.md` | `false` |
+| `--antigravity` | Also manage verikt's section in `~/.gemini/GEMINI.md` | `false` |
+
+Claude Code, Cursor and Windsurf are configured automatically when their config directory exists (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when set; `~/.cursor`; `~/.windsurf`). verikt writes its own `verikt.md` into that agent's `rules/` directory. It never creates an agent's config directory.
+
+Codex and Antigravity keep their global instructions in one file you also edit, so they are opt-in. With `--codex` or `--antigravity`, verikt writes only the section between its `<!-- verikt:global:start -->` and `<!-- verikt:global:end -->` markers and leaves the rest of the file alone; malformed markers stop it rather than risk your content. The same flags select them for `--check` and `--uninstall`. Without the flag, an installed Codex or Antigravity is reported and left untouched.
+
+<Aside type="caution">
+The Codex and Antigravity file locations have not yet been checked against each vendor's current documentation ([#19](https://github.com/diktahq/verikt/issues/19)). If your agent reads its global instructions from somewhere else, the section verikt writes will not be loaded.
 </Aside>
 
 ---

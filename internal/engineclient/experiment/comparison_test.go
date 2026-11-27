@@ -102,12 +102,14 @@ func TestBenchmarkGoVsRust(t *testing.T) {
 	}
 
 	for _, s := range result.Summary.RuleStatuses {
-		status := "VALID"
+		var status string
 		switch s.Status {
 		case pb.RuleStatus_STALE:
 			status = "STALE"
 		case pb.RuleStatus_INVALID:
 			status = "INVALID"
+		default:
+			status = "VALID"
 		}
 		t.Logf("  Rule %s: %s", s.RuleId, status)
 	}
@@ -161,14 +163,14 @@ func testRules() []rules.Rule {
 			Exclude:     []string{"*_test.go"},
 		},
 		{
-			ID:             "cap-tracing-context",
-			Engine:         "grep",
-			Description:    "Functions making external calls should pass context for tracing",
-			Severity:       "warning",
-			Pattern:        `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
-			MustNotContain: "ctx",
-			Scope:          []string{"**/*.go"},
-			Exclude:        []string{"*_test.go", "vendor/**"},
+			ID:          "cap-tracing-context",
+			Engine:      "grep",
+			Description: "Functions making external calls should pass context for tracing",
+			Severity:    "warning",
+			Pattern:     `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
+			MustContain: "ctx",
+			Scope:       []string{"**/*.go"},
+			Exclude:     []string{"*_test.go", "vendor/**"},
 		},
 		{
 			ID:          "no-os-exit",

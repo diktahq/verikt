@@ -4,7 +4,7 @@ ENGINE_EMBED_DIR=internal/engineclient/bin
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
-.PHONY: build engine test lint vet clean release snapshot install-local help
+.PHONY: build engine test lint vet check clean release snapshot install-local help
 
 engine:
 	cd engine && cargo build --release
@@ -15,10 +15,15 @@ build: engine
 	go build -o $(BINARY) ./cmd/verikt
 
 test:
-	go test ./...
+	go test -race ./...
 
 lint:
 	golangci-lint run
+
+# Every gate, against a freshly built engine. `mise run verify` is the single
+# source of truth; this target only delegates to it.
+check:
+	mise run verify
 
 clean:
 	rm -rf bin/ internal/engineclient/bin/
@@ -38,9 +43,10 @@ install-local:
 help:
 	@echo "engine         Build Rust engine for current platform ($(GOOS)/$(GOARCH))"
 	@echo "build          Build binary to bin/verikt (runs engine first)"
-	@echo "test           Run all tests"
+	@echo "test           Run all tests with the race detector"
 	@echo "lint           Run golangci-lint"
 	@echo "vet            Run go vet"
+	@echo "check          Run every gate (mise run verify)"
 	@echo "clean          Remove build artifacts"
 	@echo "release        Create a release with GoReleaser"
 	@echo "snapshot       Create a snapshot release (no publish)"

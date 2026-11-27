@@ -2,10 +2,48 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
-// TenantResolver resolves a tenant ID from an incoming HTTP request.
+// ErrResolverNotConfigured is returned by NotConfigured. The Tenant middleware
+// answers it with 500, so a deployment that never wired a real resolver fails
+// loudly instead of serving requests without a tenant.
+var ErrResolverNotConfigured = errors.New("tenant resolver not configured")
+
+// TenantResolver resolves the tenant an incoming HTTP request acts for.
+//
+// Resolve from identity your authentication middleware has already verified
+// (a JWT claim, an introspected token, a client certificate), never from a
+// header, query parameter or body field the client controls: any caller can
+// set those to another tenant's ID. Return an error when the tenant cannot be
+// established; the middleware rejects the request.
 type TenantResolver interface {
 	Resolve(ctx context.Context, r *http.Request) (string, error)
 }
+
+// ResolverFunc adapts an ordinary function to TenantResolver.
+//
+// For example, with a tenant claim placed in the context by your auth middleware:
+//
+//	tenant.ResolverFunc(func(ctx context.Context, _ *http.Request) (string, error) {
+//		claims, ok := auth.ClaimsFromContext(ctx)
+//		if !ok || claims.TenantID == "" {
+//			return "", errors.New("no verified tenant claim")
+//		}
+//		return claims.TenantID, nil
+//	})
+type ResolverFunc func(ctx context.Context, r *http.Request) (string, error)
+
+// Resolve calls f.
+func (f ResolverFunc) Resolve(ctx context.Context, r *http.Request) (string, error) {
+	return f(ctx, r)
+}
+
+// NotConfigured is the resolver a new project starts with. It rejects every
+// request until you replace it with one that reads verified identity: verikt
+// cannot know which claim carries your tenant, and guessing would mean
+// trusting something the client sends.
+var NotConfigured TenantResolver = ResolverFunc(func(context.Context, *http.Request) (string, error) {
+	return "", ErrResolverNotConfigured
+})

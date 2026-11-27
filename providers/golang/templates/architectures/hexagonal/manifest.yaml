@@ -39,4 +39,20 @@ components:
     may_depend_on: [domain, ports]
   - name: adapters
     in: ["adapter/**"]
-    may_depend_on: [ports, domain]
+    may_depend_on: [ports, domain, platform]
+  # platform: cross-cutting code written by capabilities (observability,
+  # lifecycle, resilience, event bus, config, ...). It may use only the
+  # innermost layer's types. Listed after the layers because the first
+  # matching component wins: internal/infrastructure/config must stay
+  # infrastructure, not fall to platform's config/** pattern.
+  - name: platform
+    in: ["platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"]
+    may_depend_on: [domain]
+    # Only some capabilities write platform code, so it may be absent.
+    optional: true
+  # app: the composition root (cmd/ entrypoints and internal/bootstrap). It
+  # wires every other component together, so it may depend on all of them;
+  # nothing may depend on it.
+  - name: app
+    in: ["cmd/**", "internal/bootstrap/**"]
+    may_depend_on: [domain, ports, service, adapters, platform]

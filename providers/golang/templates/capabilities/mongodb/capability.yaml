@@ -5,5 +5,5 @@ suggests:
   - docker
   - health
   - observability
-  - config
+  - platform
 conflicts: []

@@ -2,12 +2,17 @@ package engineclient
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,14 +24,27 @@ import (
 // by an earlier release: the new engine was embedded but never written to disk,
 // because the versioned directory already existed. The failure was silent and
 // looked exactly like a successful upgrade.
+//
+// The name uses the first 64 bits of the digest, which is plenty to keep engine
+// builds apart. It is not what decides whether a cached file is trusted: every
+// cache hit is checked against the full digest (see cachedEngineValid).
 func engineCacheKey(binary []byte) string {
 	sum := sha256.Sum256(binary)
 	return hex.EncodeToString(sum[:8])
 }
 
+// embeddedEngineDigest is the SHA-256 of engineBinary, computed once per
+// process rather than on every EnginePath call.
+var embeddedEngineDigest = sync.OnceValue(func() [sha256.Size]byte {
+	return sha256.Sum256(engineBinary)
+})
+
 // EnginePath extracts the embedded engine binary to the user cache directory
-// and returns its path. Extraction is skipped if the binary already exists
-// at the expected path.
+// and returns its path.
+//
+// A binary already in the cache is used only after it is verified to be the
+// embedded one; anything else at that path is replaced. Extraction is atomic, so
+// concurrent callers, in one process or several, never see a partial binary.
 //
 // Returns an error on platforms where no engine binary was embedded.
 func EnginePath() (string, error) {
@@ -39,48 +57,155 @@ func EnginePath() (string, error) {
 		return "", fmt.Errorf("user cache dir: %w", err)
 	}
 
-	dir := filepath.Join(cacheDir, "verikt", "engine-"+engineCacheKey(engineBinary))
+	return extractEngineWithDigest(engineBinary, embeddedEngineDigest(), filepath.Join(cacheDir, "verikt"))
+}
+
+// extractEngine installs binary under cacheRoot and returns the path of a
+// verified copy. It is EnginePath with the binary and the cache root injected,
+// so the cache behaviour can be tested without a real engine or the user's
+// cache directory.
+func extractEngine(binary []byte, cacheRoot string) (string, error) {
+	return extractEngineWithDigest(binary, sha256.Sum256(binary), cacheRoot)
+}
+
+func extractEngineWithDigest(binary []byte, digest [sha256.Size]byte, cacheRoot string) (string, error) {
+	if len(binary) == 0 {
+		return "", errors.New("engine binary is empty")
+	}
+
+	dir := filepath.Join(cacheRoot, "engine-"+hex.EncodeToString(digest[:8]))
 	name := "verikt-engine"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	path := filepath.Join(dir, name)
+	size := int64(len(binary))
 
-	if _, err := os.Stat(path); err == nil {
-		return path, nil
+	// Both directories are checked before the cache-hit path, so a verified copy
+	// is never run from, and nothing is written into, a directory someone else
+	// chose or can change.
+	if err := prepareCacheRoot(cacheRoot); err != nil {
+		return "", err
 	}
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create cache dir: %w", err)
-	}
-
-	if err := extractEngineAtomically(path, dir); err != nil {
+	if err := checkCacheDirIfPresent(dir); err != nil {
 		return "", err
 	}
 
-	pruneStaleEngineCaches(filepath.Dir(dir), filepath.Base(dir))
+	// The cache used to be trusted on existence alone: whatever file sat at this
+	// path was executed. A truncated extraction, a corrupted block, or a file
+	// planted in the user's cache directory ran as the engine without a word.
+	if cachedEngineValid(path, digest, size) {
+		return path, nil
+	}
+
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return "", fmt.Errorf("create engine cache dir: %w", err)
+	}
+	// Checked again: the directory may have been created, or replaced, since.
+	if err := checkCacheDir(dir); err != nil {
+		return "", err
+	}
+
+	if err := extractEngineAtomically(binary, path, dir); err != nil {
+		return "", err
+	}
+
+	// Checked again after the rename: a concurrent process may have installed
+	// its copy over ours, and that copy is held to the same standard.
+	if !cachedEngineValid(path, digest, size) {
+		return "", fmt.Errorf("engine binary at %s failed verification after extraction", path)
+	}
+
+	pruneStaleEngineCaches(cacheRoot, filepath.Base(dir))
 
 	return path, nil
+}
+
+// prepareCacheRoot creates cacheRoot if it is missing and refuses it if it is
+// not a private directory. It is checked with Lstat before MkdirAll: MkdirAll
+// accepts an existing symlink to a directory, and everything below would then be
+// created, executed and pruned wherever the link points.
+func prepareCacheRoot(cacheRoot string) error {
+	if _, err := os.Lstat(cacheRoot); errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
+			return fmt.Errorf("create engine cache dir: %w", err)
+		}
+	}
+	return checkCacheDir(cacheRoot)
+}
+
+// checkCacheDirIfPresent applies checkCacheDir to path if anything exists there.
+func checkCacheDirIfPresent(path string) error {
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return checkCacheDir(path)
+}
+
+// checkCacheDir refuses a cache directory that is a symlink, is not a directory,
+// or could be changed by someone other than the current user.
+func checkCacheDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("stat engine cache dir: %w", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("engine cache dir %s is a symlink; refusing to use it", path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("engine cache dir %s is not a directory", path)
+	}
+	return privateDirProblem(path, info, os.Geteuid())
+}
+
+// cachedEngineValid reports whether path is the embedded engine: a regular file
+// (not a symlink, whose target could change after this check), executable by its
+// owner, of the expected size, and with the expected SHA-256.
+//
+// The size check is a cheap filter in front of the hash; the hash is what
+// decides.
+func cachedEngineValid(path string, digest [sha256.Size]byte, size int64) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != size {
+		return false
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 {
+		return false
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	// A read-only handle: a close error cannot change what was read, and a read
+	// failure is caught by io.Copy.
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare(h.Sum(nil), digest[:]) == 1
 }
 
 // extractEngineAtomically writes the engine to a temporary file in the same
 // directory and renames it into place.
 //
 // Writing straight to the final path leaves a window in which the file exists but
-// is incomplete, and the Stat above treats existence as "ready": a second process
-// starting during that window execs a truncated binary. On Linux, exec of a file
-// another process still holds open for writing fails with ETXTBSY.
+// is incomplete, and a second process starting during that window execs a
+// truncated binary. On Linux, exec of a file another process still holds open
+// for writing fails with ETXTBSY.
 //
 // The content-addressed cache key makes this more likely rather than less. Every
 // engine change forces a fresh extraction, and `go test ./...` runs the packages
 // that need the engine concurrently, so the first run after any engine edit is
 // exactly the race.
 //
-// rename within a directory is atomic on POSIX and on Windows for a destination
-// that does not yet exist. If another process won the race, its file is already
-// complete and correct — the content hash is in the directory name — so losing
-// the rename is not an error.
-func extractEngineAtomically(path, dir string) error {
+// rename within a directory is atomic, and replaces whatever was at the
+// destination — including a file that failed verification. Concurrent
+// extractions all install identical content, so whichever rename lands last
+// wins harmlessly; the caller verifies the result either way.
+func extractEngineAtomically(binary []byte, path, dir string) error {
 	tmp, err := os.CreateTemp(dir, ".verikt-engine-*")
 	if err != nil {
 		return fmt.Errorf("create temp engine file: %w", err)
@@ -91,13 +216,16 @@ func extractEngineAtomically(path, dir string) error {
 		_ = os.Remove(tmpName)
 	}()
 
-	if _, err := tmp.Write(engineBinary); err != nil {
+	if _, err := tmp.Write(binary); err != nil {
 		// The write already failed; the close error adds nothing and the temp
 		// file is removed by the deferred cleanup either way.
 		_ = tmp.Close()
 		return fmt.Errorf("write engine binary: %w", err)
 	}
-	if err := tmp.Chmod(0o755); err != nil {
+	// Owner-only: nobody else needs to read or run the engine, and a group- or
+	// world-accessible executable in a cache directory is one more thing that
+	// can be swapped.
+	if err := tmp.Chmod(0o700); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("chmod engine binary: %w", err)
 	}
@@ -108,12 +236,6 @@ func extractEngineAtomically(path, dir string) error {
 	}
 
 	if err := os.Rename(tmpName, path); err != nil {
-		// A concurrent process may have completed the same extraction first. Its
-		// content is identical — the directory name is the content hash — so an
-		// existing, readable binary is success.
-		if _, statErr := os.Stat(path); statErr == nil {
-			return nil
-		}
 		return fmt.Errorf("install engine binary: %w", err)
 	}
 
@@ -136,6 +258,11 @@ const staleEngineCacheAge = 24 * time.Hour
 // executable's file is safe (the inode outlives the directory entry); on Windows
 // the removal simply fails and the directory is retried on the next run.
 func pruneStaleEngineCaches(root, current string) {
+	// ReadDir follows a symlinked root; pruning through one would delete
+	// directories at the link target.
+	if info, err := os.Lstat(root); err != nil || !info.IsDir() {
+		return
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return

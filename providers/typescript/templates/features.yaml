@@ -1,6 +1,6 @@
 # TypeScript / Node.js Feature Matrix
 # Maps Node.js version features to flags used in templates.
-# Same pattern as Go (ADR-008).
+# Same pattern as Go (ADR-007).
 features:
   - name: native_ts
     description: "Stable native TypeScript (--strip-types enabled by default)"

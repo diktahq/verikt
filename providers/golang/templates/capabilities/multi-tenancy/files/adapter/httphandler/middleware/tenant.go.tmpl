@@ -1,25 +1,37 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 
 	"{{ .ModulePath }}/platform/tenant"
 )
 
-const tenantIDHeader = "X-Tenant-ID"
+// Tenant resolves the request's tenant through resolver and injects it into
+// the request context. It fails closed: a request whose tenant cannot be
+// resolved never reaches next. Mount it after the authentication middleware,
+// so the resolver can read verified identity from the context.
+//
+// Start with tenant.NotConfigured and replace it with a resolver that reads
+// your verified auth claims; until then every request is refused with 500.
+func Tenant(resolver tenant.TenantResolver) func(http.Handler) http.Handler {
+	if resolver == nil {
+		panic("middleware.Tenant: resolver is required")
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id, err := resolver.Resolve(r.Context(), r)
+			switch {
+			case errors.Is(err, tenant.ErrResolverNotConfigured):
+				http.Error(w, "tenant resolution is not configured", http.StatusInternalServerError)
+				return
+			case err != nil || id == "":
+				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+				return
+			}
 
-// Tenant extracts the tenant ID from the X-Tenant-ID request header and
-// injects it into the request context. Requests without the header are
-// rejected with 400 Bad Request.
-func Tenant(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get(tenantIDHeader)
-		if id == "" {
-			http.Error(w, "missing "+tenantIDHeader+" header", http.StatusBadRequest)
-			return
-		}
-
-		ctx := tenant.WithTenant(r.Context(), id)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+			ctx := tenant.WithTenant(r.Context(), id)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

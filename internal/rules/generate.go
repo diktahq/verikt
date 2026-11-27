@@ -123,16 +123,20 @@ func buildIsolationRule(comp config.Component, forbidden []string, language stri
 func buildForbiddenPattern(forbidden []string, language string) string {
 	if language == "typescript" {
 		// Match TypeScript import paths containing a forbidden segment.
-		if len(forbidden) == 1 {
-			return fmt.Sprintf(`from\s+['"][^'"]*/%s/[^'"]*['"]`, forbidden[0])
-		}
-		return fmt.Sprintf(`from\s+['"][^'"]*/(%s)/[^'"]*['"]`, joinNames(forbidden))
+		return fmt.Sprintf(`from\s+['"][^'"]*/%s/[^'"]*['"]`, forbiddenAlternation(forbidden))
 	}
 	// Go: quoted import paths.
-	if len(forbidden) == 1 {
-		return fmt.Sprintf(`"[^"]*/%s/[^"]*"`, forbidden[0])
+	return fmt.Sprintf(`"[^"]*/%s/[^"]*"`, forbiddenAlternation(forbidden))
+}
+
+// forbiddenAlternation returns a single name as-is, or several names as a
+// grouped regex alternation "(a|b)".
+func forbiddenAlternation(names []string) string {
+	joined := joinNames(names)
+	if len(names) > 1 {
+		return "(" + joined + ")"
 	}
-	return fmt.Sprintf(`"[^"]*/(%s)/[^"]*"`, joinNames(forbidden))
+	return joined
 }
 
 // scopeFromPaths converts component In paths to scope globs with the given file extension.
@@ -251,15 +255,18 @@ func authRule() Rule {
 
 func observabilityRule() Rule {
 	return Rule{
-		ID:             "cap-tracing-context",
-		Engine:         "grep",
-		Description:    "Functions making external calls should pass context for tracing",
-		Severity:       "warning",
-		Ref:            "verikt.yaml",
-		Pattern:        `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
-		MustNotContain: "ctx",
-		Scope:          []string{"**/*.go"},
-		Exclude:        []string{"*_test.go", "vendor/**"},
+		ID:          "cap-tracing-context",
+		Engine:      "grep",
+		Description: "Functions making external calls should pass context for tracing",
+		Severity:    "warning",
+		Ref:         "verikt.yaml",
+		Pattern:     `(http\.Get|http\.Post|sql\.Query|sql\.Exec)`,
+		// The finding is the call line that lacks a context. This read
+		// must-not-contain, which only behaved as intended while the engine had
+		// that field inverted.
+		MustContain: "ctx",
+		Scope:       []string{"**/*.go"},
+		Exclude:     []string{"*_test.go", "vendor/**"},
 	}
 }
 

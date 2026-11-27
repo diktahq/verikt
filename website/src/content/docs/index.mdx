@@ -115,7 +115,7 @@ Teams with high AI adoption merge 98% more PRs — but review times balloon by 9
 
 Pick an architecture. Pick your capabilities. Get a production-ready service with the structure already correct — and a `verikt.yaml` that becomes the source of truth for every agent session.
 
-Go: 63 capabilities across 10 categories. TypeScript: 39 capabilities with Express, Fastify, or Hono. The wizard suggests what's missing.
+Go: 65 capabilities across 10 categories. TypeScript: 39 capabilities with Express, Fastify, or Hono. The wizard suggests what's missing.
 
 | Category | Capabilities |
 |----------|-------------|
@@ -137,11 +137,14 @@ Go: 63 capabilities across 10 categories. TypeScript: 39 capabilities with Expre
 ## Three commands. Every agent knows your architecture.
 
 ```bash
-# Homebrew (runs setup automatically)
+# Homebrew
 brew install diktahq/tap/verikt
 
-# Or install script (also runs setup automatically)
-curl -sSL https://verikt.dev/install.sh | bash
+# Or the install script
+curl -fsSL https://verikt.dev/install.sh | bash
+
+# Register verikt with the AI agents on this machine
+verikt setup
 
 # Generate architecture context for all AI agents
 verikt guide
@@ -150,7 +153,7 @@ verikt guide
 verikt check
 ```
 
-Both install paths run `verikt setup` automatically — detecting your AI agents and registering verikt globally.
+Neither install path changes your agent configuration. `verikt setup` is a separate, explicit step: it detects Claude Code, Cursor and Windsurf and registers verikt globally with each. The install script runs it for you only if you pass `--setup`.
 
 Then open your AI agent in the project directory. The context is already there — the agent loads it silently. Write prompts naturally:
 
@@ -200,7 +203,7 @@ brew install diktahq/tap/verikt
   "name": "verikt",
   "description": "Your architecture, in every agent session. Generates architecture context for AI coding agents, scaffolds production-ready services, and enforces structural rules in CI.",
   "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "macOS, Linux, Windows",
+  "operatingSystem": "macOS, Linux",
   "offers": {
     "@type": "Offer",
     "price": "0",

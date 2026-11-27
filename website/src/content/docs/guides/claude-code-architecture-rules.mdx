@@ -1,13 +1,13 @@
 ---
 title: "Architecture Rules for Claude Code — Generate .claude/rules from verikt"
-description: "How to generate architecture rules for Claude Code using verikt guide. One command creates .claude/rules/verikt.md with your layer boundaries, dependency rules, and capability inventory."
+description: "How to generate architecture rules for Claude Code using verikt guide. One command creates .claude/rules/verikt-index.md with your layer boundaries, dependency rules, and capability inventory."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 Claude Code starts every session without knowing your architecture. It knows Go. It knows TypeScript. It doesn't know that domain must never import from infrastructure in your service, or that you use hexagonal architecture, or which 14 capabilities are installed and wired. So it guesses. Sometimes correctly.
 
-`verikt guide --target claude` fixes this. One command generates `.claude/rules/verikt.md` — a file Claude Code reads at session start — with your exact layer boundaries, dependency rules, and capability inventory derived from `verikt.yaml`.
+`verikt guide --target claude` fixes this. One command generates `.claude/rules/verikt-index.md` — a file Claude Code reads at session start — with your exact layer boundaries, dependency rules, and capability inventory derived from `verikt.yaml`.
 
 ## Quick start
 
@@ -18,44 +18,44 @@ brew install diktahq/tap/verikt
 verikt guide --target claude
 ```
 
-The generated file lands at `.claude/rules/verikt.md`. Claude Code picks it up automatically on next session start via the `**/*` glob in your `CLAUDE.md`.
+The generated index lands at `.claude/rules/verikt-index.md`, with a `verikt-<category>.md` file beside it for each capability category you use. The index has no frontmatter, so Claude Code loads it at launch. Each category file starts with `paths:` frontmatter listing the directories for that category, and Claude Code loads it only when it works on a file matching one of those paths.
 
 ## What gets generated
 
-The file contains everything the agent needs to make correct architectural decisions without asking:
+The index is always loaded, so it stays within 30 instructions and 1,500 tokens: one line per layer saying what it may depend on, the installed capabilities, and the critical warnings for your stack. The detail below lives in `.verikt/references/`, and the index tells the agent when to read each file. Between them, the agent gets what it needs to make architectural decisions without asking:
 
-**Layer boundaries and dependency direction.** For a hexagonal service, this looks like:
-
-```
-## Dependency Rules
-- domain/ must NOT import from port/, service/, adapter/
-- port/ must NOT import from service/, adapter/
-- service/ must NOT import from adapter/
-```
-
-Explicit rules, not general principles. The agent knows the exact constraint, not a vague instruction to "follow clean architecture."
-
-**Installed capabilities.** Every capability in your `verikt.yaml` is listed with its wiring:
+**Layer boundaries and dependency direction.** For a hexagonal service scaffolded with `http-api`, `postgres`, `platform`, `circuit-breaker` and `http-client`, the index contains:
 
 ```
-## Capabilities
-- http-api: REST API with Chi router, RFC 7807 errors
-- postgres: Connection pool, pgx driver
-- platform: Config, structured logging, lifecycle management
-- circuit-breaker: Wraps outbound HTTP calls
+## Layer Rules
+
+- **domain**: depends on nothing (innermost)
+- **ports**: depends on domain
+- **service**: depends on domain, ports
+- **adapters**: depends on ports, domain, platform
+- **platform** (optional: may be absent): depends on domain
+- **app**: depends on domain, ports, service, adapters, platform
 ```
 
-When the agent suggests adding retry logic, it knows to check whether `idempotency` is also installed — because the guide includes the interaction warnings.
+Explicit rules, not general principles. The agent knows the exact constraint, not a vague instruction to "follow clean architecture." `.verikt/references/architecture.md` spells out the directories for each layer and the forbidden imports, as lines like ``- `domain` NEVER imports from `adapters` ``.
 
-**Smart suggestions.** Missing capabilities that pair with what you have are listed explicitly. If you have `http-client` but not `circuit-breaker`, the guide flags it. The agent surfaces this in context before writing code.
+**Installed capabilities.** The index names them in one line and points to the reference for wiring:
 
-**Anti-patterns to avoid.** Rules derived from your architecture — no domain importing adapters, no SQL string concatenation, no fat HTTP handlers — appear as explicit NEVER rules.
+```
+## Active Capabilities
+
+**http-api**, **postgres**, **platform**, **circuit-breaker**, **http-client**. Wiring patterns and the full catalog: `.verikt/references/capabilities.md`.
+```
+
+**Warnings and suggestions per category.** Each category file carries the interaction warnings and missing-capability suggestions for its area. In the same project, `verikt-http.md` warns `🟡 SHOULD: **http-client without retry**`, and `verikt-resilience.md` suggests adding `rate-limiting`, `retry` and `health`. These load when the agent works on a matching path, not in every session.
+
+**Anti-patterns to avoid.** Rules derived from your architecture appear as explicit NEVER rules in `.verikt/references/architecture.md`: no `utils/` or `helpers/` packages, no business logic in `init()`, no ignored errors.
 
 ## Why `.claude/rules/` works
 
-Claude Code loads all files matching `**/*` in `.claude/rules/` at session start. This means architecture rules are available from the first message, without any prompt engineering on your part.
+Claude Code reads `.claude/rules/` itself. A rule file without `paths:` frontmatter loads at launch, so the index and its layer rules are in context from the first message. A file with `paths:` loads when Claude works on a matching file, so the HTTP rules cost nothing in a session that never touches a handler. Claude Code ignores Cursor's `globs:` key, which is why verikt writes `paths:`.
 
-Commit `.claude/rules/verikt.md` to the repository. Every engineer on the team, every CI session, every new agent thread gets the same architecture context automatically.
+Commit `.claude/rules/`, `.claude/hooks/`, `.claude/settings.json` and `.verikt/references/` to the repository. Every engineer on the team, every CI session, every new agent thread gets the same architecture context automatically.
 
 <Aside type="tip">
 Re-run `verikt guide --target claude` after adding a capability with `verikt add`. The rules file reflects the current state of `verikt.yaml` — stale context is worse than no context.
@@ -68,6 +68,8 @@ Without the guide, architecture compliance depends on the prompt. Write a detail
 With the guide, the prompt is just the task. The experiments bear this out: in [EXP-01](/experiments/exp-01/), the same agent ran the same task in two conditions — with guide, 100% hexagonal compliance; without guide, flat output with 0% compliance. Same model, same task. The variable was the loaded context.
 
 [EXP-03](/experiments/exp-03/) measured architecture violations on a greenfield job runner: `[6, 8, 7]` without the guide, `[1, 1, 1]` with it.
+
+Both experiments ran before 0.3.0, against the single-file guide verikt generated then, with one model (claude-sonnet-4-6). The two-tier guide described above, where detail moves to `.verikt/references/` and category files load by path, has not been measured yet, and neither has any other agent.
 
 ## Keeping the guide current
 

@@ -21,11 +21,7 @@ import (
 // divergence shipped, which is how this one survived: engine_test.go already
 // asserted the correct Go behaviour.
 func TestGrepStatusParityBetweenGoAndEngine(t *testing.T) {
-	enginePath, err := engineclient.EnginePath()
-	if err != nil {
-		t.Skipf("embedded engine unavailable on this platform: %v", err)
-	}
-	client := engineclient.New(enginePath)
+	client := testEngineClient(t)
 
 	cases := []struct {
 		name  string
@@ -108,11 +104,7 @@ scope:
 // status-only comparison was blind to it, and none of the fixtures above contains
 // such a directory.
 func TestGrepFindingParityBetweenGoAndEngine(t *testing.T) {
-	enginePath, err := engineclient.EnginePath()
-	if err != nil {
-		t.Skipf("embedded engine unavailable on this platform: %v", err)
-	}
-	client := engineclient.New(enginePath)
+	client := testEngineClient(t)
 
 	const rule = `
 id: no-sprintf

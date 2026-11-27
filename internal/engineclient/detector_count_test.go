@@ -45,7 +45,7 @@ func TestDocumentedDetectorCountMatchesImplementation(t *testing.T) {
 	var checked int
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			switch d.Name() {
@@ -61,7 +61,7 @@ func TestDocumentedDetectorCountMatchesImplementation(t *testing.T) {
 		}
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
-			return nil
+			return relErr
 		}
 		slug := filepath.ToSlash(rel)
 		if exempt[slug] || !tracked[slug] {
@@ -70,7 +70,7 @@ func TestDocumentedDetectorCountMatchesImplementation(t *testing.T) {
 
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return nil
+			return readErr
 		}
 
 		for i, line := range strings.Split(string(data), "\n") {

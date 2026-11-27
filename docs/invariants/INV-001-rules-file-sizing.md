@@ -25,8 +25,7 @@ Generated rules files (from `verikt guide`) MUST stay within these bounds:
 The sentinel targets accept one file only, so their output necessarily carries what
 the Claude path distributes across several: usage preamble, governance checkpoint,
 codebase mapping, smart suggestions, interaction warnings, design questions and the
-verification checklist. That composite is bounded at 3,100 tokens rather than 1,500
-and enforced by `TestGuideTokenCompliance`.
+verification checklist. That composite is bounded at 3,100 tokens rather than 1,500.
 
 This exception was previously recorded only in a comment on that test, so a reader
 of this invariant would conclude the guide violated it. The bound is stated here so

@@ -240,12 +240,14 @@ func main() {
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	// Should find config (line 6) but NOT cache (line 5, has nolint)
+	// must_not_contain names forbidden text (engine.proto: "matched lines must
+	// NOT match this"; the Go grep agrees): the matched line carrying `nolint`
+	// (cache, line 5) is the violation, and config (line 6) complies.
 	if len(result.Findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(result.Findings))
 	}
-	if result.Findings[0].Line != 6 {
-		t.Errorf("expected line 6, got %d", result.Findings[0].Line)
+	if result.Findings[0].Line != 5 {
+		t.Errorf("expected line 5, got %d", result.Findings[0].Line)
 	}
 }
 

@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -73,10 +74,14 @@ func diffFilesDir(templateFS fs.FS, filesRoot, projectPath string, vars map[stri
 	diff := &CapabilityDiff{Name: name}
 
 	// Check if the directory exists in the template FS.
-	if _, err := fs.Stat(templateFS, filesRoot); err != nil {
+	_, err := fs.Stat(templateFS, filesRoot)
+	if errors.Is(err, fs.ErrNotExist) {
 		// No files directory means nothing expected — always ok.
 		diff.Status = "ok"
 		return diff, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", filesRoot, err)
 	}
 
 	var expectedFiles []string

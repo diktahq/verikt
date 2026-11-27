@@ -1,18 +1,22 @@
 # Capabilities Matrix
 
-> Everything verikt can compose into your Go service — **65 capabilities**.
+> Everything verikt can compose into a Go service: **4 architectures** and **65 capabilities**.
 >
 > Depth differs per language. See the [language support matrix](language-support.md) for what
 > each language gets per command.
 
-verikt scaffolds projects by combining an **architecture** with **capabilities**. Pick what you need — verikt wires it all together.
+verikt scaffolds projects by combining an **architecture** with **capabilities**. Every row below maps to a template directory under `providers/golang/templates/` that `verikt new` and `verikt add` read at runtime. `TestCapabilitiesMatrixDocParity` in `providers/golang/matrix_parity_test.go` fails if this page and those directories disagree, so a capability listed here is one you can actually scaffold.
+
+This page covers the Go provider only. The TypeScript provider ships its own, smaller set under `providers/typescript/templates/`.
 
 ## Architectures
 
-| Architecture | Structure | Best For |
-|-------------|-----------|----------|
-| **Hexagonal** (Ports & Adapters) | `domain/` → `port/` → `service/` → `adapter/` | Production APIs, microservices, domain-heavy services |
-| **Flat** | Single package, `main.go` + `go.mod` | CLIs, scripts, prototypes, simple tools |
+| Architecture | Name | Structure | Best For |
+|-------------|------|-----------|----------|
+| `hexagonal` | Hexagonal (Ports & Adapters) | `domain/` → `port/` → `service/` → `adapter/` | Production APIs, microservices, domain-heavy services |
+| `clean` | Clean Architecture | `internal/entity/` → `internal/usecase/` → `internal/interface/` → `internal/infrastructure/` | Teams that already work in Uncle Bob's layering |
+| `layered` | Layered | `internal/handler/` → `internal/service/` → `internal/repository/` (+ `internal/model/`) | Conventional CRUD services |
+| `flat` | Flat | Single package, `main.go` + `go.mod` | CLIs, scripts, prototypes, simple tools |
 
 ## Capabilities
 
@@ -22,8 +26,14 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 |-----------|-------------|--------------|
 | `http-api` | Chi router, middleware chain, OpenAPI spec | RFC 7807 errors, pagination, structured responses |
 | `grpc` | Protocol Buffers, buf tooling, interceptors | Unary/stream handlers, reflection for dev |
+| `graphql` | gqlgen config, schema, resolver stub | Schema-first code generation |
 | `kafka-consumer` | Consumer group, handler pattern | Graceful shutdown, message routing |
-| `websocket` | WebSocket hub with connection management | Upgrade, broadcast, connection lifecycle |
+| `nats` | NATS publisher and subscriber (`nats.go`) | Pub/sub, request-reply |
+| `websocket` | WebSocket hub with connection management, `/ws` route | Same-origin upgrade, broadcast, per-connection deadlines outside the request timeout; requires `http-api` |
+| `sse` | Server-Sent Events writer and handler, `/events` route | Server-to-client streaming outside the request timeout; requires `http-api` |
+| `bff` | Backend-for-Frontend gateway with per-service HTTP clients, wired in bootstrap | Backends from `BFF_SERVICES`, endpoints from `Routes()`; requires `http-api` and `bootstrap` |
+| `api-versioning` | URL prefix or header-based versioning | Context propagation, default version fallback |
+| `timeout` | Timeout middleware for HTTP handlers | Context deadlines; requires `http-api` |
 
 ### Data
 
@@ -31,8 +41,15 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 |-----------|-------------|--------------|
 | `postgres` | pgx connection pool, health checks | Config-driven pool, graceful shutdown |
 | `mysql` | Connection pooling, health checks | Repository per aggregate, config-driven DSN |
+| `sqlite` | `modernc.org/sqlite` connection and repository | Pure Go, no CGO |
+| `mongodb` | Official Go driver client, base repository | Repository per collection |
+| `dynamodb` | AWS SDK v2 DynamoDB client and repository | Table-scoped repository |
 | `redis` | Connection management | Repository pattern, config-driven connection |
+| `elasticsearch` | `go-elasticsearch` v8 client | Index management and search helpers |
+| `s3` | AWS SDK v2 S3 client with config | Object storage adapter |
 | `migrations` | golang-migrate with SQL stubs | Up/down migrations, version tracking |
+| `sqlc` | `sqlc.yaml`, `queries/`, `schema/` | SQL-first, generated type-safe Go; engine follows `postgres`/`mysql` |
+| `squirrel` | Squirrel query builder adapter | Fluent query construction, no string concatenation |
 | `uuid` | UUIDv7 (time-sortable) ID type | B-tree friendly, no index fragmentation, timestamp extractable |
 | `repository` | Generic repository interface (Go generics) | `Repository[T, ID]`, pagination support |
 
@@ -43,25 +60,32 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 | `circuit-breaker` | Circuit breaker for external calls | Closed/Open/Half-Open states, configurable thresholds |
 | `retry` | Exponential backoff with jitter | Configurable attempts, max delay, retryable check |
 | `idempotency` | Idempotency key middleware | SHA-256 key hashing, response caching, TTL |
+| `bulkhead` | Semaphore-based concurrency limiter | Per-dependency load isolation |
+| `graceful` | Standalone shutdown manager | For services without `platform`; conflicts with `platform` |
 | `health` | `/healthz` and `/readyz` endpoints | Pluggable health checkers, dependency readiness |
 
 ### Patterns
 
 | Capability | What You Get | Key Patterns |
 |-----------|-------------|--------------|
+| `ddd` | `AggregateRoot` and `DomainEvent` base types | Aggregates that record domain events |
 | `cqrs` | Command bus + Query bus (generics) | Typed handlers, dispatch by name, separation of reads/writes |
 | `event-bus` | In-process domain event pub/sub | Event type routing, synchronous dispatch, handler registration |
 | `outbox` | Transactional outbox with relay | Batch processing, retry tracking, outbox SQL migration |
+| `saga` | Saga orchestrator and step interface | Ordered steps with compensation on failure; requires `event-bus` |
 
 ### Security
 
 | Capability | What You Get | Key Patterns |
 |-----------|-------------|--------------|
 | `auth-jwt` | JWT middleware for HTTP | Claims extraction, route-level auth |
+| `oauth2` | OAuth2 middleware, callback handler, token exchange | Client credentials and authorization code flows; requires `http-api` |
 | `rate-limiting` | Token bucket limiter | Per-endpoint rate limits via middleware |
 | `cors` | CORS middleware with defaults | Configurable origins, methods, headers, max-age |
 | `validation` | go-playground/validator wrapper | Structured field errors, domain-friendly messages |
-| `api-versioning` | URL prefix or header-based versioning | Context propagation, default version fallback |
+| `encryption` | AES-256-GCM `Encryptor` | At-rest encryption helpers |
+| `multi-tenancy` | Tenant resolver, context helpers, HTTP middleware | Tenant ID carried in request context; requires `http-api` |
+| `feature-flags` | `Evaluator` interface with a local, config-backed implementation | Boolean flags with local config fallback |
 
 ### Observability
 
@@ -71,6 +95,14 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 | `request-id` | Request ID middleware | Extract or generate UUID, context propagation, response header |
 | `audit-log` | Structured audit trail | Actor/action/resource logging, slog backend, compliance-ready |
 
+### Frontend
+
+| Capability | What You Get | Key Patterns |
+|-----------|-------------|--------------|
+| `templ` | templ layout, page, and component stubs | Type-safe server-rendered HTML; requires `http-api` |
+| `htmx` | HTMX handler and partial example | Hypermedia partials; requires `http-api` and `templ` |
+| `static-assets` | `embed.FS` static file handler, `static/` directory next to the HTTP handler | Long-lived `Cache-Control` headers; requires `http-api` |
+
 ### Infrastructure
 
 | Capability | What You Get | Key Patterns |
@@ -78,6 +110,8 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 | `platform` | Config, lifecycle, logging, OTel, PII redaction | Layered config (defaults → file → env), `slog` structured logging, OTLP export, graceful shutdown |
 | `bootstrap` | Thin `main.go` + `internal/bootstrap/` wiring | Composition root, testable dependency injection |
 | `docker` | `docker-compose.yml`, `.env.example` | Local dev with service dependencies |
+| `devcontainer` | `.devcontainer/devcontainer.json` and `Dockerfile` | VS Code Go tooling preconfigured |
+| `makefile` | `Makefile` | `build`, `test`, `lint`, `run`, `docker-build`, `clean`, `help` targets |
 | `worker` | Background job processor | Worker pool, graceful shutdown, error collection |
 | `scheduler` | Cron-style periodic tasks | Interval-based execution, context cancellation |
 | `http-client` | Resilient outbound HTTP | Retry, timeout, observability |
@@ -91,6 +125,8 @@ verikt scaffolds projects by combining an **architecture** with **capabilities**
 | `linting` | `.golangci.yaml` config | Curated linter set for production Go |
 | `pre-commit` | Pre-commit hook config | Automated checks before every commit |
 | `ci-github` | Issue/PR templates | Standardized GitHub workflows |
+| `ci-gitlab` | `.gitlab-ci.yml` | Lint, test, build, and docker stages; conflicts with `ci-github` |
+| `ci-bitbucket` | `bitbucket-pipelines.yml` | Bitbucket Pipelines CI |
 
 ### Cross-cutting
 
@@ -169,7 +205,7 @@ Warnings are advisory — they don't block scaffolding.
 | Detector | Severity | What It Catches |
 |----------|----------|----------------|
 | `sql_concatenation` | warning | String concatenation with SQL keywords, in a file that shows evidence of SQL |
-| `context_background_in_handler` | warning | `context.Background()` in handler/adapter code |
+| `context_background_in_handler` | warning | `context.Background()` passed to a call while a request context is in scope (a named `*http.Request` or `context.Context` parameter), in any package |
 
 ## Design Patterns by Category
 
@@ -215,7 +251,7 @@ Warnings are advisory — they don't block scaffolding.
 | Logging | `log/slog` | Stdlib structured logging |
 | Tracing | OpenTelemetry | OTLP/gRPC export |
 | Metrics | Prometheus | `promhttp` handler |
-| Config | `gopkg.in/yaml.v3` + stdlib | Defaults in code, then YAML file, then environment |
+| Config | `go.yaml.in/yaml/v3` + stdlib | Defaults in code, then YAML file, then environment |
 | Lifecycle | `golang.org/x/sync/errgroup` | Concurrent component management |
 | PostgreSQL | pgx v5 | Native driver, connection pooling |
 | MySQL | `go-sql-driver/mysql` | Standard `database/sql` |

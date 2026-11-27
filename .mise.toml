@@ -9,6 +9,9 @@
 #   golangci-lint  — pinned to the version the lint job installs. Linters gain checks
 #                    between releases, so an older local binary reports a clean run on
 #                    code CI rejects.
+#   lefthook       — the git hooks in lefthook.yml. Install them once per clone with
+#                    `mise exec -- lefthook install`.
+#   shellcheck     — lints scripts/*.sh in `mise run verify`.
 #
 # rust and bun are exact, and every workflow pins the same value. Floating selectors
 # ("stable", "latest") meant a green local run said nothing about CI, and a toolchain
@@ -21,7 +24,9 @@
 go = "1.26"
 rust = "1.97.1"
 bun = "1.3.11"
-golangci-lint = "2.11.3"
+golangci-lint = "2.15.0"
+lefthook = "2.2.1"
+shellcheck = "0.11.0"
 
 # The engine binary is embedded via //go:embed from internal/engineclient/bin/.
 # It is gitignored, so a fresh clone has nothing to embed until you run:
@@ -51,18 +56,47 @@ description = "Run the engine's own gates (matches the CI engine job)"
 dir = "engine"
 run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"]
 
-# One command that runs exactly what CI runs, in CI's order, against a freshly built
-# engine.
+# Two gate sets. GitHub Actions does not run for this repository, so nothing else
+# checks a change.
 #
-# Two defects on this branch came from local verification that did not match CI: a lint
-# run against an older golangci-lint reported no issues on code CI rejected, and a debt
-# baseline measured against a stale embedded engine was 4 findings short of what CI
-# computes. Both local runs succeeded, so nothing signalled the gap. Rebuilding the
-# engine first is the part that is easy to forget and impossible to notice.
+#   verify         fast gates for development; the lefthook pre-push hook and
+#                  `make check` call it.
+#   release-check  the full suite before tagging a release: engine gates, a freshly
+#                  built engine, the race detector, compiled scaffolds and the debt
+#                  baseline.
+#
+# The self-check lives in release-check because it needs a freshly built engine: a debt
+# baseline measured against a stale embedded engine was once 4 findings short, and the
+# run still passed, so nothing signalled the gap.
 [tasks.verify]
-description = "Run every gate CI runs, against a freshly built engine"
+description = "Fast gates for development (pre-push): build, vet, format, tidy, tests, lint, installer"
 run = """
 set -euo pipefail
+
+echo '── go ──'
+go build ./...
+go vet ./...
+test -z "$(gofmt -l internal cmd providers | grep -v experiment/testdata || true)"
+go mod tidy -diff
+go test ./...
+golangci-lint run
+
+echo '── installer ──'
+shellcheck scripts/*.sh
+bash scripts/install_test.sh
+
+echo '── fast gates passed (run `mise run release-check` before a release) ──'
+"""
+
+# The full suite, run before tagging a release. It rebuilds the engine, runs the
+# race detector, compiles 28 freshly scaffolded projects (downloads Go modules,
+# so it needs network) and measures verikt against its own debt baseline. Too
+# slow for every push; nothing else runs it, so a release must not skip it.
+[tasks.release-check]
+description = "Full suite before a release: engine gates, fresh engine, race, scaffold builds, self-check"
+run = """
+set -euo pipefail
+: "${TMPDIR:=/tmp}"
 
 echo '── engine ──'
 cd engine
@@ -74,14 +108,16 @@ cd ..
 echo '── embed the engine just built ──'
 mise run build-engine
 
-echo '── go ──'
-go build ./...
-go vet ./...
-test -z "$(gofmt -l internal cmd providers | grep -v experiment/testdata || true)"
-go test ./...
-golangci-lint run
+echo '── fast gates ──'
+mise run verify
 
-echo '── verikt checks itself ──'
+echo '── race detector ──'
+go test -race ./...
+
+echo '── generated projects compile ──'
+CGO_ENABLED=0 VERIKT_BUILD_SCAFFOLDS=1 go test -count=1 -run TestScaffoldBuilds ./internal/cli
+
+echo '── verikt checks itself (fresh engine) ──'
 go build -o "$TMPDIR/verikt-verify" ./cmd/verikt
 "$TMPDIR/verikt-verify" check
 "$TMPDIR/verikt-verify" check --output json > "$TMPDIR/verikt-verify.json"
@@ -90,5 +126,12 @@ current=$(jq '[.violations[], .anti_patterns[]] | map(select(.severity != "error
 echo "non-error findings: $current (baseline $baseline)"
 [ "$current" -le "$baseline" ]
 
-echo '── all gates passed ──'
+echo '── corpus audit script ──'
+VERIKT="$TMPDIR/verikt-verify" bash scripts/corpus-audit_test.sh
+
+echo '── reminder: ADR-012 ──'
+echo 'Run scripts/corpus-audit.sh over real repositories and read its suspected false positives before tagging.'
+
+echo '── release suite passed ──'
 """
+
