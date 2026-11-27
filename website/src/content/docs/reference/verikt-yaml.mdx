@@ -104,6 +104,30 @@ Optional rules for function complexity and project structure:
 | `required_dirs` | string[] | [] | Directories that must exist |
 | `forbidden_dirs` | string[] | [] | Directories that must not exist |
 
+### `check`
+
+Optional settings for `verikt check`:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `exclude` | string[] | [] | Path globs the checker ignores: generated code, vendored trees, tooling directories. Does not apply to `allowed_entrypoints` |
+| `allowed_entrypoints` | string[] | absent | The Go binaries this project is meant to have. Turns on the `cmd_allowlist` detector |
+
+Agents asked to refactor or migrate code tend to add a new `cmd/` binary rather than change the one that exists, and a repository collects helper mains and `_v2` copies nobody asked for. `allowed_entrypoints` declares the binary surface, and `verikt check` reports any `package main` outside it:
+
+```yaml
+check:
+  allowed_entrypoints:
+    - cmd/server
+    - cmd/cli
+```
+
+Each entry is a project-relative directory. Use `.` for a `main.go` in the project root. An entrypoint is a directory directly holding a non-test `.go` file in `package main`, either in the project root or anywhere under `cmd/`. Files behind `//go:build ignore` are generator scripts and do not count, and neither do directories the Go tool skips (`.name`, `_name`, `testdata`, `vendor`) or anything reached through a symlink.
+
+Leaving the key out leaves the detector off. An empty list, `allowed_entrypoints: []`, turns it on with nothing approved, so every entrypoint is reported. `check.exclude` is not applied to this detector: excluding `cmd/**` from orphan detection is common, and it would otherwise switch the check off in the projects it is for. To accept one specific entrypoint without listing it, waive it with `severity_overrides` under the key `cmd_allowlist`.
+
+Findings are reported at warning severity and do not fail the check. Raise them to blocking with `severity_overrides` (`severity: must`).
+
 ## Feature-Gated Manifests
 
 Architecture and capability manifests support two fields for integrating with the [feature matrix](/reference/features/).

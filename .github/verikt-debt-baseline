@@ -23,4 +23,9 @@
 # of the 22 findings were false. Also false, also not paid down — see
 # internal/engineclient/testdata/detector-restraint, which now fails the build if a
 # detector fires on code a careful engineer would write.
-46
+#
+# 46 -> 44: paid down. ValidateVeriktYAML (validateSeverityOverrides) and
+# split.go's index builder came under 50 lines while porting #13 and #15;
+# checkWithEngineOnly, DefaultVeriktConfig and newCheckCommand were kept
+# under the limit as they grew.
+44

@@ -358,3 +358,79 @@ func TestSeverityOverrides_WarnsCatchAllNotLast(t *testing.T) {
 func mkdirAll(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
+
+func loadCheckYAML(t *testing.T, body string) *VeriktConfig {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "verikt.yaml")
+	if err := os.WriteFile(path, []byte("language: go\narchitecture: flat\n"+body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadVeriktYAML(path)
+	if err != nil {
+		t.Fatalf("LoadVeriktYAML() error = %v", err)
+	}
+	return cfg
+}
+
+func TestAllowedEntrypoints_AbsentKeyLeavesDetectorOff(t *testing.T) {
+	cfg := loadCheckYAML(t, "check:\n  exclude: [\"vendor/**\"]\n")
+	if got, on := cfg.Check.EntrypointAllowlist(); on || got != nil {
+		t.Fatalf("EntrypointAllowlist() = %v, %v; want nil, false", got, on)
+	}
+}
+
+func TestAllowedEntrypoints_NullValueLeavesDetectorOff(t *testing.T) {
+	cfg := loadCheckYAML(t, "check:\n  allowed_entrypoints:\n")
+	if _, on := cfg.Check.EntrypointAllowlist(); on {
+		t.Fatal("null allowed_entrypoints must leave the detector off")
+	}
+}
+
+func TestAllowedEntrypoints_EmptyListTurnsDetectorOnWithNothingApproved(t *testing.T) {
+	cfg := loadCheckYAML(t, "check:\n  allowed_entrypoints: []\n")
+	got, on := cfg.Check.EntrypointAllowlist()
+	if !on || len(got) != 0 {
+		t.Fatalf("EntrypointAllowlist() = %v, %v; want [], true", got, on)
+	}
+}
+
+func TestAllowedEntrypoints_EntriesAreNormalised(t *testing.T) {
+	cfg := loadCheckYAML(t, "check:\n  allowed_entrypoints: [cmd/server, ./cmd/cli/, \".\", \"./\", 'cmd\\tool']\n")
+	got, on := cfg.Check.EntrypointAllowlist()
+	want := []string{"cmd/server", "cmd/cli", ".", ".", "cmd/tool"}
+	if !on || strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("EntrypointAllowlist() = %v, %v; want %v, true", got, on, want)
+	}
+}
+
+func TestAllowedEntrypoints_EmptyListSurvivesSaveAndLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "verikt.yaml")
+	in := DefaultVeriktConfig("go", "flat")
+	empty := []string{}
+	in.Check.AllowedEntrypoints = &empty
+	if err := SaveVeriktYAML(path, in); err != nil {
+		t.Fatalf("SaveVeriktYAML() error = %v", err)
+	}
+	out, err := LoadVeriktYAML(path)
+	if err != nil {
+		t.Fatalf("LoadVeriktYAML() error = %v", err)
+	}
+	if _, on := out.Check.EntrypointAllowlist(); !on {
+		t.Fatal("an explicit empty allowlist was lost on save and load, which would switch the detector off")
+	}
+}
+
+func TestValidateVeriktYAML_RejectsAllowedEntrypointsOutsideTheProject(t *testing.T) {
+	cfg := DefaultVeriktConfig("go", "flat")
+	entries := []string{"cmd/server", "", "/abs/cmd", "../outside"}
+	cfg.Check.AllowedEntrypoints = &entries
+	errs := ValidateVeriktYAML(cfg)
+	if len(errs) != 3 {
+		t.Fatalf("ValidateVeriktYAML() errors = %v, want 3 allowlist errors", errs)
+	}
+	for _, e := range errs {
+		if !strings.Contains(e.Error(), "check.allowed_entrypoints[") {
+			t.Errorf("unexpected error %v", e)
+		}
+	}
+}

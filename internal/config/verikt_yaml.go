@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -26,10 +27,11 @@ type SeverityOverride struct {
 // Override key namespace:
 //   - Dependency violations:   violation.Rule  → "dependency", "arch/domain", "arch/handler", …
 //   - Architecture violations: violation.Rule  → "orphan_package", "missing_component"
-//   - Structure violations:    violation.Rule  → "required_dir", "forbidden_dir"
+//   - Structure violations:    violation.Rule  → "required_dir", "forbidden_dir",
+//     "cmd_allowlist", "live_dot_claude_fixture"
 //   - Function violations:     violation.Rule  → "max_lines", "max_params", "max_return_values"
 //   - Proxy rules:             violation.RuleID → user-defined IDs from .verikt/rules/ YAML files
-//   - Anti-patterns:           NOT overridable (hardcoded safety rules)
+//   - Anti-patterns:           antipattern.Name → "sql_concatenation", "god_package", …
 //
 // First match wins when evaluating a file path.
 type SeverityOverrides map[string][]SeverityOverride
@@ -55,6 +57,39 @@ type CheckConfig struct {
 	// that legitimately don't belong to any declared component.
 	// Example: ["generated/**", "vendor/**", "tools/**"]
 	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+
+	// AllowedEntrypoints turns on the cmd_allowlist detector (Go projects).
+	// Each entry is a project-relative directory holding a `package main`,
+	// such as "cmd/server", or "." for a main package in the project root.
+	//
+	// nil (key absent or null) leaves the detector off. A present but empty
+	// list turns it on with nothing approved, so every entrypoint is reported.
+	// The pointer is what keeps those two apart through a save and load.
+	AllowedEntrypoints *[]string `yaml:"allowed_entrypoints,omitempty" json:"allowed_entrypoints,omitempty"`
+}
+
+// EntrypointAllowlist returns the normalised allowed entrypoints and whether
+// the cmd_allowlist detector is on.
+func (c CheckConfig) EntrypointAllowlist() ([]string, bool) {
+	if c.AllowedEntrypoints == nil {
+		return nil, false
+	}
+	out := make([]string, 0, len(*c.AllowedEntrypoints))
+	for _, e := range *c.AllowedEntrypoints {
+		out = append(out, NormalizeEntrypoint(e))
+	}
+	return out, true
+}
+
+// NormalizeEntrypoint converts an entrypoint path to its canonical form:
+// slash-separated and cleaned, with no leading "./" or trailing "/". The
+// project root is ".". An empty or blank entry stays empty.
+func NormalizeEntrypoint(p string) string {
+	p = strings.TrimSpace(strings.ReplaceAll(p, "\\", "/"))
+	if p == "" {
+		return ""
+	}
+	return path.Clean(p)
 }
 
 // GuideConfig controls how `verikt guide` instructs AI agents.
@@ -194,9 +229,17 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 			}
 		}
 	}
-	// Validate severity_overrides entries.
+	errs = append(errs, validateAllowedEntrypoints(cfg.Check)...)
+	errs = append(errs, validateSeverityOverrides(cfg.SeverityOverrides)...)
+	return errs
+}
+
+// validateSeverityOverrides checks every severity_overrides entry: a known
+// severity, a reason, and no catch-all ahead of entries it would shadow.
+func validateSeverityOverrides(all SeverityOverrides) []error {
+	var errs []error
 	validSeverities := map[string]bool{"must": true, "should": true, "ignore": true}
-	for key, overrides := range cfg.SeverityOverrides {
+	for key, overrides := range all {
 		for i, o := range overrides {
 			if !validSeverities[o.Severity] {
 				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d].severity %q is invalid (must be one of: must, should, ignore)", key, i, o.Severity))
@@ -208,6 +251,27 @@ func ValidateVeriktYAML(cfg *VeriktConfig) []error {
 			if len(o.Paths) == 0 && i < len(overrides)-1 {
 				errs = append(errs, fmt.Errorf("severity_overrides[%q][%d] is a catch-all (no paths) but is not the last entry — subsequent entries are unreachable", key, i))
 			}
+		}
+	}
+	return errs
+}
+
+// validateAllowedEntrypoints rejects allowlist entries that cannot name a
+// directory inside the project: empty, absolute, or escaping it with "..".
+func validateAllowedEntrypoints(c CheckConfig) []error {
+	if c.AllowedEntrypoints == nil {
+		return nil
+	}
+	var errs []error
+	for i, raw := range *c.AllowedEntrypoints {
+		e := NormalizeEntrypoint(raw)
+		switch {
+		case e == "":
+			errs = append(errs, fmt.Errorf("check.allowed_entrypoints[%d] is empty", i))
+		case path.IsAbs(e) || filepath.IsAbs(raw):
+			errs = append(errs, fmt.Errorf("check.allowed_entrypoints[%d] %q must be a project-relative path", i, raw))
+		case e == ".." || strings.HasPrefix(e, "../"):
+			errs = append(errs, fmt.Errorf("check.allowed_entrypoints[%d] %q must not leave the project", i, raw))
 		}
 	}
 	return errs
@@ -311,6 +375,13 @@ func DefaultVeriktConfig(language, architecture string) *VeriktConfig {
 		return defaultTypeScriptConfig(cfg, architecture)
 	}
 
+	applyGoArchitecture(cfg, architecture)
+	return cfg
+}
+
+// applyGoArchitecture sets the components, structure rules and template source
+// of a Go architecture's default config. Unknown names get hexagonal.
+func applyGoArchitecture(cfg *VeriktConfig, architecture string) {
 	forbidden := []string{"utils/", "helpers/"}
 	switch architecture {
 	case "flat":
@@ -354,8 +425,6 @@ func DefaultVeriktConfig(language, architecture string) *VeriktConfig {
 		}
 		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
 	}
-
-	return cfg
 }
 
 // platformDirs are the directories Go capability templates write cross-cutting

@@ -47,13 +47,8 @@ type checkFlags struct {
 	allowDegraded bool
 }
 
-func newCheckCommand(opts *globalOptions) *cobra.Command {
-	flags := &checkFlags{}
-
-	cmd := &cobra.Command{
-		Use:   "check",
-		Short: "Validate project against verikt.yaml rules",
-		Long: `Check validates an existing project against its verikt.yaml rules.
+// checkLongHelp is the long help for `verikt check`.
+const checkLongHelp = `Check validates an existing project against its verikt.yaml rules.
 
 Reports dependency violations, structure issues, and function complexity.
 Runs both built-in detectors and proxy rules by default.
@@ -69,7 +64,15 @@ they are not the author's to fix.
 The built-in detectors run on the embedded analysis engine. If it cannot be
 extracted (an unwritable cache directory, a platform with no engine build), the
 check fails rather than skip them. --allow-degraded skips the detectors instead,
-with a warning on stderr, and checks only proxy rules and decision gates.`,
+with a warning on stderr, and checks only proxy rules and decision gates.`
+
+func newCheckCommand(opts *globalOptions) *cobra.Command {
+	flags := &checkFlags{}
+
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Validate project against verikt.yaml rules",
+		Long:  checkLongHelp,
 		Example: `  verikt check
   verikt check --path ./my-service
   verikt check --proxy-rules
@@ -408,6 +411,25 @@ func fileInSet(file string, set map[string]bool) bool {
 	return false
 }
 
+// dirContainsAny reports whether any of files lies inside dir.
+//
+// Some structure findings name a directory rather than a file —
+// live_dot_claude_fixture reports the .claude/ directory once — while a diff
+// lists the files in it. Matching by file alone dropped the finding from the
+// one diff that introduced it.
+func dirContainsAny(dir string, files []string) bool {
+	if dir == "" {
+		return false
+	}
+	prefix := strings.TrimSuffix(dir, "/") + "/"
+	for _, f := range files {
+		if strings.HasPrefix(f, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // filterCheckerResultByFiles returns a copy of the result with only violations in the given files.
 func filterCheckerResultByFiles(r *checker.CheckResult, files []string) *checker.CheckResult {
 	set := make(map[string]bool, len(files))
@@ -427,7 +449,7 @@ func filterCheckerResultByFiles(r *checker.CheckResult, files []string) *checker
 		}
 	}
 	for _, v := range r.StructureViolations {
-		if fileInSet(v.File, set) {
+		if fileInSet(v.File, set) || dirContainsAny(v.File, files) {
 			filtered.StructureViolations = append(filtered.StructureViolations, v)
 		}
 	}

@@ -147,7 +147,7 @@ func CheckWithEngine(cfg *config.VeriktConfig, projectPath string, apClient Anti
 // uses the Rust engine for import graph dependency checks when a client is available.
 func checkTypeScript(cfg *config.VeriktConfig, projectPath string, result *CheckResult, _ AntiPatternClient, depClient DependencyClient, _ MetricClient) (*CheckResult, error) {
 	// Structure and coverage checks are language-agnostic.
-	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+	result.StructureViolations = detectStructure(cfg, projectPath)
 	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 	result.DependencyViolations = detectMissingComponents(cfg, projectPath)
 	result.DependencyViolations = append(result.DependencyViolations,
@@ -186,15 +186,9 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	// Component coverage via filesystem (no go/packages needed).
 	result.ComponentsCovered = countCoveredComponents(cfg, projectPath)
 
-	// Architecture shape checks — both filesystem-based, no go/packages needed.
 	result.DependencyViolations = append(result.DependencyViolations,
-		detectMissingComponents(cfg, projectPath)...)
-	result.DependencyViolations = append(result.DependencyViolations,
-		detectOrphanPackagesFS(cfg, projectPath)...)
-	result.DependencyViolations = append(result.DependencyViolations,
-		detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
-
-	result.StructureViolations = checkStructure(cfg.Rules.Structure, projectPath)
+		detectArchitectureShape(cfg, projectPath)...)
+	result.StructureViolations = detectStructure(cfg, projectPath)
 
 	if violations, err := metricClient.CheckFunctionMetrics(projectPath, cfg.Rules.Functions); err == nil {
 		result.FunctionViolations = violations
@@ -211,6 +205,13 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 	// Excludes and metrics are applied even when a check failed, so partial
 	// results a caller chooses to render still honour the configuration.
 	applyExcludes(result, cfg.Check.Exclude)
+
+	// Added after applyExcludes on purpose: projects exclude cmd/** from
+	// orphan detection (verikt's own defaults once did), and filtering by
+	// check.exclude would switch this detector off in exactly those projects.
+	// severity_overrides waives a specific entrypoint.
+	result.StructureViolations = append(result.StructureViolations,
+		detectUnapprovedEntrypoints(cfg, projectPath)...)
 	computeMetrics(cfg, result)
 
 	if len(errs) > 0 {
@@ -218,6 +219,23 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 		return result, errs[0]
 	}
 	return result, nil
+}
+
+// detectArchitectureShape runs the filesystem-based architecture checks —
+// missing components, orphan packages, unreadable paths. None needs the engine.
+func detectArchitectureShape(cfg *config.VeriktConfig, projectPath string) []Violation {
+	violations := detectMissingComponents(cfg, projectPath)
+	violations = append(violations, detectOrphanPackagesFS(cfg, projectPath)...)
+	return append(violations, detectUnreadablePaths(projectPath, cfg.Check.Exclude)...)
+}
+
+// detectStructure runs the language-agnostic repository-structure checks: the
+// declared required and forbidden directories, and live agent configuration
+// under fixture paths. cmd_allowlist is also a structure finding, but is added
+// separately because check.exclude must not apply to it.
+func detectStructure(cfg *config.VeriktConfig, projectPath string) []Violation {
+	violations := checkStructure(cfg.Rules.Structure, projectPath)
+	return append(violations, detectLiveAgentFixtures(projectPath, cfg.Check.Exclude)...)
 }
 
 // detectMissingComponents finds components declared in verikt.yaml that have
