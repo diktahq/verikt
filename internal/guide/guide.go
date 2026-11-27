@@ -742,7 +742,7 @@ func capabilityDir(cap string) string {
 		"devcontainer":  ".devcontainer/",
 		"templ":         "adapter/httphandler/views/",
 		"htmx":          "adapter/httphandler/",
-		"static-assets": "static/",
+		"static-assets": "adapter/httphandler/static/",
 	}
 	if d, ok := dirs[cap]; ok {
 		return d

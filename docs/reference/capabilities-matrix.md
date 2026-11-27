@@ -29,9 +29,9 @@ This page covers the Go provider only. The TypeScript provider ships its own, sm
 | `graphql` | gqlgen config, schema, resolver stub | Schema-first code generation |
 | `kafka-consumer` | Consumer group, handler pattern | Graceful shutdown, message routing |
 | `nats` | NATS publisher and subscriber (`nats.go`) | Pub/sub, request-reply |
-| `websocket` | WebSocket hub with connection management | Upgrade, broadcast, connection lifecycle |
-| `sse` | Server-Sent Events writer and handler | Server-to-client streaming; requires `http-api` |
-| `bff` | Backend-for-Frontend gateway with per-service HTTP clients | Response aggregation and shaping; requires `http-api` |
+| `websocket` | WebSocket hub with connection management, `/ws` route | Same-origin upgrade, broadcast, per-connection deadlines outside the request timeout; requires `http-api` |
+| `sse` | Server-Sent Events writer and handler, `/events` route | Server-to-client streaming outside the request timeout; requires `http-api` |
+| `bff` | Backend-for-Frontend gateway with per-service HTTP clients, wired in bootstrap | Backends from `BFF_SERVICES`, endpoints from `Routes()`; requires `http-api` and `bootstrap` |
 | `api-versioning` | URL prefix or header-based versioning | Context propagation, default version fallback |
 | `timeout` | Timeout middleware for HTTP handlers | Context deadlines; requires `http-api` |
 
@@ -101,7 +101,7 @@ This page covers the Go provider only. The TypeScript provider ships its own, sm
 |-----------|-------------|--------------|
 | `templ` | templ layout, page, and component stubs | Type-safe server-rendered HTML; requires `http-api` |
 | `htmx` | HTMX handler and partial example | Hypermedia partials; requires `http-api` and `templ` |
-| `static-assets` | `embed.FS` static file handler, `static/` directory | Long-lived `Cache-Control` headers; requires `http-api` |
+| `static-assets` | `embed.FS` static file handler, `static/` directory next to the HTTP handler | Long-lived `Cache-Control` headers; requires `http-api` |
 
 ### Infrastructure
 

@@ -4,8 +4,8 @@ All notable changes to verikt are documented here. Format follows [Keep a Change
 
 ## [Unreleased] — 0.3.0
 
-Ten issues, #8 to #18. Most are cases where verikt reported success for something
-it had not done: an installer that skipped verification when it could not verify, a
+Issues #8 to #18, then #24, #28, #29, #30 and #32. Most are cases where verikt
+reported success for something it had not done: an installer that skipped verification when it could not verify, a
 hook that never reported a violation, scaffolds that failed their own
 `verikt check`. Read *Upgrade notes* before upgrading; several change what an
 existing pipeline sees.
@@ -62,6 +62,35 @@ existing pipeline sees.
   `verikt new --arch <your arch>` into your `verikt.yaml`. The new `app` component
   classifies `cmd/` and `internal/bootstrap/`, so `check.exclude: [cmd/**]` is no
   longer needed and can go.
+- **Generated HTTP code changed shape.** Projects scaffolded earlier keep working;
+  these notes matter when you copy code from a new scaffold into an old one or run
+  `verikt add` against one. `NewRouter(logger)` is now
+  `NewRouter(logger, timeouts, registerAPI)`: JSON routes are registered through
+  `registerAPI` inside a group that carries the request timeout, and streaming routes
+  sit outside it. `NewHTTPServer(addr, handler, logger)` is now
+  `NewHTTPServer(addr, handler, timeouts, logger)` and sets explicit read, header,
+  write and idle timeouts, taken from `http.read_timeout` and `http.write_timeout` in
+  `config.yaml`. The sse capability's `SSEHandler` function is replaced by
+  `NewSSEHandler(keepAlive)`, mounted at `/events`; websocket's hub is mounted at
+  `/ws`. (#24, #29)
+- **WebSocket upgrades are same-origin.** The websocket template accepted every
+  `Origin`, which let any site open a connection with a signed-in user's cookies. It
+  now uses gorilla/websocket's same-origin check. A browser client on another origin
+  is refused until you set `CheckOrigin` to an allow-list. (#29)
+- **`bff` requires `bootstrap`.** The gateway is constructed and mounted in
+  `internal/bootstrap`, the only composition root that wires capabilities; without it
+  the generated gateway was never served. `verikt new` and `verikt add bff` add
+  `bootstrap` (and `platform`) for you. `verikt add` never overwrites files, so in an
+  existing project `cmd/<name>/main.go` is left alone: make it call
+  `bootstrap.Run(version)` as a fresh scaffold's does. Backends now come from
+  `BFF_SERVICES` and endpoints from `Routes()`, which is empty, so the gateway serves
+  nothing until you declare a route. (#32)
+- **`go.mod` targets the Go version verikt detects.** New projects used to get
+  `go 1.22` regardless of the toolchain. They now get `--set GoVersion` when given,
+  else the installed toolchain's major.minor, else `1.22`. A project scaffolded on Go
+  1.26 says `go 1.26`, which older toolchains refuse to build; pass
+  `--set GoVersion=<older>` to target them. `verikt add` uses the version in the
+  project's `go.mod`. (#30)
 - **No Windows archives.** The Windows build shipped without the engine, so
   `verikt check` could only fail there. Releases are macOS and Linux, amd64 and arm64.
 - **Installing no longer runs `verikt setup`.** Neither the Homebrew formula nor the
@@ -119,6 +148,59 @@ existing pipeline sees.
   exhaustive enabled. See `CONTRIBUTING.md`. (#12)
 
 ### Fixed
+
+- **Feature flags are wired for Go, and `requires_features` is enforced.** Go
+  templates got no `.Features`, so nothing could be gated on the Go version, and
+  `requires_features` was parsed but never enforced (ADR-007). The Go provider now resolves `.Features` from the target version
+  (`--set GoVersion`, the installed toolchain, or the architecture default), and
+  `verikt new` and `verikt add` stop before writing anything when a capability or
+  architecture needs a feature the target lacks, naming the capability, the feature,
+  the version that provides it, and how to target it. Version detection runs outside
+  the current directory, so a `go.mod` there cannot trigger a toolchain download;
+  development builds fall back to the default. (#30)
+- **Handler-package capabilities compile in every architecture.** `api-versioning`,
+  `htmx`, `i18n`, `idempotency`, `oauth2`, `request-id` and `static-assets` declared
+  `package httphandler`, so clean, layered and flat projects with any of them failed
+  to build (`sse` and `websocket` had the same fault, fixed with #29). `api-versioning` also used an undefined type, and
+  `static-assets` embedded a `static/` directory it wrote somewhere else; its assets
+  now live in `static/` next to the HTTP handler. `bff`, `elasticsearch` and `nats`
+  now take their package name from the directory the architecture maps them to, as
+  every other capability does. A static test checks every capability's package
+  clauses against every architecture. (#28)
+- **One router per project.** With `http-api`, clean and layered projects built a
+  `ServeMux` router of their own and called a `NewRouter` that clashed with the
+  capability's, so they did not compile. `main.go` now serves the capability's chi
+  router; without `http-api` the architecture's router is served through an
+  `http.Server` with explicit timeouts instead of a bare `ListenAndServe`. A project
+  with only `platform` compiles. (#24)
+- **Streams outlive the request timeout.** SSE and WebSocket routes were mounted
+  under the same timeout as JSON routes, so every stream was cut off after it. They
+  now register outside the timeout group; SSE moves its write deadline forward on
+  every write and the WebSocket hub sets its own read and write deadlines, while JSON
+  routes keep theirs. With the `timeout` capability, its middleware is the one applied
+  to the API group. (#29)
+- **The BFF gateway is race-free, bounded and wired.** `FanOut` appended results
+  without its mutex when a call named an unknown service, losing a result and racing
+  with in-flight calls; unknown services now fail with `ErrUnknownService`. Upstream
+  bodies are capped at 1 MiB (`WithMaxResponseBytes`), backend error statuses come
+  back as `*StatusError`, and with `observability` backend calls propagate the trace.
+  The handler maps upstream failures in one place and never returns upstream error
+  text. (#32)
+- **Capability order no longer breaks the build.** Partials rendered in the order
+  capabilities were typed, so `--cap health,http-api,bootstrap` and
+  `--cap bff,http-api` used `router` before http-api declared it. Capabilities are now
+  sorted so each follows the ones it requires, keeping your order otherwise; a
+  `requires` cycle is reported by name.
+- **Generated Go is gofmt-clean as written.** `internal/bootstrap/bootstrap.go` listed
+  capability imports out of order, and structs with conditional fields (`config.go`)
+  were misaligned. Rendered `.go` files now go through `go/format`, so the output is
+  clean even when the post-scaffold hooks are skipped or `go mod tidy` fails before
+  `gofmt` runs.
+- **`ddd` and `event-bus` together compile.** Both wrote `domain/event.go`, so the one
+  rendered last replaced the other and `--cap ddd,event-bus` failed with
+  `undefined: DomainEvent`. event-bus's file is now `domain/eventbus.go`. `graphql`
+  and `templ` collided the same way on `tools.go`; they now write `tools_gqlgen.go`
+  and `tools_templ.go`. A test rejects two capabilities writing the same file.
 
 - `verikt add` places capability files where the project's architecture puts them,
   using the same path mappings, `ArchPaths` and partials as `verikt new`. Before, clean,
@@ -178,6 +260,15 @@ existing pipeline sees.
 
 ### Changed
 
+- **`mise run verify` compiles generated projects.** It now runs
+  `TestScaffoldBuilds`, which scaffolds every architecture with several capability
+  sets (including the orderings, the `ddd`/`event-bus` pair and the renamed adapter
+  packages above) and runs `go build` and `go vet` on each. `verikt check` compiles
+  nothing, and GitHub Actions does not run, so this local gate is the only compile
+  check of generated code. It downloads modules, so it needs network access. (#24)
+- **The template security test rejects a WebSocket `CheckOrigin` that returns
+  `true`** unconditionally, with fixtures proving the pattern fires. (#29)
+
 - **One pass/fail rule for every finding.** Proxy rules and decision gates failed
   only on the literal severity `error`, while built-in detectors had their own
   loop. All four now go through the same decision: `error` fails, `warning` fails
@@ -188,6 +279,10 @@ existing pipeline sees.
   `gopkg.in/yaml.v3`. (#12)
 
 ### Removed
+
+- **`scaffold.CheckRequiredFeatures`.** Nothing called it, and its message suggested a
+  `--go-version` flag that does not exist. `EnforceRequiredFeatures` is what
+  `verikt new` and `verikt add` use. (#30)
 
 - **Windows release archives.** (#11)
 - **`verikt setup` from the Homebrew formula's install and from the install script's

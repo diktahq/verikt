@@ -5,13 +5,18 @@ description: "Scaffold a Backend-for-Frontend gateway in Go that aggregates and 
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-`bff` adds a Backend-for-Frontend gateway layer to your Go service, handling service aggregation and response shaping for a specific client.
+`bff` adds a Backend-for-Frontend gateway to your Go service: client-facing endpoints that call several backend services at once and return one aggregated response.
 
 ## What You Get
 
-- Service aggregation patterns
-- Response shaping
-- Backend client abstractions
+A `bffgateway` package in the directory your architecture maps it to (`adapter/bffgateway` in hexagonal, `internal/interface/bff` in clean, `internal/handler/bff` in layered, `handler/bff` in flat), wired in `internal/bootstrap` and served on the http-api router.
+
+- **Backends from `BFF_SERVICES`.** Comma-separated `name=baseURL` pairs, for example `BFF_SERVICES="users=http://users:8080,orders=http://orders:8080"`. Each URL must be absolute `http` or `https` with no credentials, and a name may appear once; bootstrap fails to start otherwise. Unset, the gateway has no backends.
+- **Endpoints from `Routes()`.** `routes.go` declares the client-facing routes and which backend calls each one aggregates. The list starts empty, so a fresh service exposes no proxy surface until you add a route.
+- **Concurrent fan-out.** `Gateway.FanOut` runs a route's calls in parallel, waits for all of them, and returns results sorted by service name. A call naming a service with no client fails with `ErrUnknownService`.
+- **Bounded backend calls.** Each call has a 10-second timeout (`WithTimeout`) and reads at most 1 MiB of response body (`WithMaxResponseBytes`); a larger body fails with `ErrResponseTooLarge`. A backend error status comes back as a `*StatusError`.
+- **One error mapping.** The handler turns backend failures into fixed per-category messages in a single function and logs the underlying error. Upstream error text, which can carry internal hosts and addresses, never reaches the client. A route where every call failed answers `502`.
+- **Trace propagation.** With `observability`, backend calls go through an `otelhttp` transport, so each one gets a client span and carries the caller's `traceparent`.
 
 ## When to Use
 
@@ -19,14 +24,16 @@ Use `bff` when a client (mobile app, web frontend) needs data from multiple back
 
 ## Requirements & Suggestions
 
-**Requires:** [`http-api`](/capabilities/http-api/)
+**Requires:** [`http-api`](/capabilities/http-api/), [`bootstrap`](/capabilities/bootstrap/)
 
-**Suggests:** [`circuit-breaker`](/capabilities/circuit-breaker/), [`retry`](/capabilities/retry/), [`observability`](/capabilities/observability/), [`cors`](/capabilities/cors/)
+`bootstrap` is required because `internal/bootstrap` is the composition root that constructs the gateway and mounts its routes; without it nothing would serve them. `bootstrap` in turn requires `platform`. All three are added for you when missing.
+
+**Suggests:** [`circuit-breaker`](/capabilities/circuit-breaker/), [`retry`](/capabilities/retry/), [`observability`](/capabilities/observability/), [`health`](/capabilities/health/), [`cors`](/capabilities/cors/), [`rate-limiting`](/capabilities/rate-limiting/)
 
 ## Add to Your Service
 
 ```bash
-verikt new my-service --language go --cap http-api,bff
+verikt new my-service --language go --cap http-api,bootstrap,bff
 # or add to an existing service:
 verikt add bff
 ```

@@ -9,9 +9,10 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- Embedded file server
-- Cache-control headers
-- Content-type detection
+- `StaticHandler()`, an `http.Handler` that serves the embedded files with a one-year `Cache-Control: public, max-age=31536000, immutable` header
+- A `static/` directory next to the HTTP handler code (`adapter/httphandler/static/` in hexagonal, `internal/interface/handler/static/` in clean, `internal/handler/static/` in layered, `handler/static/` in flat), with `css/style.css` and an empty `js/`
+
+The assets live beside the handler because `go:embed` cannot reach a parent directory. URLs map one-to-one onto that tree: mount the handler at `/static/` and `/static/css/style.css` serves `static/css/style.css`.
 
 ## When to Use
 

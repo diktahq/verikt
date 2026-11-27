@@ -91,6 +91,8 @@ go vet ./...
 test -z "$(gofmt -l internal cmd providers | grep -v experiment/testdata || true)"
 go mod tidy -diff
 go test -race ./...
+# Scaffolds every architecture and compiles the output (downloads modules). GitHub Actions does not run, so this is the only compile check for generated projects.
+CGO_ENABLED=0 VERIKT_BUILD_SCAFFOLDS=1 go test -count=1 -run TestScaffoldBuilds ./internal/cli
 golangci-lint run
 
 echo '── installer ──'

@@ -9,10 +9,15 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What You Get
 
-- SSE handler
-- Event formatting
-- Client connection management
-- Heartbeat support
+- `NewEventWriter`, which starts a `text/event-stream` response, and `Send` for named events, each flushed immediately
+- `NewSSEHandler(keepAlive)`, a handler that holds a stream open and sends a keep-alive comment while idle (`DefaultSSEKeepAlive` is 15 seconds, shorter than most proxies' idle cut-off)
+- A `GET /events` route on the http-api router
+
+## Streams and the Request Timeout
+
+http-api gives every JSON route a request deadline and the server a write timeout. A stream is meant to outlive both, so `/events` is registered outside the request-timeout group, and the writer replaces the server's write deadline with one that moves forward on every write (10 seconds per write, through `http.ResponseController`). A client that keeps reading stays connected for as long as it likes; a client that stops reading is disconnected. JSON routes keep their timeout.
+
+Add your own streaming routes the same way: outside the API group passed to `NewRouter`, using `NewEventWriter` so each write carries its own deadline.
 
 ## When to Use
 

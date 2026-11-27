@@ -47,12 +47,12 @@ mise run verify
 ```
 
 It runs every gate — engine checks, build, vet, gofmt, `go mod tidy -diff`,
-`go test -race`, golangci-lint, shellcheck and the installer tests, and verikt's check of
-itself — **against a freshly built engine**. That last part matters. Verifying against a
-stale embedded engine produces a passing run that measures the wrong binary, which has
-already happened twice on this repository: once with an older golangci-lint reporting no
-issues on code a newer one rejected, once with a debt baseline measured four findings
-short. `make check` delegates to the same task.
+`go test -race`, a compile of freshly scaffolded projects, golangci-lint, shellcheck and
+the installer tests, and verikt's check of itself — **against a freshly built engine**.
+That last part matters. Verifying against a stale embedded engine produces a passing run
+that measures the wrong binary, which has already happened twice on this repository: once
+with an older golangci-lint reporting no issues on code a newer one rejected, once with a
+debt baseline measured four findings short. `make check` delegates to the same task.
 
 The individual gates, if you need them separately:
 
@@ -60,9 +60,16 @@ The individual gates, if you need them separately:
 mise run check-engine          # cargo fmt --check, clippy -D warnings, cargo test
 mise run build-engine          # rebuild and re-embed before measuring anything
 go test -race ./... && go vet ./...
+CGO_ENABLED=0 VERIKT_BUILD_SCAFFOLDS=1 go test -count=1 -run TestScaffoldBuilds ./internal/cli
 golangci-lint run              # the version pinned in .mise.toml
 verikt check                   # verikt governs itself — see verikt.yaml
 ```
+
+`TestScaffoldBuilds` scaffolds every architecture with several capability sets and runs
+`go build`, `go vet` and the generated streaming tests on each result. `verikt check`
+never compiles anything, so this is the only gate that catches a template combination
+that does not build. It downloads the modules the generated projects import, so it
+needs network access and is skipped unless `VERIKT_BUILD_SCAFFOLDS=1` is set.
 
 `verikt check` exits non-zero only for **error**-severity findings. Warning-level
 findings are real debt and are ratcheted: `.github/verikt-debt-baseline` holds the

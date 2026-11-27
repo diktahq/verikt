@@ -39,7 +39,11 @@ var categoryGlobs = map[string][]string{
 	"resilience": {"platform/resilience/**", "internal/circuit/**"},
 	"patterns":   {"domain/**", "internal/event/**", "service/saga/**"},
 	"quality":    {"**/*_test.go", "testdata/**"},
-	"frontend":   {"adapter/httphandler/views/**", "static/**", "internal/views/**"},
+	// static-assets embeds static/ from the HTTP handler package, so the
+	// static entries follow each architecture's adapter/httphandler mapping.
+	"frontend": {"adapter/httphandler/views/**", "internal/views/**",
+		"adapter/httphandler/static/**", "internal/interface/handler/static/**",
+		"internal/handler/static/**", "handler/static/**"},
 }
 
 // categoryTitles maps split categories to human-readable titles.
@@ -182,7 +186,7 @@ func writeCategoryAddingCode(b *strings.Builder, category, arch string) {
 		b.WriteString("- Test helpers go in testdata/ or test utility packages\n\n")
 	case "frontend":
 		b.WriteString("- Templates live in adapter/httphandler/views/\n")
-		b.WriteString("- Static assets in static/ served via embed.FS\n")
+		b.WriteString("- Static assets in static/ next to the HTTP handler, embedded with embed.FS\n")
 		b.WriteString("- NEVER put business logic in templates\n\n")
 	}
 }

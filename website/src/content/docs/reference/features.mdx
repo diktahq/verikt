@@ -17,7 +17,7 @@ verikt uses a **feature matrix** to generate version-appropriate code. Instead o
 
 How verikt detects the runtime version depends on the language:
 
-- **Go** — runs `go env GOVERSION`, or accepts an override via `--set GoVersion=X.XX`
+- **Go** — `verikt new` uses `--set GoVersion=X.YY` when given, else the installed toolchain (`go env GOVERSION`, run outside the current directory), else the architecture default (`1.22`). `verikt add` uses the `go` directive in the project's `go.mod`. See [version detection](/reference/cli/#version-detection-and-features).
 - **TypeScript** — runs `node --version`, or accepts an override via `--set NodeVersion=XX`
 
 ## Go Feature Matrix

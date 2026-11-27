@@ -74,17 +74,23 @@ verikt new [name] [flags]
 
 ### Version Detection and Features
 
-By default, verikt runs `go env GOVERSION` to detect the installed Go version. The detected version is used to resolve **feature flags** from the provider's feature matrix — enabling modern stdlib APIs and language features in the generated code.
+Templates emit different code depending on the Go version they target, so verikt settles that version before rendering anything. It takes the first of:
 
-You can override the detected version with `--set GoVersion=X.XX`. This is useful in CI environments or when targeting a specific Go version different from the one installed locally.
+1. `--set GoVersion=X.YY` (a release version such as `1.24` or `1.24.3`; anything else is rejected)
+2. The installed toolchain, from `go env GOVERSION`, reduced to major.minor. verikt runs it outside the current directory, so a `go.mod` there with a newer `go` or `toolchain` line cannot trigger a toolchain download. Development builds (`devel ...`) count as no toolchain.
+3. The architecture's default, `1.22`, when no toolchain is found
+
+The chosen version is written to the `go` directive in `go.mod` and to the Go base image of any generated Dockerfile, and resolves the **feature flags** templates use, from the provider's feature matrix.
 
 ```bash
-# Use detected Go version (default)
+# Use the installed Go version (default)
 verikt new my-service --language go --no-wizard
 
 # Target a specific Go version
 verikt new my-service --language go --set GoVersion=1.24 --no-wizard
 ```
+
+An architecture or capability can declare `requires_features`. When the target version lacks one, `verikt new` stops before writing files and names the capability, the missing feature, the version that provides it, where the target version came from, and the fix: install that Go version or pass `--set GoVersion`.
 
 See the [Feature Matrix](/reference/features/) for the full list of version-gated features.
 
@@ -466,6 +472,8 @@ verikt add <capability> [capability...] [flags]
 
 Capabilities are validated against the provider's templates, conflicts are checked, and transitive dependencies are auto-resolved. **Existing files are never overwritten** — only new files are created.
 
+`verikt add` targets the Go version in the project's `go.mod` `go` directive (falling back to the installed toolchain when there is none) and enforces `requires_features` against it. A capability that needs a newer version fails with the feature it needs and the fix: raise the `go` directive (`go get go@X.YY`) and rerun.
+
 ### Flags
 
 | Flag | Description | Default |
@@ -479,7 +487,7 @@ resolve, and leaves `verikt.yaml` and the generated guides untouched.
 
 1. Finds `verikt.yaml` in the current directory
 2. Validates that each capability exists and doesn't conflict
-3. Auto-resolves transitive dependencies (e.g., `bff` pulls in `http-api`)
+3. Auto-resolves transitive dependencies (e.g., `bff` pulls in `http-api` and `bootstrap`) and orders every capability after the ones it requires
 4. Renders only new capability files, skipping any that already exist on disk
 5. Updates `verikt.yaml` with the new capabilities
 6. Regenerates `verikt guide` output
@@ -494,7 +502,7 @@ verikt add redis
 verikt add kafka-consumer observability
 
 # Add a capability with transitive deps
-verikt add bff  # auto-adds http-api if not present
+verikt add bff  # auto-adds http-api and bootstrap if not present
 ```
 
 ### Example Output
@@ -502,13 +510,18 @@ verikt add bff  # auto-adds http-api if not present
 ```
 Adding capabilities:
   + http-api (auto-dependency)
+  + bootstrap (auto-dependency)
   + bff
-  Created: adapter/httphandler/handler.go
-  Created: adapter/httphandler/router.go
-  Skipped (exists): config/config.go
+  Created: /work/svc/adapter/httphandler/handler.go
+  Created: /work/svc/adapter/httphandler/router.go
+  Created: /work/svc/internal/bootstrap/bootstrap.go
+  Created: /work/svc/adapter/bffgateway/gateway.go
+  Created: /work/svc/adapter/bffgateway/routes.go
+  ...
+  Skipped (exists): /work/svc/cmd/svc/main.go
 
-Done: 5 files created, 1 files skipped, 2 capabilities added
-Auto-resolved dependencies: http-api
+Done: 16 files created, 1 files skipped, 3 capabilities added
+Auto-resolved dependencies: http-api, bootstrap
 ```
 
 ---

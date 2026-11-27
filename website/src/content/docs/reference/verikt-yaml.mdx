@@ -164,7 +164,7 @@ Architecture and capability manifests support two fields for integrating with th
 
 ### `requires_features`
 
-A list of feature names that must be enabled for the manifest to apply. If any required feature is disabled (because the target Go version is too old), verikt skips or warns about the capability.
+A list of feature names the target Go version must provide. If any is missing, `verikt new` and `verikt add` fail before writing a file, naming the capability (or architecture), the missing feature, and the version that provides it. A feature the matrix does not define is reported as missing too: nothing can show that the target provides it.
 
 ```yaml
 # capability.yaml

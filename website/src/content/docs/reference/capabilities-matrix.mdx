@@ -30,9 +30,9 @@ TypeScript/Node.js is fully supported with 39 capabilities across all core categ
 | `http-api` | HTTP router, middleware, error handling (Chi in Go, Express/Fastify/Hono in TypeScript) | Go, TS |
 | `grpc` | Protocol Buffers, buf tooling, interceptors | Go |
 | `graphql` | gqlgen config, schema, resolver scaffolding, playground | Go |
-| `websocket` | WebSocket upgrader, connection management | Go |
-| `sse` | SSE handler, event formatting, heartbeat support | Go |
-| `bff` | Service aggregation, response shaping, backend abstractions | Go |
+| `websocket` | Same-origin WebSocket upgrader, connection management, `/ws` route | Go |
+| `sse` | SSE handler, event formatting, keep-alive, `/events` route | Go |
+| `bff` | Service aggregation from `BFF_SERVICES` and `Routes()`, wired in bootstrap | Go |
 | `cors` | CORS middleware, configurable origins/methods/headers | Go, TS |
 | `rate-limiting` | Token bucket limiter, per-endpoint config | Go, TS |
 | `timeout` | Timeout middleware, per-route timeouts, context cancellation | Go, TS |
@@ -105,7 +105,7 @@ TypeScript/Node.js is fully supported with 39 capabilities across all core categ
 |-----------|-------------|-----------|
 | `templ` | Type-safe HTML templating, layout components, hot reload | Go |
 | `htmx` | HTMX response helpers, partial rendering, swap config | Go |
-| `static-assets` | Embedded file server, cache-control headers | Go |
+| `static-assets` | Embedded file server, cache-control headers, `static/` next to the HTTP handler | Go |
 | `i18n` | Message catalogs (YAML), locale middleware, context propagation | Go |
 
 ### Email & Notifications
