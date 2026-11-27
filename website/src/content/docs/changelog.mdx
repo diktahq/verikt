@@ -22,8 +22,10 @@ renamed used to be filtered away. Those findings now appear, so a pipeline gatin
 `--diff main` can newly fail with no change to your code.
 
 **Two new detectors, both at warning severity.** `live_dot_claude_fixture` is always on and
-reports a live `.claude/` directory (with `skills`, `rules`, `hooks` or `settings.json`)
-under a test or fixture path, where an agent would load it as instructions.
+reports a `.claude/` directory holding `rules/` or `skills/`, or a standalone `CLAUDE.md`
+or `CLAUDE.local.md` in a fixture case, under a test or fixture path. Claude Code loads
+these on demand when it works on a file there, so an agent working on the fixture takes
+them as instructions.
 `cmd_allowlist` (Go) reports `package main` directories that `check.allowed_entrypoints`
 does not list, and is off until you set that key. Waive a finding or make one blocking with
 `severity_overrides` under the detector's name.

@@ -181,15 +181,19 @@ verikt runs **14 AST-based detectors**:
   in the project root or under `cmd/` that `check.allowed_entrypoints` does not
   list. Off unless that key is set; see the [`check` reference](/reference/verikt-yaml/#check)
 - **Live agent configuration in fixtures** (`live_dot_claude_fixture`, always on)
-  — a `.claude/` directory holding `skills`, `rules`, `hooks` or `settings.json`
-  under a path segment named `test`, `tests`, `testdata`, `fixtures`, `evals` or
-  `examples`
+  — a `.claude/` directory holding `rules/` or `skills/` under a path segment named
+  `test`, `tests`, `testdata`, `fixtures`, `evals`, `examples`, `__tests__` or
+  `__fixtures__`, or a standalone `CLAUDE.md` or `CLAUDE.local.md` inside a fixture
+  case (`testdata/<case>/CLAUDE.md`)
 
-The second exists because a fixture an agent can find is not a fixture. Coding
-agents load `.claude/` directories as instructions, so a test subject stored as a
-live `.claude/` tree becomes the instructions of whoever works on the tests. Store
-it as `dot-claude/` and copy it to `.claude/` inside `t.TempDir()` when the test
-runs. A `.claude/` with none of those entries loads nothing and is not reported;
+The second exists because a fixture an agent can find is not a fixture. Claude Code
+loads `CLAUDE.md`, `CLAUDE.local.md`, `.claude/rules/` and `.claude/skills/` from a
+subdirectory on demand, the first time it reads or edits a file there, so a test
+subject stored that way becomes the instructions of whoever works on the fixture.
+Store it as `dot-claude/` (or `CLAUDE.fixture.md`) and copy it into place in a
+temporary directory when the test runs. `agents/`, `commands/`, `hooks/`, settings
+files and a nested `.claude/CLAUDE.md` are not loaded from a subdirectory, so a
+`.claude/` holding only those is not reported;
 `.git`, `node_modules` and `vendor` are not searched, symlinks are not followed,
 and `check.exclude` applies.
 

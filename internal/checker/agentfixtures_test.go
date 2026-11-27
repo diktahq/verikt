@@ -58,22 +58,21 @@ func TestLiveAgentFixtures_ReportsLiveDirectoryUnderAFixturePath(t *testing.T) {
 		want string
 	}{
 		"testdata skills":    {[]string{"testdata/x/.claude/skills/foo/SKILL.md"}, "testdata/x/.claude"},
-		"fixtures settings":  {[]string{"fixtures/.claude/settings.json"}, "fixtures/.claude"},
+		"fixtures rules":     {[]string{"fixtures/.claude/rules/r.md"}, "fixtures/.claude"},
 		"evals nested rules": {[]string{"evals/a/b/.claude/rules/r.md"}, "evals/a/b/.claude"},
-		"tests hooks":        {[]string{"tests/.claude/hooks/"}, "tests/.claude"},
+		"tests skills":       {[]string{"tests/.claude/skills/"}, "tests/.claude"},
 		"test segment deep":  {[]string{"pkg/test/case/.claude/rules/"}, "pkg/test/case/.claude"},
-		"examples settings":  {[]string{"examples/demo/.claude/settings.json"}, "examples/demo/.claude"},
+		"examples skills":    {[]string{"examples/demo/.claude/skills/s/SKILL.md"}, "examples/demo/.claude"},
 
 		// Case: on case-insensitive filesystems (macOS, Windows) these load.
-		"capitalised fixture segment": {[]string{"Fixtures/b/.claude/settings.json"}, "Fixtures/b/.claude"},
-		"capitalised .claude":         {[]string{"tests/e/.Claude/settings.json"}, "tests/e/.Claude"},
-		"capitalised marker":          {[]string{"tests/f/.claude/Settings.json"}, "tests/f/.claude"},
+		"capitalised fixture segment": {[]string{"Fixtures/b/.claude/rules/r.md"}, "Fixtures/b/.claude"},
+		"capitalised .claude":         {[]string{"tests/e/.Claude/rules/r.md"}, "tests/e/.Claude"},
+		"capitalised marker":          {[]string{"tests/f/.claude/Skills/"}, "tests/f/.claude"},
 		"upper-case TESTDATA":         {[]string{"TESTDATA/x/.claude/rules/"}, "TESTDATA/x/.claude"},
 
-		// Entries Claude Code loads from a .claude/ directory.
-		"CLAUDE.md inside .claude": {[]string{"testdata/eval/.claude/CLAUDE.md"}, "testdata/eval/.claude"},
-		"agents":                   {[]string{"tests/d/.claude/agents/x.md"}, "tests/d/.claude"},
-		"commands":                 {[]string{"testdata/eval/.claude/commands/run.md"}, "testdata/eval/.claude"},
+		// rules/ or skills/ beside entries that do not load still loads.
+		"rules beside agents and settings": {[]string{"tests/d/.claude/agents/x.md",
+			"tests/d/.claude/settings.json", "tests/d/.claude/rules/r.md"}, "tests/d/.claude"},
 
 		// JavaScript test runners' conventional directory names.
 		"__tests__":    {[]string{"src/__tests__/fixture/.claude/rules/r.md"}, "src/__tests__/fixture/.claude"},
@@ -85,6 +84,8 @@ func TestLiveAgentFixtures_ReportsLiveDirectoryUnderAFixturePath(t *testing.T) {
 		"standalone CLAUDE.md deep in fixtures":   {[]string{"pkg/fixtures/a/b/CLAUDE.md"}, "pkg/fixtures/a/b/CLAUDE.md"},
 		"standalone claude.md lower case":         {[]string{"evals/case/claude.md"}, "evals/case/claude.md"},
 		"standalone CLAUDE.md in __fixtures__":    {[]string{"__fixtures__/case/CLAUDE.md"}, "__fixtures__/case/CLAUDE.md"},
+		"standalone CLAUDE.local.md in a case":    {[]string{"testdata/x/CLAUDE.local.md"}, "testdata/x/CLAUDE.local.md"},
+		"standalone claude.local.md lower case":   {[]string{"fixtures/a/claude.local.md"}, "fixtures/a/claude.local.md"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -104,9 +105,24 @@ func TestLiveAgentFixtures_IgnoresDirectoriesAgentsWouldNotMistakeForFixtures(t 
 		"segment substring only":       {"latest/.claude/rules/", "mytests/.claude/rules/"},
 		"fixture segment below claude": {"pkg/.claude/skills/test/SKILL.md"},
 
-		// Claude Code reads settings.local.json from the project root only;
-		// there is no evidence it loads a nested one.
+		// Only rules/ and skills/ load on demand from a nested .claude/
+		// (code.claude.com/docs/en/memory.md, skills.md). Subagents are found
+		// walking up from the working directory, never down (sub-agents.md);
+		// settings, and the hooks they name, are read from the primary working
+		// directory only (settings.md, hooks-guide.md); nested commands/ and
+		// .claude/CLAUDE.md are not documented to load (claude-directory.md).
+		"agents only":              {"tests/d/.claude/agents/x.md"},
+		"commands only":            {"testdata/eval/.claude/commands/run.md"},
+		"agents and commands":      {"testdata/e/.claude/agents/a.md", "testdata/e/.claude/commands/c.md"},
+		"settings.json only":       {"fixtures/.claude/settings.json"},
 		"settings.local.json only": {"tests/c/.claude/settings.local.json"},
+		"hooks only":               {"tests/.claude/hooks/h.sh"},
+		"nested .claude/CLAUDE.md": {"testdata/eval/.claude/CLAUDE.md"},
+		"mixture without rules or skills": {"evals/m/.claude/agents/a.md", "evals/m/.claude/commands/c.md",
+			"evals/m/.claude/settings.json", "evals/m/.claude/settings.local.json",
+			"evals/m/.claude/hooks/h.sh", "evals/m/.claude/CLAUDE.md"},
+		"CLAUDE.local.md directly in testdata": {"testdata/CLAUDE.local.md"},
+		"CLAUDE.local.md under tests":          {"tests/e2e/CLAUDE.local.md"},
 
 		// Repo-root and non-fixture agent files are the project's own.
 		"repo-root CLAUDE.md":             {"CLAUDE.md", ".claude/CLAUDE.md", ".claude/agents/a.md", ".claude/commands/c.md"},
@@ -238,4 +254,23 @@ func TestCheckWithEngine_LiveAgentFixturesHonourCheckExclude(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, fixtureFiles(t, result.StructureViolations))
+}
+
+// The message says when Claude Code loads the reported entry, so the reader
+// can judge the risk without looking it up.
+func TestLiveAgentFixtures_MessageStatesWhenItLoads(t *testing.T) {
+	root := t.TempDir()
+	mkTree(t, root, "testdata/a/.claude/rules/r.md", "testdata/b/CLAUDE.md", "testdata/c/CLAUDE.local.md")
+
+	msgs := map[string]string{}
+	for _, v := range detectLiveAgentFixtures(root, nil) {
+		msgs[v.File] = v.Message
+	}
+
+	assert.Contains(t, msgs["testdata/a/.claude"], "holds Claude Code rules or skills under a fixture path")
+	assert.Contains(t, msgs["testdata/a/.claude"], "loads them on demand when it reads or edits a file in that directory")
+	assert.Contains(t, msgs["testdata/a/.claude"], "testdata/a/dot-claude/")
+	assert.Contains(t, msgs["testdata/b/CLAUDE.md"], "loads it on demand when it reads or edits a file in that directory")
+	assert.Contains(t, msgs["testdata/b/CLAUDE.md"], "testdata/b/CLAUDE.fixture.md")
+	assert.Contains(t, msgs["testdata/c/CLAUDE.local.md"], "testdata/c/CLAUDE.local.fixture.md")
 }

@@ -21,13 +21,21 @@ type agentConfigDir struct {
 }
 
 // liveAgentConfigDirs lists the agent directories this detector recognises.
-// settings.local.json is not a marker: Claude Code reads it from the project
-// root only, and there is no evidence it loads a nested one.
+//
+// Only rules/ and skills/ are markers: they are the entries Claude Code
+// documents loading from a .claude/ below the working directory, on demand,
+// once Claude reads or edits a file in that subtree (code.claude.com/docs/en/
+// memory.md for rules, skills.md for skills). Everything else is not reachable
+// from a nested .claude/ and is not a marker (INV-005):
+//   - agents/: subagents are discovered walking up from the working directory,
+//     never down (sub-agents.md);
+//   - settings.json, settings.local.json, and hooks/ scripts, which run only
+//     when a settings hook names them: settings are read from the session's
+//     primary working directory only (settings.md, hooks-guide.md);
+//   - commands/ and .claude/CLAUDE.md: not documented to load from a nested
+//     directory (claude-directory.md, memory.md).
 var liveAgentConfigDirs = []agentConfigDir{
-	{name: ".claude", markers: map[string]bool{
-		"skills": true, "rules": true, "hooks": true, "settings.json": true,
-		"claude.md": true, "agents": true, "commands": true,
-	}},
+	{name: ".claude", markers: map[string]bool{"skills": true, "rules": true}},
 }
 
 // fixturePathSegments are path segments that mark test, fixture or eval
@@ -47,24 +55,28 @@ var dataFixtureSegments = map[string]bool{
 	"testdata": true, "fixtures": true, "__fixtures__": true, "evals": true,
 }
 
-// agentMemoryFile is the instruction file Claude Code loads from any
-// directory an agent works in.
-const agentMemoryFile = "claude.md"
+// agentMemoryFiles are the instruction files, lower case, that Claude Code
+// loads on demand from a subdirectory once Claude reads, writes or edits a
+// file there (code.claude.com/docs/en/memory.md).
+var agentMemoryFiles = map[string]bool{"claude.md": true, "claude.local.md": true}
 
 // agentFixtureSkipDirs are never descended into: version-control metadata and
 // third-party trees the author does not control (INV-005).
 var agentFixtureSkipDirs = map[string]bool{".git": true, "node_modules": true, "vendor": true}
 
 // detectLiveAgentFixtures reports each agent configuration directory (.claude/)
-// that sits under a test, fixture or eval path and directly contains something
-// an agent auto-loads (skills, rules, hooks, agents, commands, settings.json,
-// CLAUDE.md), and each standalone CLAUDE.md inside a fixture case. One finding
-// per directory or file.
+// that sits under a test, fixture or eval path and directly contains rules/ or
+// skills/, and each standalone CLAUDE.md or CLAUDE.local.md inside a fixture
+// case. One finding per directory or file.
 //
-// The risk is reachable by construction: an agent opened anywhere in the
-// repository walks up and loads these, so the test subject becomes the
-// instructions of whoever is working on the tests. A .claude/ with none of the
-// markers loads nothing and is not reported.
+// The risk is reachable as documented: Claude Code started at the repository
+// root loads nested CLAUDE.md, CLAUDE.local.md, .claude/rules/ and
+// .claude/skills/ on demand, the first time Claude reads or edits a file in
+// that subdirectory (code.claude.com/docs/en/memory.md, skills.md). An agent
+// working on the fixture therefore takes the test subject as its own
+// instructions. A .claude/ holding only entries that are not loaded from a
+// nested directory (agents/, commands/, hooks/, settings files, CLAUDE.md) is
+// not reported.
 //
 // It runs for every language, honours check.exclude, never follows symlinks
 // (INV-002), and skips what it cannot read rather than failing the check.
@@ -130,13 +142,13 @@ func underFixturePath(rel string) bool {
 	return false
 }
 
-// isFixtureMemoryFile reports whether rel is a CLAUDE.md with a case
-// directory between it and a data fixture segment, as in
+// isFixtureMemoryFile reports whether rel is a CLAUDE.md or CLAUDE.local.md
+// with a case directory between it and a data fixture segment, as in
 // testdata/<case>/CLAUDE.md.
 func isFixtureMemoryFile(rel string) bool {
 	segments := strings.Split(rel, "/")
 	n := len(segments)
-	if strings.ToLower(segments[n-1]) != agentMemoryFile {
+	if !agentMemoryFiles[strings.ToLower(segments[n-1])] {
 		return false
 	}
 	for _, s := range segments[:max(n-2, 0)] {
@@ -148,7 +160,7 @@ func isFixtureMemoryFile(rel string) bool {
 }
 
 // hasLiveMarker reports whether dir directly contains an entry the agent
-// auto-loads. An unreadable directory has shown no evidence, so it is not
+// loads from a nested directory. An unreadable directory has shown no evidence, so it is not
 // reported (INV-005).
 func hasLiveMarker(dir string, agentDir agentConfigDir) bool {
 	entries, err := os.ReadDir(dir)
@@ -164,19 +176,23 @@ func hasLiveMarker(dir string, agentDir agentConfigDir) bool {
 }
 
 // liveAgentFixtureViolation reports rel: an agent directory named
-// agentDirName, or a standalone CLAUDE.md when agentDirName is empty.
+// agentDirName, or a standalone CLAUDE.md or CLAUDE.local.md when agentDirName
+// is empty.
 func liveAgentFixtureViolation(rel, agentDirName string) Violation {
 	var msg string
 	if agentDirName == "" {
-		stored := path.Join(path.Dir(rel), "CLAUDE.fixture.md")
-		msg = fmt.Sprintf("%s is a live %s under a test fixture: agents working in this repository "+
-			"will load it as real instructions — commit it as %s and copy it into a temporary directory at test time",
-			rel, path.Base(rel), stored)
+		base := path.Base(rel)
+		stored := path.Join(path.Dir(rel), base[:len(base)-len(".md")]+".fixture.md")
+		msg = fmt.Sprintf("%s is a %s under a test fixture; Claude Code loads it on demand when it reads or edits "+
+			"a file in that directory, so an agent working on the fixture takes it as real instructions — "+
+			"commit it as %s and copy it into place in a temporary directory at test time",
+			rel, base, stored)
 	} else {
 		stored := path.Join(path.Dir(rel), "dot-"+strings.TrimPrefix(agentDirName, ".")) + "/"
-		msg = fmt.Sprintf("%s is a live %s/ directory under a test or fixture path: agents working in this repository "+
-			"will load it as real instructions — commit it as %s and copy it to %s/ inside a temporary directory at test time",
-			rel, agentDirName, stored, agentDirName)
+		msg = fmt.Sprintf("%s holds Claude Code rules or skills under a fixture path; Claude Code loads them on demand "+
+			"when it reads or edits a file in that directory, so an agent working on the fixture takes them as real "+
+			"instructions — commit it as %s and copy it to %s/ in a temporary directory at test time",
+			rel, stored, agentDirName)
 	}
 	return Violation{Category: "structure", File: rel, Message: msg, Rule: RuleLiveDotClaudeFixture, Severity: "warning"}
 }
