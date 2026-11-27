@@ -17,7 +17,7 @@ type VersionDetector interface {
 }
 
 // FeatureMatrixProvider is an optional interface providers can implement
-// to support feature-flag template versioning (ADR-008).
+// to support feature-flag template versioning (ADR-007).
 type FeatureMatrixProvider interface {
 	// GetFeatureMatrix returns the raw features.yaml content.
 	// Returns nil, nil if the provider has no feature matrix.

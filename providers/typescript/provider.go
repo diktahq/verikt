@@ -55,7 +55,7 @@ func (p *TypeScriptProvider) Scaffold(ctx context.Context, req provider.Scaffold
 
 	architecture := templateName
 
-	// Resolve version-gated features (ADR-008).
+	// Resolve version-gated features (ADR-007).
 	// If NodeVersion is explicitly set via --set, use it. Otherwise detect from node --version.
 	nodeVersion := ""
 	if v, ok := req.Options["NodeVersion"]; ok && v != "" {

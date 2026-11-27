@@ -72,7 +72,16 @@ func ComposeProject(templateFS fs.FS, architecture string, capabilities []string
 		}
 	}
 
-	// Load capability manifests.
+	// Resolve transitive dependencies and order every capability after the
+	// ones it requires, then load the manifests in that order.
+	capSet := make(map[string]bool, len(capabilities))
+	for _, c := range capabilities {
+		capSet[c] = true
+	}
+	capabilities, err = resolveCapabilityDeps(templateFS, capabilities, capSet)
+	if err != nil {
+		return nil, err
+	}
 	capManifests := make([]CapabilityManifest, 0, len(capabilities))
 	capDirs := make([]string, 0, len(capabilities))
 	for _, cap := range capabilities {
@@ -87,35 +96,6 @@ func ComposeProject(templateFS fs.FS, architecture string, capabilities []string
 		}
 		capManifests = append(capManifests, *cm)
 		capDirs = append(capDirs, capDir)
-	}
-
-	// Auto-resolve transitive dependencies.
-	capSet := make(map[string]bool, len(capabilities))
-	for _, c := range capabilities {
-		capSet[c] = true
-	}
-	resolved, err := resolveCapabilityDeps(templateFS, capabilities, capSet)
-	if err != nil {
-		return nil, err
-	}
-	if len(resolved) > len(capabilities) {
-		// Reload manifests for newly added capabilities.
-		capabilities = resolved
-		capManifests = capManifests[:0]
-		capDirs = capDirs[:0]
-		for _, cap := range capabilities {
-			capDir := path.Join("templates", "capabilities", cap)
-			data, err := fs.ReadFile(templateFS, path.Join(capDir, "capability.yaml"))
-			if err != nil {
-				return nil, fmt.Errorf("read capability manifest %q: %w", cap, err)
-			}
-			cm, err := ParseCapabilityManifest(data)
-			if err != nil {
-				return nil, fmt.Errorf("capability %q: %w", cap, err)
-			}
-			capManifests = append(capManifests, *cm)
-			capDirs = append(capDirs, capDir)
-		}
 	}
 
 	// Validate requirements and detect conflicts.
@@ -292,29 +272,34 @@ func collectPartials(templateFS fs.FS, capDirs []string, vars map[string]interfa
 	return partials, nil
 }
 
-// resolveCapabilityDeps walks the requires graph and adds missing transitive dependencies.
-// Returns the expanded list in dependency-first order, or an error naming the
-// requiring capability when a requirement has no manifest in templateFS.
+// resolveCapabilityDeps walks the requires graph and adds missing transitive
+// dependencies. It returns every capability ordered so each one follows all the
+// capabilities it requires: partials render in this order, and a partial may
+// use identifiers that a required capability's partial declares. Among
+// capabilities that do not depend on each other the user's order is kept, with
+// auto-added dependencies ahead of it. It fails naming the requiring
+// capability when a requirement has no manifest in templateFS, and naming the
+// cycle when requires form one.
 func resolveCapabilityDeps(templateFS fs.FS, capabilities []string, capSet map[string]bool) ([]string, error) {
 	// BFS to discover all transitive requires.
 	queue := make([]string, len(capabilities))
 	copy(queue, capabilities)
-	ordered := make([]string, 0, len(capabilities))
-	visited := map[string]bool{}
+	discovered := make([]string, 0, len(capabilities))
+	requires := map[string][]string{}
 	requiredBy := map[string]string{}
 
 	for len(queue) > 0 {
 		cap := queue[0]
 		queue = queue[1:]
-		if visited[cap] {
+		if _, seen := requires[cap]; seen {
 			continue
 		}
-		visited[cap] = true
 
 		cm, err := readDependencyManifest(templateFS, cap, requiredBy[cap])
 		if err != nil {
 			return nil, err
 		}
+		requires[cap] = append([]string{}, cm.Requires...)
 
 		// Add requires that aren't yet selected.
 		for _, req := range cm.Requires {
@@ -324,23 +309,73 @@ func resolveCapabilityDeps(templateFS fs.FS, capabilities []string, capSet map[s
 				queue = append(queue, req)
 			}
 		}
-		ordered = append(ordered, cap)
+		discovered = append(discovered, cap)
 	}
 
-	// Put dependencies before dependents: move auto-added deps to front.
+	// Auto-added dependencies first, then the user's selection.
 	var deps, orig []string
 	origSet := map[string]bool{}
 	for _, c := range capabilities {
 		origSet[c] = true
 	}
-	for _, c := range ordered {
+	for _, c := range discovered {
 		if origSet[c] {
 			orig = append(orig, c)
 		} else {
 			deps = append(deps, c)
 		}
 	}
-	return append(deps, orig...), nil
+	return sortByRequires(append(deps, orig...), requires)
+}
+
+// sortByRequires orders caps so every capability follows the capabilities it
+// requires. It is a depth-first topological sort over caps in their given
+// order, so capabilities with no requires path between them keep that order.
+// requires must hold an entry for every capability in caps.
+func sortByRequires(caps []string, requires map[string][]string) ([]string, error) {
+	const (
+		visiting = 1
+		done     = 2
+	)
+	state := make(map[string]int, len(caps))
+	sorted := make([]string, 0, len(caps))
+	var path []string
+
+	var visit func(c string) error
+	visit = func(c string) error {
+		switch state[c] {
+		case done:
+			return nil
+		case visiting:
+			start := 0
+			for i, p := range path {
+				if p == c {
+					start = i
+					break
+				}
+			}
+			cycle := append(append([]string{}, path[start:]...), c)
+			return fmt.Errorf("capability requires form a cycle: %s", strings.Join(cycle, " -> "))
+		}
+		state[c] = visiting
+		path = append(path, c)
+		for _, req := range requires[c] {
+			if err := visit(req); err != nil {
+				return err
+			}
+		}
+		path = path[:len(path)-1]
+		state[c] = done
+		sorted = append(sorted, c)
+		return nil
+	}
+
+	for _, c := range caps {
+		if err := visit(c); err != nil {
+			return nil, err
+		}
+	}
+	return sorted, nil
 }
 
 // readDependencyManifest loads the manifest for name during dependency

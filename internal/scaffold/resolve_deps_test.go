@@ -27,7 +27,7 @@ func TestResolveCapabilityDeps_AddsTransitiveRequiresFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if want := []string{"b", "c", "a"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"c", "b", "a"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	if !capSet["b"] || !capSet["c"] {
@@ -77,5 +77,61 @@ func TestResolveCapabilityDeps_RejectsMalformedManifest(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `capability "b"`) {
 		t.Errorf("error %q does not name the malformed capability", err)
+	}
+}
+
+// Partials render in capability order, so a capability must come after every
+// capability it requires, whatever order the user typed (--cap health,http-api
+// rendered health's router.Get before http-api declared router).
+func TestResolveCapabilityDeps_PutsSelectedRequirementsFirst(t *testing.T) {
+	fsys := capFS(map[string]string{
+		"health":    "name: health\nrequires: [http-api]\n",
+		"http-api":  "name: http-api\n",
+		"bootstrap": "name: bootstrap\nrequires: [platform]\n",
+		"platform":  "name: platform\n",
+	})
+	user := []string{"health", "http-api", "bootstrap"}
+	capSet := map[string]bool{"health": true, "http-api": true, "bootstrap": true}
+
+	got, err := resolveCapabilityDeps(fsys, user, capSet)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []string{"platform", "http-api", "health", "bootstrap"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestResolveCapabilityDeps_KeepsUserOrderAmongIndependentCapabilities(t *testing.T) {
+	fsys := capFS(map[string]string{
+		"z": "name: z\n",
+		"a": "name: a\n",
+		"m": "name: m\n",
+	})
+	user := []string{"z", "a", "m"}
+
+	got, err := resolveCapabilityDeps(fsys, user, map[string]bool{"z": true, "a": true, "m": true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(got, user) {
+		t.Errorf("got %v, want the user's order %v", got, user)
+	}
+}
+
+func TestResolveCapabilityDeps_RejectsRequiresCycle(t *testing.T) {
+	fsys := capFS(map[string]string{
+		"a": "name: a\nrequires: [b]\n",
+		"b": "name: b\nrequires: [c]\n",
+		"c": "name: c\nrequires: [a]\n",
+	})
+
+	got, err := resolveCapabilityDeps(fsys, []string{"a"}, map[string]bool{"a": true})
+	if err == nil {
+		t.Fatalf("expected a cycle error, got %v", got)
+	}
+	want := "capability requires form a cycle: b -> c -> a -> b"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
 	}
 }

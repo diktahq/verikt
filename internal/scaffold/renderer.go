@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/format"
 	"io/fs"
 	"os"
 	"path"
@@ -159,7 +160,7 @@ func (r *Renderer) RenderTemplate(templateDir, outputDir string, vars map[string
 			if len(strings.TrimSpace(string(rendered))) == 0 {
 				return nil
 			}
-			if err := writeToRoot(root, relDst, rendered); err != nil {
+			if err := writeToRoot(root, relDst, formatGo(relDst, rendered)); err != nil {
 				return err
 			}
 		} else {
@@ -459,7 +460,24 @@ func (r *Renderer) fileContent(src, rel string, isTemplate bool, vars map[string
 	if len(strings.TrimSpace(string(rendered))) == 0 {
 		return nil, false, nil
 	}
-	return rendered, true, nil
+	return formatGo(strings.TrimSuffix(rel, ".tmpl"), rendered), true, nil
+}
+
+// formatGo gofmt-formats a rendered Go file. Templates cannot align a struct or
+// composite literal whose fields are conditional, so formatting happens here
+// rather than in each template; the post-scaffold gofmt hook is skippable and
+// does not run when `go mod tidy` fails before it. Source that does not parse
+// is returned unchanged: the generated project's build reports it with file and
+// line, where a scaffold error could not.
+func formatGo(name string, src []byte) []byte {
+	if !strings.HasSuffix(name, ".go") {
+		return src
+	}
+	formatted, err := format.Source(src)
+	if err != nil {
+		return src
+	}
+	return formatted
 }
 
 // RenderCapabilityFiles renders files from a single capability directory into
