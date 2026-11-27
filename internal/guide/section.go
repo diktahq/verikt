@@ -26,29 +26,34 @@ type SectionMarkers struct {
 // the legacy .cursorrules verikt migrates away from.
 var GuideMarkers = SectionMarkers{Start: sentinelStart, End: sentinelEnd}
 
-// locate returns the byte range [from, to) of the marked section, including
-// both markers and one trailing newline after the end marker. found is false
-// when neither marker is present. Any other shape is ErrMalformedSection.
-func (m SectionMarkers) locate(existing string) (from, to int, found bool, err error) {
+// sectionSpan is the byte range [from, to) of a marked section, including both
+// markers and one trailing newline after the end marker.
+type sectionSpan struct {
+	from, to int
+}
+
+// locate returns the span of the marked section, or nil when neither marker is
+// present. Any other shape is ErrMalformedSection.
+func (m SectionMarkers) locate(existing string) (*sectionSpan, error) {
 	starts := strings.Count(existing, m.Start)
 	ends := strings.Count(existing, m.End)
 	if starts == 0 && ends == 0 {
-		return 0, 0, false, nil
+		return nil, nil
 	}
 	if starts != 1 || ends != 1 {
-		return 0, 0, false, fmt.Errorf("%w: found %d %q and %d %q (expected exactly one of each)",
+		return nil, fmt.Errorf("%w: found %d %q and %d %q (expected exactly one of each)",
 			ErrMalformedSection, starts, m.Start, ends, m.End)
 	}
-	from = strings.Index(existing, m.Start)
+	from := strings.Index(existing, m.Start)
 	endIdx := strings.Index(existing, m.End)
 	if endIdx < from {
-		return 0, 0, false, fmt.Errorf("%w: %q appears before %q", ErrMalformedSection, m.End, m.Start)
+		return nil, fmt.Errorf("%w: %q appears before %q", ErrMalformedSection, m.End, m.Start)
 	}
-	to = endIdx + len(m.End)
+	to := endIdx + len(m.End)
 	if to < len(existing) && existing[to] == '\n' {
 		to++
 	}
-	return from, to, true, nil
+	return &sectionSpan{from: from, to: to}, nil
 }
 
 // ReplaceSection returns existing with verikt's section set to body. When the
@@ -61,12 +66,12 @@ func ReplaceSection(existing string, m SectionMarkers, body string) (string, err
 	}
 	wrapped := m.Start + "\n" + body + m.End + "\n"
 
-	from, to, found, err := m.locate(existing)
+	span, err := m.locate(existing)
 	if err != nil {
 		return "", err
 	}
-	if found {
-		return existing[:from] + wrapped + existing[to:], nil
+	if span != nil {
+		return existing[:span.from] + wrapped + existing[span.to:], nil
 	}
 	if existing == "" {
 		return wrapped, nil
@@ -82,15 +87,15 @@ func ReplaceSection(existing string, m SectionMarkers, body string) (string, err
 // The blank separator line ReplaceSection adds before an appended section is
 // dropped too, so install followed by uninstall restores the original file.
 func RemoveSection(existing string, m SectionMarkers) (out string, removed bool, err error) {
-	from, to, found, err := m.locate(existing)
+	span, err := m.locate(existing)
 	if err != nil {
 		return "", false, err
 	}
-	if !found {
+	if span == nil {
 		return existing, false, nil
 	}
-	before := existing[:from]
-	after := existing[to:]
+	before := existing[:span.from]
+	after := existing[span.to:]
 	if after == "" && strings.HasSuffix(before, "\n\n") {
 		before = strings.TrimSuffix(before, "\n")
 	}
