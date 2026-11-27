@@ -141,7 +141,8 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 			return fmt.Errorf("get staged files: %w", err)
 		}
 		if len(stagedFiles) == 0 {
-			return reportNothingStaged(opts.Output)
+			failOn, _ := resolveFailOn(cfg, flags.strict)
+			return reportNothingStaged(opts.Output, failOn)
 		}
 	}
 
@@ -239,9 +240,9 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 // reportNothingStaged reports a --staged run with nothing staged: nothing was
 // checked, so it passes. In -o json mode it is still one JSON document — plain
 // text on stdout broke every consumer that parses it.
-func reportNothingStaged(output string) error {
+func reportNothingStaged(output, failOn string) error {
 	if output == "json" {
-		return printCombinedJSON(checkOutcome{}, checkVerdict{FailOn: config.FailOnError})
+		return printCombinedJSON(checkOutcome{}, checkVerdict{FailOn: failOn})
 	}
 	fmt.Println("No staged files to check.")
 	return nil
@@ -725,29 +726,7 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 	// printed "✓ All proxy rules pass" and waived[] was empty, which is
 	// indistinguishable from a rule that never ran — the exact thing the waiver
 	// mechanism exists to avoid.
-	var waived []checker.WaivedFinding
-
-	if ruleResult != nil {
-		filtered := make([]rules.RuleViolation, 0, len(ruleResult.Violations))
-		for _, v := range ruleResult.Violations {
-			resolved := config.ResolveSeverity(overrides, v.RuleID, v.File, v.Severity)
-			mapped := config.MapSeverity(resolved)
-			if mapped == "ignore" {
-				waived = append(waived, checker.WaivedFinding{
-					Category: "proxy_rule",
-					Rule:     v.RuleID,
-					File:     v.File,
-					Line:     v.Line,
-					Message:  v.Description,
-					Reason:   config.ResolveReason(overrides, v.RuleID, v.File),
-				})
-				continue
-			}
-			v.Severity = mapped
-			filtered = append(filtered, v)
-		}
-		ruleResult.Violations = filtered
-	}
+	waived := applyProxyRuleOverrides(ruleResult, overrides)
 
 	if checkerResult != nil {
 		checkerResult.DependencyViolations = filterViolationsBySeverity(
@@ -762,7 +741,40 @@ func applySeverityOverrides(checkerResult *checker.CheckResult, ruleResult *rule
 			checkerResult.AntiPatternViolations, overrides, &waived)
 		checkerResult.WaivedFindings = append(checkerResult.WaivedFindings, waived...)
 		checkerResult.RecalculateMetrics()
+		// The checker's list already holds its own waivers (inline verikt:allow
+		// markers) plus the ones just appended; returning only the new ones hid
+		// every inline waiver whenever an override matched.
+		return checkerResult.WaivedFindings
 	}
+	return waived
+}
+
+// applyProxyRuleOverrides applies severity_overrides to proxy-rule violations
+// and returns the ones it waived.
+func applyProxyRuleOverrides(ruleResult *rules.RunResult, overrides config.SeverityOverrides) []checker.WaivedFinding {
+	if ruleResult == nil {
+		return nil
+	}
+	var waived []checker.WaivedFinding
+	filtered := make([]rules.RuleViolation, 0, len(ruleResult.Violations))
+	for _, v := range ruleResult.Violations {
+		resolved := config.ResolveSeverity(overrides, v.RuleID, v.File, v.Severity)
+		mapped := config.MapSeverity(resolved)
+		if mapped == "ignore" {
+			waived = append(waived, checker.WaivedFinding{
+				Category: "proxy_rule",
+				Rule:     v.RuleID,
+				File:     v.File,
+				Line:     v.Line,
+				Message:  v.Description,
+				Reason:   config.ResolveReason(overrides, v.RuleID, v.File),
+			})
+			continue
+		}
+		v.Severity = mapped
+		filtered = append(filtered, v)
+	}
+	ruleResult.Violations = filtered
 	return waived
 }
 

@@ -138,3 +138,19 @@ func TestCheckStagedWithNothingStagedStillWritesJSON(t *testing.T) {
 	parsed := decodeCheckJSON(t, out)
 	assert.Equal(t, "pass", parsed["result"])
 }
+
+// With nothing staged, the JSON document still states the threshold the run
+// was configured with, so a consumer reading fail_on sees --strict honoured.
+func TestCheckStagedWithNothingStagedReportsTheConfiguredThreshold(t *testing.T) {
+	dir := writeCheckProject(t, "")
+	initGitRepo(t, dir)
+
+	var err error
+	out := captureStdout(t, func() {
+		err = runCheck(&globalOptions{Output: "json"}, &checkFlags{projectPath: dir, staged: true, strict: true})
+	})
+
+	require.NoError(t, err)
+	parsed := decodeCheckJSON(t, out)
+	assert.Equal(t, "warning", parsed["fail_on"])
+}

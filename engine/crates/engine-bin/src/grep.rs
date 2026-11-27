@@ -1,6 +1,6 @@
 use crate::globs::build_globset;
 use crate::pb::{
-    self, CheckComplete, CheckRequest, EngineResponse, Finding, RuleStatus,
+    self, CheckComplete, CheckRequest, EngineResponse, Finding, GrepSpec, RuleStatus,
     engine_response::Payload, rule::Spec, rule_status::Status,
 };
 use regex::Regex;
@@ -54,26 +54,16 @@ pub fn handle_check(req: CheckRequest) -> Vec<EngineResponse> {
             _ => continue, // non-grep rules handled by other modules
         };
 
-        // An empty pattern means "no line check" (a file-must-contain-only
-        // rule), not a regex that matches every line.
-        let pattern = match compile_pattern(&spec.pattern) {
-            Ok(p) => p,
+        let matchers = match Matchers::compile(spec) {
+            Ok(m) => m,
             Err(e) => {
                 rule_statuses.push(RuleStatus {
                     rule_id: rule.id.clone(),
                     status: Status::Invalid.into(),
-                    error: format!("bad regex: {e}"),
+                    error: e,
                 });
                 continue;
             }
-        };
-
-        let matchers = Matchers {
-            pattern,
-            must_contain: compile_optional(&spec.must_contain),
-            must_not_contain: compile_optional(&spec.must_not_contain),
-            file_must_contain: compile_optional(&spec.file_must_contain),
-            file_must_contain_src: &spec.file_must_contain,
         };
 
         // Build scope globs
@@ -180,7 +170,24 @@ struct Matchers<'a> {
     file_must_contain_src: &'a str,
 }
 
-impl Matchers<'_> {
+impl<'a> Matchers<'a> {
+    /// Compiles every field of the spec. An empty pattern means "no line check"
+    /// (a file-must-contain-only rule), not a regex that matches every line. A
+    /// field the engine cannot compile makes the whole rule invalid: dropping it
+    /// silently ran the rule without that check and still reported it Valid.
+    fn compile(spec: &'a GrepSpec) -> Result<Self, String> {
+        let field = |name: &str, src: &str| {
+            compile_pattern(src).map_err(|e| format!("bad {name} regex: {e}"))
+        };
+        Ok(Matchers {
+            pattern: field("pattern", &spec.pattern)?,
+            must_contain: field("must-contain", &spec.must_contain)?,
+            must_not_contain: field("must-not-contain", &spec.must_not_contain)?,
+            file_must_contain: field("file-must-contain", &spec.file_must_contain)?,
+            file_must_contain_src: &spec.file_must_contain,
+        })
+    }
+
     /// Every finding in one file, as (line, match text). Line 0 is the file.
     fn violations(&self, content: &str) -> Vec<(u32, String)> {
         let mut out = Vec::new();
@@ -243,13 +250,6 @@ fn compile_pattern(pattern: &str) -> Result<Option<Regex>, regex::Error> {
         return Ok(None);
     }
     Regex::new(pattern).map(Some)
-}
-
-fn compile_optional(pattern: &str) -> Option<Regex> {
-    if pattern.is_empty() {
-        return None;
-    }
-    Regex::new(pattern).ok()
 }
 
 /// True if the entry is itself a symbolic link, without following it.
@@ -500,6 +500,37 @@ mod tests {
     }
 
     const KAFKA: &str = "package k\n\nfunc bad() { msg, _ := reader.ReadMessage(ctx) }\nfunc good() { msg, err := reader.ReadMessage(ctx) }\n";
+
+    /// A regex the engine cannot compile makes the rule invalid, whichever field
+    /// it is in. A bad must-contain, must-not-contain or file-must-contain used to
+    /// be dropped silently, so the rule ran without that check and reported Valid.
+    #[test]
+    fn bad_regex_in_any_field_makes_the_rule_invalid() {
+        let project = fixture("verikt-grep-bad-optional", &[("k.go", KAFKA)]);
+        // Look-ahead is not supported by the regex crate.
+        let bad = "(?=x)".to_string();
+        type SetField = fn(&mut GrepSpec, String);
+        let cases: [(&str, SetField); 3] = [
+            ("must-contain", |s, v| s.must_contain = v),
+            ("must-not-contain", |s, v| s.must_not_contain = v),
+            ("file-must-contain", |s, v| s.file_must_contain = v),
+        ];
+        for (field, set) in cases {
+            let mut s = spec(r"ReadMessage\(");
+            set(&mut s, bad.clone());
+            let responses = check(&project, spec_rule(field, s, &["**/*.go"]));
+            assert_eq!(
+                status_of(&responses, field),
+                Status::Invalid as i32,
+                "a bad {field} regex must make the rule invalid"
+            );
+            assert!(
+                findings(&responses).is_empty(),
+                "an invalid {field} rule must report no findings"
+            );
+        }
+        let _ = fs::remove_dir_all(&project);
+    }
 
     /// must-contain names text a matching line is required to have, so the
     /// finding is the line that lacks it. The engine skipped that line and
