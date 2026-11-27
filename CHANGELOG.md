@@ -2,7 +2,7 @@
 
 All notable changes to verikt are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [Unreleased] — 0.3.0
 
 Ten issues, #8 to #18. Most are cases where verikt reported success for something
 it had not done: an installer that skipped verification when it could not verify, a
@@ -74,8 +74,10 @@ existing pipeline sees.
   innermost layer), `app` for the composition root. (#18)
 - **`cmd_allowlist` and `live_dot_claude_fixture` structure detectors**, at warning
   severity. (#15)
-- **Build-provenance attestation** for every archive in `checksums.txt`, produced by
-  the release workflow. Verify with
+- **Build-provenance attestation step** in the GitHub Actions release workflow, for
+  every archive in `checksums.txt`. It only runs when that workflow builds the release;
+  GitHub Actions does not currently run for this repository, so a release built
+  locally carries no attestation. Verify one with
   `gh attestation verify <archive> --repo diktahq/verikt`. (#11)
 - **Local enforcement for contributors.** GitHub Actions does not run for this
   repository, so nothing checks a change after it is pushed. `lefthook` runs gofmt,

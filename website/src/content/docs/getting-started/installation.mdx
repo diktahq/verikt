@@ -70,7 +70,7 @@ A checksum proves the archive matches what was published, not who built it: anyo
 gh attestation verify "${ARCHIVE}" --repo diktahq/verikt
 ```
 
-The attestation step is new in the release after v0.2.2. Releases built before it, including the `v0.2.0` pinned above, have no attestation, and the command reports none found. For those, the checksum is the only check available.
+The attestation step was added to the release workflow after v0.2.2, and it only runs when that GitHub Actions workflow builds the release. Releases up to v0.2.2, including the `v0.2.0` pinned above, and any release built locally have no attestation, and the command reports none found. For those, the checksum is the only check available.
 
 </TabItem>
 <TabItem label="From Source">

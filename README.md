@@ -28,7 +28,7 @@ grep "  ${ARCHIVE}$" checksums.txt | shasum -a 256 -c -   # or: sha256sum -c -
 tar xzf "${ARCHIVE}" verikt && sudo mv verikt /usr/local/bin/
 ```
 
-Releases built by the release workflow from this version on also carry a build-provenance attestation: `gh attestation verify "${ARCHIVE}" --repo diktahq/verikt`. Releases up to v0.2.2 have none.
+A release built by the GitHub Actions release workflow also carries a build-provenance attestation: `gh attestation verify "${ARCHIVE}" --repo diktahq/verikt`. Releases up to v0.2.2 have none, and a release built locally has none either; for those, the checksum is the only check.
 
 ### Install script (macOS and Linux)
 
