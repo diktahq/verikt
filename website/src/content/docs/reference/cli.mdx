@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## `verikt guide`
 
-Generate architecture context for AI coding agents. Reads your `verikt.yaml` and outputs rules, dependency constraints, and anti-patterns that AI agents consume before writing code.
+Generate architecture context for AI coding agents. Reads your `verikt.yaml` and writes rules, dependency constraints, and anti-patterns into the files AI agents load before writing code. Full detail — targets, the on-demand references under `.verikt/references/`, the instruction budget — is on the [`verikt guide` page](/reference/guide/).
 
 ```bash
 verikt guide [flags]
@@ -17,21 +17,32 @@ verikt guide [flags]
 
 | Flag | Description | Default |
 |------|------------|---------|
-| `--target` | AI tool target (`all`, `claude`, `cursor`, `copilot`, `windsurf`) | `all` |
-| `--path` | Path to project | `.` |
-| `--output` | Output format (`terminal`, `file`) | `terminal` |
+| `--target` | Which agent's files to write (`all`, `claude`, `cursor`, `copilot`, `windsurf`, `agents`) | `all` |
+| `--catalog-only` | Write only the capability catalog; no `verikt.yaml` required | `false` |
+
+`all` writes for every agent the project already uses, or for all of them when none is detected.
+
+| Target | Always-loaded file |
+|--------|--------------------|
+| `claude` | `.claude/rules/verikt-index.md` and `.claude/rules/verikt-<category>.md` |
+| `cursor` | `.cursor/rules/verikt.mdc` (verikt's section is moved out of a legacy `.cursorrules`) |
+| `copilot` | `.github/copilot-instructions.md` |
+| `windsurf` | `.windsurfrules` |
+| `agents` | `AGENTS.md` |
+
+Every target also gets the on-demand references in `.verikt/references/`. Commit them with the rest.
 
 ### Examples
 
 ```bash
-# Generate context for any AI agent
+# Every agent the project uses
 verikt guide
 
 # Target Claude Code specifically
 verikt guide --target claude
 
-# Target Cursor
-verikt guide --target cursor
+# AGENTS.md, read by Codex, Antigravity and other agents
+verikt guide --target agents
 ```
 
 <Aside type="tip">
@@ -108,7 +119,28 @@ verikt check [flags]
 | Flag | Description | Default |
 |------|------------|---------|
 | `--path` | Path to project | `.` |
-| `--output` | Output format (`terminal`, `json`) | `terminal` |
+| `-o, --output` | Output format (`terminal`, `json`, `markdown`) | `terminal` |
+| `--diff <ref>` | Report only findings in files changed since the merge base of `<ref>` and `HEAD` | none |
+| `--staged` | Report only findings in files in the git staging area | `false` |
+| `--detectors` | Run only the built-in detectors | `false` |
+| `--proxy-rules` | Run only proxy rules | `false` |
+| `--rule <id>` | Run a single proxy rule | none |
+| `--decisions` | Run only decision gate validation | `false` |
+| `--allow-degraded` | If the analysis engine is unavailable, skip the built-in detectors with a warning instead of failing | `false` |
+
+`--detectors`, `--proxy-rules`, `--rule` and `--decisions` each narrow the run to one kind of check, so they cannot be combined.
+
+### Checking Only What Changed
+
+`--diff main` compares against the merge base of `main` and `HEAD`, not against `main`'s current tip, so on a branch that has fallen behind it reports what the branch changed rather than everything `main` moved on. The comparison is with the working tree, so committed and uncommitted work are both included. A ref that git cannot resolve is an error, not an empty file list: an empty list would filter every finding away and report a pass. An empty ref, or one starting with `-`, is rejected before git sees it.
+
+`--diff` and `--staged` include added, copied, modified and **renamed** files. Renames used to be left out, so every finding in a file the branch had moved — including one moved and then edited — disappeared from the report.
+
+### When the Analysis Engine Is Unavailable
+
+The built-in detectors (dependency rules, structure, function metrics, anti-patterns) run on the analysis engine embedded in the binary and extracted to a cache directory on first use. A cached engine is used only if it is a regular file, not a symlink, with the expected size, permissions and SHA-256; anything else is extracted again.
+
+If the engine cannot be extracted — an unwritable cache directory, for example — `verikt check` fails, and the error names the cause. It does not quietly skip the detectors and report a pass. `--allow-degraded` opts into skipping them: a warning on stderr says the detectors did not run, and only proxy rules and decision gates are checked. stdout is untouched, so `-o json` stays parseable. `--allow-degraded` is refused together with `--detectors`, which would leave nothing to check. `--decisions`, `--proxy-rules` and `--rule` never need the engine.
 
 ### What It Does Not Analyse
 
@@ -162,7 +194,7 @@ array, at warning severity, so neither fails the check unless you raise it with
 | Code | Meaning |
 |------|---------|
 | 0 | No error-severity violations. Warnings may be present. |
-| 1 | An error-severity violation was found, or a proxy rule could not run |
+| 1 | An error-severity violation was found, a proxy rule could not run, or the check itself failed: no `verikt.yaml`, an unknown capability in it, an unresolvable `--diff` ref, or the analysis engine unavailable without `--allow-degraded` |
 
 Warnings never affect the exit code, so a finding you have chosen to live with
 cannot block a pipeline. The exit code is the same in every output format —
@@ -414,6 +446,34 @@ verikt init [flags]
 
 <Aside type="note">
 This is useful for adding architecture enforcement to projects that weren't scaffolded with verikt. Use `verikt analyze` first to understand the existing structure.
+</Aside>
+
+---
+
+## `verikt setup`
+
+Register verikt globally with the AI agents installed on this machine. For Claude Code it also offers to install the verikt skills, which add `/verikt:init`. Neither Homebrew nor the install script runs it for you (the script does with `--setup`).
+
+```bash
+verikt setup [flags]
+```
+
+### Flags
+
+| Flag | Description | Default |
+|------|------------|---------|
+| `--check` | Report status without writing; exit 1 if any agent is stale | `false` |
+| `--force` | Rewrite even if the installed version matches | `false` |
+| `--uninstall` | Remove verikt's global files | `false` |
+| `--codex` | Also manage verikt's section in `~/.codex/AGENTS.md` | `false` |
+| `--antigravity` | Also manage verikt's section in `~/.gemini/GEMINI.md` | `false` |
+
+Claude Code, Cursor and Windsurf are configured automatically when their config directory exists (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when set; `~/.cursor`; `~/.windsurf`). verikt writes its own `verikt.md` into that agent's `rules/` directory. It never creates an agent's config directory.
+
+Codex and Antigravity keep their global instructions in one file you also edit, so they are opt-in. With `--codex` or `--antigravity`, verikt writes only the section between its `<!-- verikt:global:start -->` and `<!-- verikt:global:end -->` markers and leaves the rest of the file alone; malformed markers stop it rather than risk your content. The same flags select them for `--check` and `--uninstall`. Without the flag, an installed Codex or Antigravity is reported and left untouched.
+
+<Aside type="caution">
+The Codex and Antigravity file locations have not yet been checked against each vendor's current documentation ([#19](https://github.com/diktahq/verikt/issues/19)). If your agent reads its global instructions from somewhere else, the section verikt writes will not be loaded.
 </Aside>
 
 ---

@@ -163,12 +163,20 @@ When `os_root` is true (Go >= 1.24): `root.go.tmpl` is rendered, `fallback.go.tm
 
 ## Validation
 
-The configuration is validated when running `verikt check`:
+Validation happens at two points, and they check different things.
 
-- Component names must be unique
-- Components cannot depend on themselves
-- Dependencies must reference existing components
-- `in` patterns must be valid globs
+`verikt check` and `verikt guide` reject a `capabilities` entry that is empty or names a capability the language provider does not have, and name the entry.
+
+The structural rules are enforced when verikt writes the file — `verikt new`, `verikt add`, `verikt init`, `verikt analyze` and `verikt decide` refuse to save a config that breaks them:
+
+- `language` and `architecture` are set
+- Component names are present and unique
+- No component lists itself in `may_depend_on`
+- Every `may_depend_on` entry names an existing component
+- Every `check.allowed_entrypoints` entry is a non-empty, project-relative path that stays inside the project
+- Every `severity_overrides` entry has a known severity and a reason, and no catch-all shadows entries after it
+
+`verikt check` does not re-run these structural rules on a file you edited by hand, and nothing validates `in` patterns as globs.
 
 <Aside type="tip">
 You can add `verikt check` to your CI pipeline to catch dependency violations before merge.

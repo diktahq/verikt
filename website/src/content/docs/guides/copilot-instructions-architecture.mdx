@@ -84,7 +84,7 @@ If you want to update all targets at once:
 verikt guide
 ```
 
-Running without `--target` regenerates all supported formats — `.claude/rules/verikt.md`, `.cursorrules`, `.github/copilot-instructions.md`, and `.windsurfrules` — in a single pass.
+Running without `--target` regenerates the files of every agent the project already uses — `.claude/rules/`, `.cursor/rules/verikt.mdc`, `.github/copilot-instructions.md`, `.windsurfrules`, `AGENTS.md` — in a single pass, along with the on-demand references in `.verikt/references/`. When the project carries none of them yet, it writes all of them.
 
 ## What this changes
 

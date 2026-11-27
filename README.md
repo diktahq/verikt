@@ -13,6 +13,8 @@ AI agents don't know your architecture. They write correct syntax but put code i
 brew install diktahq/tap/verikt
 ```
 
+Builds are published for macOS and Linux on amd64 and arm64; there is no Windows build. Neither Homebrew nor the install script changes your agent configuration. Run `verikt setup` when you want verikt registered with Claude Code, Cursor or Windsurf (Codex and Antigravity are opt-in: `--codex`, `--antigravity`).
+
 ### Pinned and verified, by hand
 
 This is the only route where everything you run is fixed to a release: you download the archive for one version and check it against that release's `checksums.txt` yourself. Archives are named `verikt_<version>_<os>_<arch>.tar.gz`, for `darwin` or `linux` on `amd64` or `arm64`.
@@ -25,6 +27,8 @@ curl -fsSLO "https://github.com/diktahq/verikt/releases/download/${VERSION}/chec
 grep "  ${ARCHIVE}$" checksums.txt | shasum -a 256 -c -   # or: sha256sum -c -
 tar xzf "${ARCHIVE}" verikt && sudo mv verikt /usr/local/bin/
 ```
+
+Releases built by the release workflow from this version on also carry a build-provenance attestation: `gh attestation verify "${ARCHIVE}" --repo diktahq/verikt`. Releases up to v0.2.2 have none.
 
 ### Install script (macOS and Linux)
 
@@ -71,7 +75,7 @@ verikt new my-api --arch hexagonal \
 
 | Pillar | Command | What It Does |
 |--------|---------|-------------|
-| **Guide** | `verikt guide` | Generates architecture context for AI agents (Claude Code, Cursor, Copilot, Windsurf) |
+| **Guide** | `verikt guide` | Generates architecture context for AI agents: Claude Code, Cursor (`.cursor/rules/verikt.mdc`), Copilot, Windsurf, and `AGENTS.md` for Codex, Antigravity and others |
 | **Compose** | `verikt new` | Scaffolds services from architecture + capabilities — health checks, graceful shutdown, observability wired by default |
 | **Analyze** | `verikt analyze` | Detects architecture patterns in existing codebases |
 | **Enforce** | `verikt check` | Validates code against architecture rules — 14 anti-pattern detectors, `--diff main` for CI |

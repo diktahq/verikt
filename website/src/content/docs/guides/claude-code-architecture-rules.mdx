@@ -1,13 +1,13 @@
 ---
 title: "Architecture Rules for Claude Code — Generate .claude/rules from verikt"
-description: "How to generate architecture rules for Claude Code using verikt guide. One command creates .claude/rules/verikt.md with your layer boundaries, dependency rules, and capability inventory."
+description: "How to generate architecture rules for Claude Code using verikt guide. One command creates .claude/rules/verikt-index.md with your layer boundaries, dependency rules, and capability inventory."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 Claude Code starts every session without knowing your architecture. It knows Go. It knows TypeScript. It doesn't know that domain must never import from infrastructure in your service, or that you use hexagonal architecture, or which 14 capabilities are installed and wired. So it guesses. Sometimes correctly.
 
-`verikt guide --target claude` fixes this. One command generates `.claude/rules/verikt.md` — a file Claude Code reads at session start — with your exact layer boundaries, dependency rules, and capability inventory derived from `verikt.yaml`.
+`verikt guide --target claude` fixes this. One command generates `.claude/rules/verikt-index.md` — a file Claude Code reads at session start — with your exact layer boundaries, dependency rules, and capability inventory derived from `verikt.yaml`.
 
 ## Quick start
 
@@ -18,11 +18,11 @@ brew install diktahq/tap/verikt
 verikt guide --target claude
 ```
 
-The generated file lands at `.claude/rules/verikt.md`. Claude Code picks it up automatically on next session start via the `**/*` glob in your `CLAUDE.md`.
+The generated index lands at `.claude/rules/verikt-index.md`, with a `verikt-<category>.md` file beside it for each capability category you use. Claude Code picks them up automatically on the next session start; the index carries a `**/*` glob in its frontmatter, so it applies to every file.
 
 ## What gets generated
 
-The file contains everything the agent needs to make correct architectural decisions without asking:
+The index is always loaded, so it stays within 30 instructions and 1,500 tokens: one line per layer saying what it may depend on, the installed capabilities, and the critical warnings for your stack. The detail below lives in `.verikt/references/`, and the index tells the agent when to read each file. Between them, the agent gets what it needs to make architectural decisions without asking:
 
 **Layer boundaries and dependency direction.** For a hexagonal service, this looks like:
 
@@ -55,7 +55,7 @@ When the agent suggests adding retry logic, it knows to check whether `idempoten
 
 Claude Code loads all files matching `**/*` in `.claude/rules/` at session start. This means architecture rules are available from the first message, without any prompt engineering on your part.
 
-Commit `.claude/rules/verikt.md` to the repository. Every engineer on the team, every CI session, every new agent thread gets the same architecture context automatically.
+Commit `.claude/rules/`, `.claude/hooks/`, `.claude/settings.json` and `.verikt/references/` to the repository. Every engineer on the team, every CI session, every new agent thread gets the same architecture context automatically.
 
 <Aside type="tip">
 Re-run `verikt guide --target claude` after adding a capability with `verikt add`. The rules file reflects the current state of `verikt.yaml` — stale context is worse than no context.

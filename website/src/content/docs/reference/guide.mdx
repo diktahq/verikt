@@ -1,13 +1,13 @@
 ---
 title: verikt guide
-description: Generate architecture context for AI coding agents with verikt guide — feed Claude, Cursor, Copilot, and Windsurf your service's dependency rules
+description: Generate architecture context for AI coding agents with verikt guide — feed Claude Code, Cursor, Copilot, Windsurf and AGENTS.md readers your service's dependency rules
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 ## Overview
 
-`verikt guide` reads your project's `verikt.yaml` and generates architecture context that AI coding agents can consume. Instead of fixing architecture violations after the fact, feed your agent the rules upfront.
+`verikt guide` reads your project's `verikt.yaml` and writes architecture context into the files AI coding agents load on their own. Instead of fixing architecture violations after the fact, feed your agent the rules upfront.
 
 **Prevention beats correction.**
 
@@ -15,77 +15,83 @@ import { Aside } from '@astrojs/starlight/components';
 verikt guide [flags]
 ```
 
+The guide is normative: it describes what `verikt.yaml` declares and never scans your source tree. `verikt check` is the command that reports what the code actually looks like.
+
 ## Flags
 
 | Flag | Description | Default |
 |------|------------|---------|
-| `--target` | AI tool target (`all`, `claude`, `cursor`, `copilot`, `windsurf`) | `all` |
-| `--path` | Path to project | `.` |
-| `--output` | Output format (`terminal`, `file`) | `terminal` |
+| `--target` | Which agent's files to write: `all`, `claude`, `cursor`, `copilot`, `windsurf`, `agents` | `all` |
+| `--catalog-only` | Write only the capability catalog. No `verikt.yaml` required. | `false` |
+
+`verikt guide` runs in the current directory and finds `verikt.yaml` there or in a parent directory. It writes files; it does not print the guide to stdout.
+
+## Targets
+
+| Agent | Target flag | Always-loaded file |
+|------|------------|-------------|
+| Claude Code | `--target claude` | `.claude/rules/verikt-index.md`, plus `.claude/rules/verikt-<category>.md` for each capability category you use |
+| Cursor | `--target cursor` | `.cursor/rules/verikt.mdc` |
+| GitHub Copilot | `--target copilot` | `.github/copilot-instructions.md` |
+| Windsurf | `--target windsurf` | `.windsurfrules` |
+| Codex, Antigravity and other `AGENTS.md` readers | `--target agents` | `AGENTS.md` |
+
+`--target all` (the default) writes only for the agents your project already uses, detected from the file or directory each one owns: `.claude/`, `.cursor/` or a legacy `.cursorrules`, `.github/copilot-instructions.md`, `.windsurfrules`, `AGENTS.md`. When none of them exists, as in a freshly scaffolded project, every target is written. An explicit `--target` always writes that agent's file.
+
+With `--catalog-only`, the Claude target writes a single `.claude/rules/verikt.md` instead of the index and category files.
+
+### Files you share with other content
+
+`AGENTS.md`, `.github/copilot-instructions.md` and `.windsurfrules` often hold your own instructions too. verikt rewrites only the section between its `<!-- verikt:start -->` and `<!-- verikt:end -->` markers and leaves the rest of the file alone. If the markers are malformed — one without the other, more than one of either, or end before start — verikt refuses to write the file and tells you to fix the markers by hand, rather than appending a second section.
+
+`.cursor/rules/verikt.mdc` and the `.claude/rules/verikt-*.md` files belong to verikt entirely and are rewritten on every run.
+
+### Migrating from `.cursorrules`
+
+Cursor's single-file `.cursorrules` format is deprecated, so the Cursor target now writes `.cursor/rules/verikt.mdc` with `alwaysApply: true` frontmatter. If a `.cursorrules` file still carries verikt's section, `verikt guide` moves it out: your own content in `.cursorrules` is kept, and the file is deleted only when verikt's section was all it held. A notice on stderr says which of the two happened.
+
+### Claude Code hooks
+
+The Claude target also writes two hook scripts under `.claude/hooks/` and registers them in `.claude/settings.json`: `verikt-check.sh` runs `verikt check --diff HEAD` after every Write or Edit and feeds the violation count back to the agent (it needs `jq` on `PATH`); `verikt-guide-refresh.sh` runs at session start and regenerates the Claude guide when `verikt.yaml` has changed since the last run. A check that fails without a readable report is reported to the agent as unverified, not as a pass.
+
+`settings.json` is merged, not overwritten. verikt updates its own hook entries in place and keeps every hook you added. If the file is not valid JSON, or `hooks` (or one of its events) has the wrong type, verikt refuses to write it and names the problem.
+
+## Two tiers: always-loaded rules and on-demand references
+
+Everything in an always-loaded file costs context on every turn of every session, whether or not the task needs it. So the guide is split in two.
+
+The **always-loaded file** for each target holds the compact writer rules: the agent instructions and governance checkpoint, a short architecture summary, one line per layer saying what it may depend on, the installed capabilities, critical warnings for your stack, open decisions, the proxy rules `verikt check` enforces, and an index of the references below. It opens and closes with the rules that matter most: run `verikt check` before finishing, and treat every applicable critical warning as a MUST.
+
+The **references** under `.verikt/references/` hold the long material. The agent reads each one only when the always-loaded file tells it the task calls for it:
+
+| File | Read when | Contents |
+|------|-----------|----------|
+| `architecture.md` | Adding a package or file, or an import that crosses a layer | Full layer detail, directory globs, forbidden imports, where new code goes, anti-patterns |
+| `capabilities.md` | Adding or wiring a capability | Installed capabilities and their wiring patterns, the full catalog, suggestions and warnings |
+| `review.md` | Before finishing a change, and when reviewing code | Verification checklist, interaction warnings, design questions, decision status, proxy rule table |
+| `interview.md` | The user asks to scaffold a new service | The scaffold interview — written only with `--catalog-only` |
+
+Commit `.verikt/references/` with the always-loaded files. The always-loaded files point at these paths, so an agent working from a fresh clone without them is sent to files that don't exist. A reference the current run no longer produces — `architecture.md` after switching to `--catalog-only`, for example — is deleted.
+
+### The budget
+
+[INV-001](https://github.com/diktahq/verikt/blob/main/docs/invariants/INV-001-rules-file-sizing.md) caps every always-loaded file at 30 instructions and 1,500 tokens. Two tests enforce it, `TestGuideOutput_InstructionCount` and `TestGuideOutput_TokenBudget`: they generate every target for representative configurations and fail when any always-loaded file goes over. An instruction is counted as a bullet, numbered item or table row outside frontmatter and code blocks; tokens are estimated as bytes divided by four, which over-counts slightly so the test errs toward failing. The references are not budgeted, because they are only read when needed.
+
+Components marked `optional: true` in `verikt.yaml` are labelled as optional in the layer rules, so the agent doesn't treat a layer you haven't created yet as missing.
 
 ## Usage
 
-### Default (any AI agent)
-
 ```bash
-verikt guide
+verikt guide                  # every agent the project uses
+verikt guide --target claude  # Claude Code only
+verikt guide --target agents  # AGENTS.md only
+verikt guide --catalog-only   # capability catalog, no verikt.yaml needed
 ```
 
-Outputs architecture context to stdout — paste it into any AI chat or system prompt.
-
-### Claude Code
-
-```bash
-verikt guide --target claude
-```
-
-Generates context optimized for Claude Code's CLAUDE.md format.
-
-### Cursor
-
-```bash
-verikt guide --target cursor
-```
-
-Generates context for Cursor's `.cursorrules` format.
-
-### Copilot
-
-```bash
-verikt guide --target copilot
-```
-
-### Windsurf
-
-```bash
-verikt guide --target windsurf
-```
-
-## Example Output
-
-```
-# Architecture: hexagonal
-# Components: domain, port, service, adapter
-
-## Dependency Rules
-- domain/ must NOT import from port/, service/, adapter/
-- port/ must NOT import from service/, adapter/
-- service/ must NOT import from adapter/
-
-## Capabilities
-- http-api: REST API with Chi router, RFC 7807 errors
-- mysql: MySQL with connection pooling
-- platform: Config, structured logging, graceful shutdown
-
-## Anti-patterns to Avoid
-- No SQL string concatenation (use parameterized queries)
-- No domain importing adapters
-- No fat HTTP handlers (delegate to service layer)
-- No global mutable state
-```
+Re-run it whenever `verikt.yaml` changes: after `verikt add`, after editing components, after recording a decision.
 
 <Aside type="tip">
-Run `verikt guide` in your project root — it reads `verikt.yaml` to generate context specific to your project's architecture and capabilities.
+Commit the generated files — the always-loaded ones and `.verikt/references/` — so every engineer and every agent session on the project gets the same context.
 </Aside>
 
 ## Governance Checkpoint
@@ -96,14 +102,4 @@ The checkpoint doesn't add new rules. It tells the agent *when to check* the rul
 
 In [EXP-10](/experiments/exp-10/), the checkpoint eliminated variance in agent compliance (0.89 → 0.00) and reduced violations by 25% on greenfield builds. On brownfield projects with a conforming codebase, the checkpoint has no measurable effect — the existing code already constrains the agent.
 
-The checkpoint adds approximately 80 tokens to the guide output. It appears in all target formats (Claude, Cursor, Copilot, Windsurf).
-
-## Supported AI Tools
-
-| Tool | Target Flag | Output File |
-|------|------------|-------------|
-| All tools | `--target all` (default) | All files below |
-| Claude Code | `--target claude` | `.claude/rules/verikt.md` |
-| Cursor | `--target cursor` | `.cursorrules` |
-| GitHub Copilot | `--target copilot` | `.github/copilot-instructions.md` |
-| Windsurf | `--target windsurf` | `.windsurfrules` |
+The checkpoint adds approximately 80 tokens to the guide output. It is part of the always-loaded writer rules, so it appears in every target's file.

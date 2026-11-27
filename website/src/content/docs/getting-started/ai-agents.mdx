@@ -17,8 +17,29 @@ Every time you open a new AI coding session, the agent starts cold. It doesn't k
 brew install diktahq/tap/verikt
 
 # Install script (macOS/Linux)
-curl -sSL https://verikt.dev/install.sh | bash
+curl -fsSL https://verikt.dev/install.sh | bash
 ```
+
+Installing doesn't touch your agent configuration. To register verikt globally with the agents on this machine, run `verikt setup`. It configures Claude Code, Cursor and Windsurf when their config directory exists, and never creates one:
+
+```bash
+verikt setup
+```
+
+### Codex and Antigravity (opt-in)
+
+Codex and Antigravity keep their global instructions in a single file you also edit — `~/.codex/AGENTS.md` and `~/.gemini/GEMINI.md` — so `verikt setup` leaves them alone unless you ask:
+
+```bash
+verikt setup --codex
+verikt setup --antigravity
+```
+
+verikt writes only its own section of that file, between `<!-- verikt:global:start -->` and `<!-- verikt:global:end -->`, and keeps everything else. Pass the same flag to `--check` or `--uninstall`.
+
+<Aside type="caution">
+These two file locations have not yet been checked against Codex's and Antigravity's current documentation ([#19](https://github.com/diktahq/verikt/issues/19)). If your version reads global instructions from a different path, the section verikt writes won't be loaded. The per-project `AGENTS.md` that `verikt guide` writes doesn't depend on this.
+</Aside>
 
 ## The Workflow
 
@@ -46,9 +67,11 @@ curl -sSL https://verikt.dev/install.sh | bash
    verikt guide
    ```
 
-   verikt reads your `verikt.yaml` and generates context files for every supported AI agent — directly in your project.
+   verikt reads your `verikt.yaml` and writes context files for the agents your project uses — or for all of them, in a project that carries none yet.
 
    <AgentCardGrid />
+
+   Each of these files is kept small, because the agent loads it on every turn. The longer material — full layer detail, the capability catalog, the review checklist — goes to `.verikt/references/`, and the always-loaded file tells the agent when to read each one. Commit `.verikt/references/` along with the agent files: they point at it.
 
 3. **Open your agent and start prompting**
 
@@ -58,7 +81,7 @@ curl -sSL https://verikt.dev/install.sh | bash
 
    <TabItem label="Claude Code">
 
-   Claude Code reads `.claude/rules/verikt.md` automatically on every session start. No setup needed beyond running `verikt guide`.
+   Claude Code loads `.claude/rules/verikt-index.md` automatically on every session, plus a `verikt-<category>.md` file for each capability category you use. `verikt guide` also adds two hooks to `.claude/settings.json`, merged with any hooks you already have: one runs `verikt check --diff HEAD` after each edit and reports violations back to the agent, the other regenerates the guide at session start when `verikt.yaml` has changed.
 
    Open Claude Code in your project directory:
 
@@ -78,7 +101,7 @@ curl -sSL https://verikt.dev/install.sh | bash
    Commit the generated file so every engineer on the team gets the same context:
 
    ```bash
-   git add .claude/rules/verikt.md
+   git add .claude/rules/ .claude/hooks/ .claude/settings.json .verikt/references/
    git commit -m "chore: add verikt architecture context"
    ```
 
@@ -88,7 +111,9 @@ curl -sSL https://verikt.dev/install.sh | bash
 
    <TabItem label="Cursor">
 
-   Cursor reads `.cursorrules` automatically when you open the project folder. No setup needed beyond running `verikt guide`.
+   Cursor loads `.cursor/rules/verikt.mdc` automatically — it is an always-applied project rule. No setup needed beyond running `verikt guide`.
+
+   If your project still has a `.cursorrules` file with verikt's section in it, `verikt guide` moves that section out and keeps your own content. Cursor has deprecated `.cursorrules`.
 
    1. Open Cursor
    2. `File → Open Folder` → select your project directory
@@ -105,7 +130,7 @@ curl -sSL https://verikt.dev/install.sh | bash
    Commit the generated file so every engineer on the team gets the same context:
 
    ```bash
-   git add .cursorrules
+   git add .cursor/rules/verikt.mdc .verikt/references/
    git commit -m "chore: add verikt architecture context"
    ```
 
@@ -144,7 +169,7 @@ curl -sSL https://verikt.dev/install.sh | bash
    Commit the generated file so every engineer on the team gets the same context:
 
    ```bash
-   git add .github/copilot-instructions.md
+   git add .github/copilot-instructions.md .verikt/references/
    git commit -m "chore: add verikt architecture context"
    ```
 
@@ -171,7 +196,7 @@ curl -sSL https://verikt.dev/install.sh | bash
    Commit the generated file so every engineer on the team gets the same context:
 
    ```bash
-   git add .windsurfrules
+   git add .windsurfrules .verikt/references/
    git commit -m "chore: add verikt architecture context"
    ```
 
@@ -179,40 +204,57 @@ curl -sSL https://verikt.dev/install.sh | bash
 
    </TabItem>
 
-   <TabItem label="Other">
+   <TabItem label="AGENTS.md">
 
-   For any other AI tool (Zed, Aider, Continue, raw API, etc.), `verikt guide` still generates all context files. Use `.cursorrules` — it's plain markdown and works as a starting point for any tool.
+   `AGENTS.md` is the cross-agent instructions file at the project root, read by Codex, Antigravity, OpenCode and other agents. Generate verikt's section of it:
 
    ```bash
-   verikt guide
+   verikt guide --target agents
    ```
 
-   This generates `.cursorrules` (among others) — a self-contained markdown file with your full architecture context: layer boundaries, capability stack, dependency rules, and interaction warnings.
+   If `AGENTS.md` already holds your own instructions, they stay. verikt rewrites only the section between `<!-- verikt:start -->` and `<!-- verikt:end -->`, and refuses to write the file if those markers are malformed rather than append a second section.
 
-   Since your tool has no auto-loading, you need to include the context manually each session:
+   Commit it so every engineer gets the same context:
+
+   ```bash
+   git add AGENTS.md .verikt/references/
+   git commit -m "chore: add verikt architecture context"
+   ```
+
+   </TabItem>
+
+   <TabItem label="Other">
+
+   For a tool that loads no instructions file on its own (raw API, a chat window), use `AGENTS.md`: it is plain markdown, and verikt's part of it is self-contained.
+
+   ```bash
+   verikt guide --target agents
+   ```
+
+   Since your tool has no auto-loading, include the context yourself each session:
 
    **Option A — paste at session start:**
 
-   Copy the contents of `.cursorrules` and paste it as your first message or system prompt before asking anything:
+   Copy verikt's section of `AGENTS.md` and paste it as your first message or system prompt before asking anything:
 
    ```
-   [paste contents of .cursorrules here]
+   [paste verikt's section of AGENTS.md here]
 
    Now: add a new endpoint to list orders by customer ID
    ```
 
+   The section refers to files in `.verikt/references/` for detail. Paste the relevant one too when the task calls for it.
+
    **Option B — file reference (if your tool supports it):**
 
-   If your tool supports referencing files as context (Aider, Continue, etc.), point it at `.cursorrules`:
+   If your tool can take files as context, point it at `AGENTS.md`:
 
    ```bash
    # Aider example
-   aider --read .cursorrules
-
-   # Continue — add .cursorrules to your context window via the @ file picker
+   aider --read AGENTS.md
    ```
 
-   There is no automatic loading for unsupported tools. For automatic context injection without manual steps, use Claude Code, Cursor, GitHub Copilot, or Windsurf.
+   For automatic context injection without manual steps, use Claude Code, Cursor, GitHub Copilot, Windsurf, or an agent that reads `AGENTS.md`.
 
    </TabItem>
 
@@ -222,7 +264,7 @@ curl -sSL https://verikt.dev/install.sh | bash
 
 ## What the Agent Gets
 
-The generated file gives the agent four things it would otherwise ask you for:
+Between the always-loaded file and the references it points to, the agent gets four things it would otherwise ask you for:
 
 - **Capability catalog** — what's installed and what's available but not yet added.
 - **Dependency rules** — if you have `http-api`, the agent knows you probably need `health`, `request-id`, and `validation`, and flags those gaps proactively.
