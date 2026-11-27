@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -93,7 +94,10 @@ func ComposeProject(templateFS fs.FS, architecture string, capabilities []string
 	for _, c := range capabilities {
 		capSet[c] = true
 	}
-	resolved := resolveCapabilityDeps(templateFS, capabilities, capSet)
+	resolved, err := resolveCapabilityDeps(templateFS, capabilities, capSet)
+	if err != nil {
+		return nil, err
+	}
 	if len(resolved) > len(capabilities) {
 		// Reload manifests for newly added capabilities.
 		capabilities = resolved
@@ -285,13 +289,15 @@ func collectPartials(templateFS fs.FS, capDirs []string, vars map[string]interfa
 }
 
 // resolveCapabilityDeps walks the requires graph and adds missing transitive dependencies.
-// Returns the expanded list in dependency-first order.
-func resolveCapabilityDeps(templateFS fs.FS, capabilities []string, capSet map[string]bool) []string {
+// Returns the expanded list in dependency-first order, or an error naming the
+// requiring capability when a requirement has no manifest in templateFS.
+func resolveCapabilityDeps(templateFS fs.FS, capabilities []string, capSet map[string]bool) ([]string, error) {
 	// BFS to discover all transitive requires.
 	queue := make([]string, len(capabilities))
 	copy(queue, capabilities)
 	ordered := make([]string, 0, len(capabilities))
 	visited := map[string]bool{}
+	requiredBy := map[string]string{}
 
 	for len(queue) > 0 {
 		cap := queue[0]
@@ -301,22 +307,16 @@ func resolveCapabilityDeps(templateFS fs.FS, capabilities []string, capSet map[s
 		}
 		visited[cap] = true
 
-		capDir := path.Join("templates", "capabilities", cap)
-		data, err := fs.ReadFile(templateFS, path.Join(capDir, "capability.yaml"))
+		cm, err := readDependencyManifest(templateFS, cap, requiredBy[cap])
 		if err != nil {
-			ordered = append(ordered, cap)
-			continue
-		}
-		cm, err := ParseCapabilityManifest(data)
-		if err != nil {
-			ordered = append(ordered, cap)
-			continue
+			return nil, err
 		}
 
 		// Add requires that aren't yet selected.
 		for _, req := range cm.Requires {
 			if !capSet[req] {
 				capSet[req] = true
+				requiredBy[req] = cap
 				queue = append(queue, req)
 			}
 		}
@@ -336,7 +336,25 @@ func resolveCapabilityDeps(templateFS fs.FS, capabilities []string, capSet map[s
 			deps = append(deps, c)
 		}
 	}
-	return append(deps, orig...)
+	return append(deps, orig...), nil
+}
+
+// readDependencyManifest loads the manifest for name during dependency
+// resolution. requiredBy names the capability whose requires pulled name in,
+// or is empty when name was selected directly.
+func readDependencyManifest(templateFS fs.FS, name, requiredBy string) (*CapabilityManifest, error) {
+	data, err := fs.ReadFile(templateFS, path.Join("templates", "capabilities", name, "capability.yaml"))
+	if err != nil {
+		if requiredBy != "" && errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("capability %q requires %q, which is not a known capability", requiredBy, name)
+		}
+		return nil, fmt.Errorf("read capability manifest %q: %w", name, err)
+	}
+	cm, err := ParseCapabilityManifest(data)
+	if err != nil {
+		return nil, fmt.Errorf("capability %q: %w", name, err)
+	}
+	return cm, nil
 }
 
 // Suggestions returns capabilities suggested by the selected set but not yet included.
