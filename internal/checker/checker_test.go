@@ -3,6 +3,7 @@ package checker
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/diktahq/verikt/internal/config"
@@ -199,6 +200,48 @@ func TestDetectMissingComponents(t *testing.T) {
 	}
 	if violations[0].Rule != "missing_component" {
 		t.Errorf("expected rule missing_component, got %s", violations[0].Rule)
+	}
+}
+
+func TestDetectMissingComponents_SkipsOptionalComponents(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "domain"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "domain", "order.go"), []byte("package domain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// platform/ and port/ are both absent; only port is required.
+	cfg := &config.VeriktConfig{
+		Language: "go",
+		Components: []config.Component{
+			{Name: "domain", In: []string{"domain/**"}},
+			{Name: "platform", In: []string{"platform/**"}, Optional: true},
+			{Name: "port", In: []string{"port/**"}},
+		},
+	}
+	violations := detectMissingComponents(cfg, dir)
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 missing_component violation (port), got %d: %v", len(violations), violations)
+	}
+	if want := `component "port"`; !strings.Contains(violations[0].Message, want) {
+		t.Errorf("violation = %q, want it to name %s", violations[0].Message, want)
+	}
+}
+
+// An optional component whose directory exists but holds no source is not
+// reported either: it is allowed to be empty.
+func TestDetectMissingComponents_SkipsOptionalComponentWithoutSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "platform"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.VeriktConfig{
+		Language:   "go",
+		Components: []config.Component{{Name: "platform", In: []string{"platform/**"}, Optional: true}},
+	}
+	if violations := detectMissingComponents(cfg, dir); len(violations) != 0 {
+		t.Fatalf("expected no violations for an empty optional component, got %v", violations)
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/diktahq/verikt/internal/config"
 )
 
 type Manifest struct {
@@ -17,6 +19,10 @@ type Manifest struct {
 	RequiresFeatures []string                   `yaml:"requires_features,omitempty" json:"requires_features,omitempty"`
 	Conditional      map[string]ConditionalRule `yaml:"conditional,omitempty" json:"conditional,omitempty"`
 	PathMappings     map[string]string          `yaml:"path_mappings,omitempty" json:"path_mappings,omitempty"`
+	// Components is the architecture's component graph. It is written to the
+	// scaffolded project's verikt.yaml, so `verikt check` enforces the
+	// architecture the project was generated with.
+	Components []config.Component `yaml:"components,omitempty" json:"components,omitempty"`
 }
 
 // ConditionalRule gates file inclusion on a feature flag.

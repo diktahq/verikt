@@ -36,7 +36,16 @@ components:
 
   - name: adapters
     in: ["adapter/**"]
-    may_depend_on: [ports, domain]
+    may_depend_on: [ports, domain, platform]
+
+  - name: platform
+    in: ["platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"]
+    may_depend_on: [domain]
+    optional: true
+
+  - name: app
+    in: ["cmd/**", "internal/bootstrap/**"]
+    may_depend_on: [domain, ports, service, adapters, platform]
 
 rules:
   max_function_lines: 80
@@ -54,7 +63,7 @@ The project's programming language. Supported values: `go`, `typescript`.
 
 ### `architecture`
 
-The architecture pattern used to scaffold the project (`hexagonal`, `flat`).
+The architecture pattern used to scaffold the project (`hexagonal`, `clean`, `layered`, `flat`).
 
 ### `capabilities`
 
@@ -69,6 +78,15 @@ The core of architecture enforcement. Each component defines:
 | `name` | string | Component identifier |
 | `in` | string[] | Glob patterns matching this component's packages |
 | `may_depend_on` | string[] | Other components this one is allowed to import from |
+| `optional` | bool | When `true`, the component may have no code yet. `verikt check` does not report `missing_component` for it; its dependency rules still apply once code exists. Defaults to `false` |
+
+Every component without `optional: true` must have a directory matching one of its `in` patterns, or `verikt check` reports `missing_component`.
+
+`verikt new` writes the components of the architecture you chose, plus two that every layered Go architecture shares. `platform` holds the cross-cutting code capabilities write (observability, resilience, event bus, config, lifecycle, migrations, validation, test helpers). It may depend only on the innermost layer (`domain`, `entity` or `model`), and it is optional because a project scaffolded without those capabilities has none. `app` is the composition root: `cmd/` entrypoints and `internal/bootstrap/`. It may depend on every other component and nothing may depend on it. Because `app` classifies `cmd/`, scaffolded projects no longer need `check.exclude: [cmd/**]`.
+
+Dependency rules apply to production code. Imports in `_test.go` files are not checked, so a test can import a fixture or fake from another component.
+
+When two components' patterns can claim the same package, the first one declared wins. `verikt new` lists `platform` after the architecture layers for that reason: in a clean project, `internal/infrastructure/config` belongs to `infrastructure`, not to `platform`'s `config/**`.
 
 <Aside type="caution">
 **Dependency rules are enforced transitively.** If `service` may depend on `domain` and `ports`, but not `adapters`, then any import from a `service/` package into an `adapter/` package is a violation.

@@ -109,6 +109,11 @@ func (p *GoProvider) Scaffold(_ context.Context, req provider.ScaffoldRequest) (
 	}
 
 	veriktCfg := config.DefaultVeriktConfig("go", architecture)
+	// The manifest is the source of truth for the component graph a project
+	// is scaffolded with; DefaultVeriktConfig supplies the remaining rules.
+	if manifest != nil && len(manifest.Components) > 0 {
+		veriktCfg.Components = manifest.Components
+	}
 	if len(capabilities) > 0 {
 		veriktCfg.Capabilities = capabilities
 	}

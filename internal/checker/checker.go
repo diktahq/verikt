@@ -227,10 +227,13 @@ func checkWithEngineOnly(cfg *config.VeriktConfig, projectPath string, result *C
 func detectMissingComponents(cfg *config.VeriktConfig, projectPath string) []Violation {
 	var violations []Violation
 	for i, state := range componentCoverage(cfg, projectPath) {
-		if state == componentCovered {
+		comp := cfg.Components[i]
+		// An optional component may be absent (platform code exists only when
+		// a capability writes it). Its dependency rules still apply once it
+		// has code.
+		if state == componentCovered || comp.Optional {
 			continue
 		}
-		comp := cfg.Components[i]
 
 		// A declared component whose directory does not exist is config drift:
 		// the shape is not implemented, and error severity is earned.

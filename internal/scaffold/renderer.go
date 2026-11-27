@@ -286,6 +286,11 @@ func (r *Renderer) renderFilesDir(filesRoot, outputDir string, vars map[string]i
 		relDst := filepath.FromSlash(renderedRel)
 
 		if d.IsDir() {
+			// A directory mapped to "" is the project root (flat maps service/
+			// there), which already exists; os.Root rejects the empty path.
+			if relDst == "" || relDst == "." {
+				return nil
+			}
 			return root.MkdirAll(relDst, 0o755)
 		}
 

@@ -1,8 +1,9 @@
-package service_test
+{{/* service/ maps to a different package per architecture (internal/usecase in clean, the root package main in flat). */ -}}
+package {{if .ArchPaths.ServicePkg}}{{.ArchPaths.ServicePkg}}{{else}}main{{end}}_test
 
 // This file contains an example test to demonstrate the testing pattern.
 //
-// Tests in the service package validate business logic in isolation,
+// Tests in this package validate business logic in isolation,
 // using mock implementations of outbound port interfaces.
 //
 // Example:

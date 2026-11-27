@@ -94,6 +94,11 @@ type Component struct {
 	Name        string   `yaml:"name" json:"name"`
 	In          []string `yaml:"in" json:"in"`
 	MayDependOn []string `yaml:"may_depend_on" json:"may_depend_on"`
+	// Optional marks a component a project may legitimately not have yet, such
+	// as platform code that only some capabilities write. An optional component
+	// with no code is not reported as missing_component; its dependency rules
+	// still apply once code exists.
+	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
 type RulesConfig struct {
@@ -306,31 +311,82 @@ func DefaultVeriktConfig(language, architecture string) *VeriktConfig {
 		return defaultTypeScriptConfig(cfg, architecture)
 	}
 
+	forbidden := []string{"utils/", "helpers/"}
 	switch architecture {
 	case "flat":
 		cfg.Components = nil
-		cfg.Rules.Structure = StructureConfig{
-			ForbiddenDirs: []string{"utils/", "helpers/"},
-		}
+		cfg.Rules.Structure = StructureConfig{ForbiddenDirs: forbidden}
 		cfg.Templates = TemplateSourceConfig{Source: "verikt/cli"}
-	default: // hexagonal
-		cfg.Components = []Component{
-			{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
-			{Name: "ports", In: []string{"port/**"}, MayDependOn: []string{"domain"}},
-			{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "ports"}},
-			{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"ports", "domain"}},
+	case "clean":
+		cfg.Components = goComponents("entity",
+			Component{Name: "entity", In: []string{"internal/entity/**"}, MayDependOn: []string{}},
+			Component{Name: "usecase", In: []string{"internal/usecase/**"}, MayDependOn: []string{"entity"}},
+			Component{Name: "interface", In: []string{"internal/interface/**"}, MayDependOn: []string{"usecase", "entity", "platform"}},
+			Component{Name: "infrastructure", In: []string{"internal/infrastructure/**"}, MayDependOn: []string{"interface", "usecase", "entity", "platform"}},
+		)
+		cfg.Rules.Structure = StructureConfig{
+			RequiredDirs:  []string{"cmd/", "internal/entity/", "internal/usecase/", "internal/interface/", "internal/infrastructure/"},
+			ForbiddenDirs: forbidden,
 		}
+		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
+	case "layered":
+		cfg.Components = goComponents("model",
+			Component{Name: "handler", In: []string{"internal/handler/**"}, MayDependOn: []string{"service", "model", "platform"}},
+			Component{Name: "service", In: []string{"internal/service/**"}, MayDependOn: []string{"repository", "model"}},
+			Component{Name: "repository", In: []string{"internal/repository/**"}, MayDependOn: []string{"model", "platform"}},
+			Component{Name: "model", In: []string{"internal/model/**"}, MayDependOn: []string{}},
+		)
+		cfg.Rules.Structure = StructureConfig{
+			RequiredDirs:  []string{"cmd/", "internal/handler/", "internal/service/", "internal/repository/", "internal/model/"},
+			ForbiddenDirs: forbidden,
+		}
+		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
+	default: // hexagonal
+		cfg.Components = goComponents("domain",
+			Component{Name: "domain", In: []string{"domain/**"}, MayDependOn: []string{}},
+			Component{Name: "ports", In: []string{"port/**"}, MayDependOn: []string{"domain"}},
+			Component{Name: "service", In: []string{"service/**"}, MayDependOn: []string{"domain", "ports"}},
+			Component{Name: "adapters", In: []string{"adapter/**"}, MayDependOn: []string{"ports", "domain", "platform"}},
+		)
 		cfg.Rules.Structure = StructureConfig{
 			RequiredDirs:  []string{"cmd/", "domain/", "port/", "adapter/"},
-			ForbiddenDirs: []string{"utils/", "helpers/"},
+			ForbiddenDirs: forbidden,
 		}
-		// cmd/ is the application entry point and wiring layer — outside the
-		// hexagonal architecture boundary. Exclude it from orphan detection.
-		cfg.Check = CheckConfig{Exclude: []string{"cmd/**"}}
 		cfg.Templates = TemplateSourceConfig{Source: "verikt/api"}
 	}
 
 	return cfg
+}
+
+// platformDirs are the directories Go capability templates write cross-cutting
+// code into (observability, lifecycle, resilience, event bus, config, ...).
+var platformDirs = []string{"platform/**", "config/**", "internal/lifecycle/**", "internal/migrate/**", "internal/validation/**", "internal/testutil/**"}
+
+// goComponents appends the two components every layered Go architecture
+// shares to its layers. innermost names the only layer platform code may use.
+//
+//   - platform: capability-written cross-cutting code. Optional, because a
+//     project scaffolded without such capabilities has none.
+//   - app: the composition root (cmd/ entrypoints and internal/bootstrap). It
+//     wires everything together, so it may depend on every component and
+//     nothing may depend on it. It replaces `check.exclude: [cmd/**]`, which
+//     hid entrypoints from orphan detection instead of classifying them.
+//
+// Component patterns match at any depth and the first matching component
+// wins, so platform comes after the layers: internal/infrastructure/config
+// must stay infrastructure rather than fall to platform's config/** glob.
+func goComponents(innermost string, layers ...Component) []Component {
+	all := make([]string, 0, len(layers)+1)
+	for _, l := range layers {
+		all = append(all, l.Name)
+	}
+	all = append(all, "platform")
+	out := make([]Component, 0, len(layers)+2)
+	out = append(out, layers...)
+	return append(out,
+		Component{Name: "platform", In: append([]string{}, platformDirs...), MayDependOn: []string{innermost}, Optional: true},
+		Component{Name: "app", In: []string{"cmd/**", "internal/bootstrap/**"}, MayDependOn: all},
+	)
 }
 
 func defaultTypeScriptConfig(cfg *VeriktConfig, architecture string) *VeriktConfig {
