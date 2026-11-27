@@ -52,6 +52,63 @@ var denyPatterns = []struct {
 		reason:   "gRPC reflection enabled by default — exposes service schema in production",
 		fileGlob: "*config*example*",
 	},
+	{
+		pattern: regexp.MustCompile(`CheckOrigin:\s*func\s*\([^)]*\)\s*bool\s*\{(?:\s*//[^\n]*)*\s*return\s+true\s*\}`),
+		reason:  "WebSocket CheckOrigin accepts every origin — enables cross-site WebSocket hijacking; leave it unset (same-origin) or check an allow-list",
+	},
+}
+
+// insecureFixtures are template snippets each deny pattern exists to catch.
+// TestDenyPatterns_CatchInsecureFixtures proves the patterns fire, so a
+// pattern that stops matching fails here instead of passing every template.
+var insecureFixtures = []struct {
+	name    string
+	file    string
+	content string
+}{
+	{
+		name:    "websocket CheckOrigin accepting every origin, one line",
+		file:    "websocket.go.tmpl",
+		content: "var upgrader = websocket.Upgrader{\n\tCheckOrigin: func(r *http.Request) bool { return true },\n}\n",
+	},
+	{
+		name:    "websocket CheckOrigin accepting every origin, block body",
+		file:    "ws.go.tmpl",
+		content: "upgrader := websocket.Upgrader{\n\tCheckOrigin: func(_ *http.Request) bool {\n\t\treturn true\n\t},\n}\n",
+	},
+	{
+		// The websocket template shipped this before #29.
+		name:    "websocket CheckOrigin accepting every origin behind a comment",
+		file:    "websocket.go.tmpl",
+		content: "var upgrader = websocket.Upgrader{\n\tCheckOrigin: func(r *http.Request) bool {\n\t\t// Override with proper origin checking in production.\n\t\treturn true\n\t},\n}\n",
+	},
+}
+
+func TestDenyPatterns_CatchInsecureFixtures(t *testing.T) {
+	for _, fx := range insecureFixtures {
+		t.Run(fx.name, func(t *testing.T) {
+			if len(deniedBy(fx.file, fx.content)) == 0 {
+				t.Errorf("no deny pattern matches %s:\n%s", fx.file, fx.content)
+			}
+		})
+	}
+}
+
+// deniedBy returns the reasons of every deny pattern that applies to file and
+// matches content.
+func deniedBy(file, content string) []string {
+	var reasons []string
+	for _, dp := range denyPatterns {
+		if dp.fileGlob != "" {
+			if matched, _ := filepath.Match(dp.fileGlob, filepath.Base(file)); !matched {
+				continue
+			}
+		}
+		if dp.pattern.MatchString(content) {
+			reasons = append(reasons, dp.reason+"\n  pattern: "+dp.pattern.String())
+		}
+	}
+	return reasons
 }
 
 func TestTemplates_NoInsecurePatterns(t *testing.T) {
@@ -82,18 +139,8 @@ func TestTemplates_NoInsecurePatterns(t *testing.T) {
 					t.Errorf("failed to read %s: %v", path, readErr)
 					return nil
 				}
-				content := string(data)
-
-				for _, dp := range denyPatterns {
-					if dp.fileGlob != "" {
-						matched, _ := filepath.Match(dp.fileGlob, filepath.Base(path))
-						if !matched {
-							continue
-						}
-					}
-					if dp.pattern.MatchString(content) {
-						t.Errorf("[SECURITY] %s/%s: %s\n  pattern: %s", prov.name, path, dp.reason, dp.pattern.String())
-					}
+				for _, reason := range deniedBy(path, string(data)) {
+					t.Errorf("[SECURITY] %s/%s: %s", prov.name, path, reason)
 				}
 				return nil
 			})

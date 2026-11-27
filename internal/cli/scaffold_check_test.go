@@ -30,7 +30,7 @@ var shapeCategories = map[string]bool{
 // validation}.
 //
 // graphql, templ and htmx (which requires templ) are left out. graphql and
-// templ write a root tools.go (package tools, behind a build tag) that no
+// templ write root tools_*.go files (package tools, behind a build tag) that no
 // component claims, and graphql's gqlgen.yml hardcodes adapter/graphql, so its
 // package cannot be mapped into clean or layered without desynchronising code
 // generation. Those are capability-template fixes, not architecture-manifest

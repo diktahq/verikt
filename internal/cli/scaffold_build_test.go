@@ -22,6 +22,12 @@ const buildScaffoldsEnv = "VERIKT_BUILD_SCAFFOLDS"
 // transport, whose config template used to declare a variable only transports
 // use (issue #24); streaming covers the capabilities that register routes the
 // request timeout must not reach (issue #29) next to the ones that wire main.
+// The two out-of-order sets type a capability before one it requires, whose
+// partials used to render before the identifiers they use were declared
+// ("undefined: router"). domain selects ddd and event-bus together, which
+// used to write the same domain/event.go, with the capabilities around them.
+// adapters builds the packages that take their name from the mapped directory
+// (bff, nats, elasticsearch) in every architecture.
 var scaffoldBuildSets = []struct {
 	name string
 	caps string
@@ -32,6 +38,10 @@ var scaffoldBuildSets = []struct {
 	{name: "minimal", caps: "http-api"},
 	{name: "platform-only", caps: "platform"},
 	{name: "streaming", caps: "http-api,sse,websocket,timeout,request-id,platform,bootstrap,observability,mysql", streams: true},
+	{name: "health-before-http-api", caps: "health,http-api,bootstrap"},
+	{name: "bff-before-http-api", caps: "bff,http-api"},
+	{name: "domain", caps: "http-api,ddd,event-bus,outbox,cqrs,saga"},
+	{name: "adapters", caps: "http-api,nats,elasticsearch"},
 }
 
 // httpHandlerDirs is where each architecture maps adapter/httphandler. It

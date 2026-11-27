@@ -54,3 +54,41 @@ func anyGlobMatches(globs []string, file string) bool {
 	}
 	return false
 }
+
+// TestFrontendGlobsCoverEveryArchitecturesStaticAssets: static-assets writes
+// its files to static/ next to the HTTP handler (go:embed cannot reach a
+// parent directory, #28), so the frontend globs must match that directory in
+// every architecture, not a static/ at the project root.
+func TestFrontendGlobsCoverEveryArchitecturesStaticAssets(t *testing.T) {
+	manifests, err := filepath.Glob(filepath.Join("..", "..", "providers", "golang", "templates", "architectures", "*", "manifest.yaml"))
+	require.NoError(t, err)
+	require.NotEmpty(t, manifests)
+
+	for _, mf := range manifests {
+		arch := filepath.Base(filepath.Dir(mf))
+		data, err := os.ReadFile(mf)
+		require.NoError(t, err)
+		m, err := scaffold.ParseManifest(data)
+		require.NoError(t, err)
+
+		dir, ok := m.PathMappings["adapter/httphandler"]
+		if !ok {
+			continue
+		}
+		file := dir + "/static/css/style.css"
+		if !anyGlobMatches(globsForCategory("frontend"), file) {
+			t.Errorf("%s puts static assets under %s/static, but no frontend glob matches %s", arch, dir, file)
+		}
+	}
+}
+
+// TestCapabilityDirForStaticAssetsIsWhereTheTemplateWrites: the guide names
+// the directory the static-assets template actually writes.
+func TestCapabilityDirForStaticAssetsIsWhereTheTemplateWrites(t *testing.T) {
+	dir := capabilityDir("static-assets")
+	path := filepath.Join("..", "..", "providers", "golang", "templates", "capabilities", "static-assets", "files", filepath.FromSlash(dir))
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		t.Errorf("capabilityDir(static-assets) = %q, but the template writes no directory there", dir)
+	}
+}

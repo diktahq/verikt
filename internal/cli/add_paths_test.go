@@ -232,7 +232,7 @@ func TestAddResolvesDependenciesWithPathMappings(t *testing.T) {
 			}
 
 			assertFile(t, dir, joinRel(tc.service, "saga/orchestrator.go"))
-			assertFile(t, dir, joinRel(tc.domain, "event.go"))
+			assertFile(t, dir, joinRel(tc.domain, "eventbus.go"))
 			assertFile(t, dir, "platform/eventbus/bus.go")
 			assertNoHexagonalDirs(t, dir, tc.arch)
 			assertNoNewEmptyDirs(t, dir, before)

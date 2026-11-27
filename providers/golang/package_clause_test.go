@@ -32,11 +32,7 @@ import (
 // TestPackageClauseExceptionsAreStillNeeded fails once one is fixed.
 //
 // Key: capability name + "/" + template path inside files/.
-var archPkgExceptions = map[string]string{
-	"elasticsearch/adapter/esrepo/": "package esrepo; flat/layered/clean map it to .../elasticsearch",
-	"nats/adapter/natshandler/":     "package natshandler; flat/layered/clean map it to .../nats",
-	"bff/adapter/bffgateway/":       "package bffgateway; flat/layered/clean map it to .../bff",
-}
+var archPkgExceptions = map[string]string{}
 
 // goTemplateFile is one Go source template and where it lands.
 type goTemplateFile struct {
