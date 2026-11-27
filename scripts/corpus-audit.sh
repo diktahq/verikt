@@ -4,12 +4,13 @@
 # detector and by concentration.
 #
 # Usage:
-#   scripts/corpus-audit.sh [-o REPORT] [--keep] REPO [REPO...]
+#   scripts/corpus-audit.sh [-o REPORT] [--keep] [--own-config] REPO [REPO...]
 #
 # Each REPO is copied to a scratch directory and the copy is analysed: the
-# original is never written to (ADR-012 rule 2). A repository without a
-# verikt.yaml gets a minimal one in the copy (flat architecture), so only the
-# detectors speak, not the architecture rules.
+# original is never written to (ADR-012 rule 2). The copy's verikt.yaml is
+# replaced by a minimal one (flat architecture), so every repository is judged by
+# the same detectors and its own architecture rules don't mix in; --own-config
+# keeps a repository's verikt.yaml instead.
 #
 # The report quotes source lines from the audited repositories, so it is written
 # outside this checkout (default: a temp file) and must never be committed. An -o
@@ -28,17 +29,19 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd -P)
 die() { echo "corpus-audit: $*" >&2; exit 1; }
 
 usage() {
-  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"
   exit "${1:-0}"
 }
 
 REPORT=""
 KEEP=0
+OWN_CONFIG=0
 REPOS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) [ $# -ge 2 ] || die "-o needs a path"; REPORT=$2; shift 2 ;;
     --keep) KEEP=1; shift ;;
+    --own-config) OWN_CONFIG=1; shift ;;
     -h|--help) usage 0 ;;
     --) shift; while [ $# -gt 0 ]; do REPOS+=("$1"); shift; done ;;
     -*) die "unknown option: $1" ;;
@@ -92,8 +95,11 @@ audit_repo() {
   name=$(basename "$(cd "$src" && pwd -P)")
   dest="$WORK/repos/$n-$name"
   mkdir -p "$dest"
-  rsync -a --exclude .git --exclude node_modules "$src/" "$dest/"
-  [ -f "$dest/verikt.yaml" ] || minimal_config "$dest"
+  # Nested worktrees (.worktrees/, .claude/worktrees/) are other checkouts of the
+  # same code; auditing them again would count every finding twice.
+  rsync -a --exclude .git --exclude node_modules --exclude .worktrees \
+    --exclude .claude/worktrees "$src/" "$dest/"
+  if [ "$OWN_CONFIG" -eq 0 ] || [ ! -f "$dest/verikt.yaml" ]; then minimal_config "$dest"; fi
 
   json="$WORK/$n-$name.json"
   # A run with findings exits 1; only an unreadable result is a failure.
@@ -107,8 +113,11 @@ audit_repo() {
   printf '%s\t%s\tok\n' "$name" "$files" >> "$SUMMARY"
   jq -r --arg repo "$name" --arg dest "$dest" '
     [.violations[]?, .anti_patterns[]?][]
-    | [$repo, (.rule // .name), .severity, .file, ((.line // 0) | tostring),
-       (.message | gsub("[\t\n]"; " ")), $dest] | @tsv' "$json" >> "$ROWS"
+    | [$repo, (.rule // .name), .severity,
+       # read(1) collapses consecutive tabs, so no field may be empty.
+       ((.file // "") | if . == "" then "." else . end),
+       ((.line // 0) | tostring),
+       ((.message // "-") | gsub("[\t\n]"; " ")), $dest] | @tsv' "$json" >> "$ROWS"
 }
 
 i=0

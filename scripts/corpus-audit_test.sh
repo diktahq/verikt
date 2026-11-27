@@ -42,10 +42,13 @@ func Process() {
 EOF
 echo "ref: refs/heads/main" > "$CL/.git/HEAD"
 
-# Repository "clean": nothing to report.
+# Repository "clean": nothing to report. Its own verikt.yaml declares a
+# component with no directory, which --own-config would report as a
+# missing_component; by default the copy's config is replaced, so it must not.
 CN="$WORK/src/clean"
 mkdir -p "$CN/internal/calc"
 printf 'module example.com/clean\n\ngo 1.24\n' > "$CN/go.mod"
+printf 'language: go\narchitecture: flat\ncomponents:\n  - name: ghost\n    in: [ghost/**]\n' > "$CN/verikt.yaml"
 printf 'package calc\n\n// Add adds.\nfunc Add(a, b int) int { return a + b }\n' > "$CN/internal/calc/calc.go"
 
 snapshot() { (cd "$1" && find . -type f -print0 | sort -z | xargs -0 shasum) ; }
@@ -64,6 +67,11 @@ fi
 expect() { local name=$1; shift; if "$@"; then pass "$name"; else fail "$name"; fi; }
 unchanged() { [ "$(snapshot "$CL")" = "$before_cl" ] && [ "$(snapshot "$CN")" = "$before_cn" ]; }
 no_config() { [ ! -f "$CL/verikt.yaml" ]; }
+no_own_rules() { ! grep -q 'missing_component' "$REPORT"; }
+clean_stderr() { ! grep -q 'integer expression' "$WORK/stderr"; }
+own_config_kept() {
+  "$AUDIT" --own-config -o "$WORK/out/own.md" "$CN" 2>/dev/null && grep -q 'missing_component' "$WORK/out/own.md"
+}
 in_report() { grep -qF -- "$1" "$REPORT"; }
 copies_gone() { [ "$(find "$WORK/tmp" -maxdepth 1 -name 'verikt-corpus.*' | wc -l | tr -d ' ')" -eq 0 ]; }
 refuses_inside() {
@@ -86,6 +94,9 @@ refuses_inside() {
     in_report '`naked_goroutine`: 100% of 3 findings in one file, `clustered:internal/worker/worker.go`'
   expect "each finding is reported with its location" in_report '`clustered:internal/worker/worker.go:4`'
   expect "each finding is reported with its source line" in_report '`go func() {}()`'
+  expect "a repository's own architecture rules stay out by default" no_own_rules
+  expect "findings without a file do not shift the report's columns" own_config_kept
+  expect "the run prints no parsing errors" clean_stderr
   expect "the copies are removed after the run" copies_gone
   expect "a report path inside the verikt repository is refused" refuses_inside
 }
