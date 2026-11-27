@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -26,14 +28,23 @@ var ErrCheckFailed = errors.New("architecture check failed")
 // Bump it on any breaking change to the output shape or key names.
 const checkJSONSchemaVersion = 2
 
+// enginePathFn resolves the embedded engine binary. It is a variable so tests
+// can simulate an engine that cannot be extracted.
+var enginePathFn = engineclient.EnginePath
+
+// checkStderr receives warnings. They never go to stdout, which must stay a
+// single JSON document in -o json mode.
+var checkStderr io.Writer = os.Stderr
+
 type checkFlags struct {
-	projectPath string
-	proxyRules  bool
-	detectors   bool
-	decisions   bool
-	rule        string
-	staged      bool
-	diff        string
+	projectPath   string
+	proxyRules    bool
+	detectors     bool
+	decisions     bool
+	rule          string
+	staged        bool
+	diff          string
+	allowDegraded bool
 }
 
 func newCheckCommand(opts *globalOptions) *cobra.Command {
@@ -53,7 +64,12 @@ Test files (_test.go) are not analysed, by any check — including dependency
 rules. A test legitimately reaches across layers to assemble a fixture, so its
 imports are not part of the architecture. Generated files carrying the
 "// Code generated ... DO NOT EDIT." marker are skipped for the same reason:
-they are not the author's to fix.`,
+they are not the author's to fix.
+
+The built-in detectors run on the embedded analysis engine. If it cannot be
+extracted (an unwritable cache directory, a platform with no engine build), the
+check fails rather than skip them. --allow-degraded skips the detectors instead,
+with a warning on stderr, and checks only proxy rules and decision gates.`,
 		Example: `  verikt check
   verikt check --path ./my-service
   verikt check --proxy-rules
@@ -72,6 +88,8 @@ they are not the author's to fix.`,
 	cmd.Flags().BoolVar(&flags.staged, "staged", false, "Only check files in git staging area")
 	cmd.Flags().BoolVar(&flags.decisions, "decisions", false, "Run only decision gate validation")
 	cmd.Flags().StringVar(&flags.diff, "diff", "", "Only report violations in files changed vs. a git ref (e.g., main, HEAD~1)")
+	cmd.Flags().BoolVar(&flags.allowDegraded, "allow-degraded", false,
+		"If the analysis engine is unavailable, skip the built-in detectors (warning on stderr) instead of failing")
 
 	// Each of these narrows the run to one kind of check, so combining them
 	// narrows it to nothing: `--detectors --rule x` skipped the detectors (because
@@ -127,13 +145,12 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 	}
 
 	// Build engine client once — used for both anti-pattern detection and proxy rules.
-	var engineClient *engineclient.Client
-	if enginePath, pathErr := engineclient.EnginePath(); pathErr == nil {
-		engineClient = engineclient.New(enginePath)
+	engineClient, runDetectors, err := resolveCheckEngine(flags)
+	if err != nil {
+		return err
 	}
 
-	// Run built-in detectors unless --proxy-rules or --rule is set.
-	if !flags.proxyRules && flags.rule == "" {
+	if runDetectors {
 		var apClient checker.AntiPatternClient
 		var depClient checker.DependencyClient
 		var metricClient checker.MetricClient
@@ -204,6 +221,51 @@ func runCheck(opts *globalOptions, flags *checkFlags) error {
 	}, cfg, flags, opts.Output)
 }
 
+// resolveCheckEngine extracts the engine and decides whether the built-in
+// detectors run. It returns a nil client when the engine is unavailable and the
+// run can proceed without it.
+//
+// The resolution error used to be discarded. The detectors then failed with a
+// generic "requires the embedded Rust engine", and the cause — a cache directory
+// the process cannot write, a platform with no engine build — was nowhere in the
+// output.
+//
+// Proxy grep rules keep a Go implementation for platforms with no engine build
+// (ADR-006), and the report names which implementation ran, so a run that needs
+// only proxy rules proceeds without the engine and without a warning. The
+// detectors have no second implementation: without the engine they fail closed,
+// unless --allow-degraded asks to skip them, which is announced on stderr so
+// JSON on stdout stays parseable.
+func resolveCheckEngine(flags *checkFlags) (*engineclient.Client, bool, error) {
+	runDetectors := !flags.proxyRules && flags.rule == ""
+
+	enginePath, pathErr := enginePathFn()
+	if pathErr == nil {
+		return engineclient.New(enginePath), runDetectors, nil
+	}
+	if !runDetectors {
+		return nil, false, nil
+	}
+
+	// --detectors with the detectors skipped would run no check at all and
+	// report a pass, so the escape hatch does not apply to it.
+	if !flags.allowDegraded || flags.detectors {
+		return nil, false, fmt.Errorf("%w: %w\n"+
+			"The built-in detectors (dependency rules, function metrics, anti-patterns) cannot run without it.\n"+
+			"Re-run with --allow-degraded to skip them and check only proxy rules and decision gates "+
+			"(not available with --detectors, which would leave nothing to check)",
+			checker.ErrEngineRequired, pathErr)
+	}
+
+	// A failed write to stderr has nowhere more useful to be reported.
+	_, _ = fmt.Fprintf(checkStderr,
+		"WARNING: analysis engine unavailable (%v).\n"+
+			"WARNING: --allow-degraded is set, so the built-in detectors did not run "+
+			"(dependency rules, structure, function metrics, anti-patterns). "+
+			"Only proxy rules and decision gates were checked.\n", pathErr)
+	return nil, false, nil
+}
+
 // checkOutcome bundles the three result sets a single check produces. They are
 // always carried together, and passing them separately pushed every function
 // that handles them past the project's own parameter limit.
@@ -251,9 +313,10 @@ func reportCheck(outcome checkOutcome, cfg *config.VeriktConfig, flags *checkFla
 	return nil
 }
 
-// getStagedFiles returns relative file paths in the git staging area.
+// getStagedFiles returns relative file paths in the git staging area. Renames
+// (R) are included: a staged move is a file the commit is about to change.
 func getStagedFiles(projectPath string) ([]string, error) {
-	cmd := exec.CommandContext(context.Background(), "git", "diff", "--cached", "--name-only", "--diff-filter=ACM")
+	cmd := exec.CommandContext(context.Background(), "git", "diff", "--cached", "--name-only", "--diff-filter=ACMR")
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
@@ -280,14 +343,24 @@ func getStagedFiles(projectPath string) ([]string, error) {
 // codebase without cleaning up the whole repository first, passed
 // unconditionally for every ref.
 func getDiffFiles(projectPath, ref string) ([]string, error) {
+	// A ref starting with '-' would reach git as an option, not a revision.
+	if ref == "" {
+		return nil, errors.New("git ref must not be empty")
+	}
+	if strings.HasPrefix(ref, "-") {
+		return nil, fmt.Errorf("invalid git ref %q: must not start with '-'", ref)
+	}
+
 	base, err := gitMergeBase(projectPath, ref)
 	if err != nil {
 		return nil, err
 	}
 
-	// ACM: deleted files cannot carry findings, matching getStagedFiles.
+	// ACMR: deleted files cannot carry findings, but a renamed file can — ACM
+	// alone filtered away every finding in a file the branch had moved.
+	// The trailing "--" pins base as a revision; nothing after it is a pathspec.
 	cmd := exec.CommandContext(context.Background(),
-		"git", "diff", "--name-only", "--diff-filter=ACM", base)
+		"git", "diff", "--name-only", "--diff-filter=ACMR", base, "--")
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
