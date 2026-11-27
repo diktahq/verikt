@@ -148,7 +148,9 @@ existing pipeline sees.
   it; oauth2's `HandleOAuth2Callback` is replaced by `OAuth2Flow` (`Login`,
   `Callback`); CORS panics at startup on `*` with credentials; `docker-compose.yml`
   publishes ports on `127.0.0.1` only. The other generated changes are listed under
-  *Security*.
+  *Security*. The new rate limiter reads chi's `middleware.GetClientIP`, added in
+  chi v5.5.0: `verikt add rate-limiting` in a project that pins an older chi needs
+  `go get github.com/go-chi/chi/v5@latest` before it compiles.
 
 ### Added
 
@@ -241,6 +243,20 @@ existing pipeline sees.
 - **`invalid_allow_directive` quotes at most 80 bytes** of the offending comment. (#36)
 - **The guide's HTTP middleware table matches the router**: Recoverer first, and no
   RealIP. (#36)
+- **Inline waivers and override waivers are reported together.** When a
+  `severity_overrides` waiver matched, the run reported only those and dropped
+  every `verikt:allow` waiver from WAIVED and `waived[]`. (#36)
+- **A grep rule with a regex the engine cannot compile is invalid**, whichever
+  field holds it. A bad `must-contain`, `must-not-contain` or `file-must-contain`
+  was dropped, so the rule ran without that check and reported Valid. (#36)
+- **`--staged -o json` with nothing staged reports the configured `fail_on`**, not
+  always `error`. (#36)
+- **Generated `idempotency` and `oauth2` stores stay fast when full.** The
+  idempotency store sweeps expired entries at most once a minute instead of scanning
+  every entry on every write once full. The oauth2 state store keeps pending logins
+  oldest-first and never scans them all; when it is full a new login evicts the
+  oldest pending one, so a flood of `/auth/login` requests can make one user retry
+  instead of locking every user out for 10 minutes. (#36)
 - **Website docs match 0.3.0 output.** Guide excerpts are real `verikt guide`
   output instead of invented examples; experiment citations say they were measured
   on the pre-0.3.0 single-file guide with one model (claude-sonnet-4-6); claims of
@@ -403,6 +419,16 @@ existing pipeline sees.
   `source <(curl …)`. Both still ship at warning. Old and new produced identical
   findings over about 100 local repositories and 1,205 Go modules. `cmd || echo`
   and a verification used only as an `if` condition are not covered. (#36)
+- **`silent_ci_swallow` reads redirections and tight groups.** A command whose
+  output is redirected (`go test ./... 2>&1 || true`, `&>log`) is no longer cut at
+  the `&`; `{ go test ./...;} || true`, `(pytest) || true`, `sh -c "…" _` and
+  `bash -euo pipefail script.sh || true` are read; a next-line
+  `continue-on-error: ${{ true }}` or `'true'` counts. A subshell that ends with
+  another command, such as `(go test ./...; echo done) || true`, is no longer
+  reported, because its status is the last command's. `mutable_install_url` reads
+  `| bash -o pipefail` and `| bash +e` at the end of a download pipeline. Over 85
+  local repositories and 261 Go modules this added 10 findings, all from the
+  redirection change, and removed none. (#36)
 - **`live_dot_claude_fixture` covers more of what Claude Code loads.** Matching
   ignores case; `CLAUDE.md`, `agents/` and `commands/` inside a fixture `.claude/`
   are reported, as is a standalone `CLAUDE.md` inside a fixture case
